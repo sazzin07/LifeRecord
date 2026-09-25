@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X, Send, Mic, Paperclip, Loader2, Square, Undo2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -24,6 +25,9 @@ export function AIAssistant() {
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
   const recRef = useRef(null);
+  const loc = useLocation();
+
+  useEffect(() => { setOpen(false); }, [loc.pathname]);
 
   useEffect(() => { localStorage.setItem("lm_ai_session", session); }, [session]);
 

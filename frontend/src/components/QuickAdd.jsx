@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -60,6 +60,7 @@ export function QuickAdd({ open, setOpen }) {
               {mode && <button onClick={() => setMode(null)} className="text-slate-400 hover:text-slate-600"><ArrowLeft className="h-4 w-4" /></button>}
               {mode ? `Add ${mode}` : "Quick add"}
             </DialogTitle>
+            <DialogDescription className="sr-only">Quickly add an item to Life Manager</DialogDescription>
           </DialogHeader>
 
           {!mode && (

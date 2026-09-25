@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,7 +83,9 @@ export function ExpenseDialog({ open, setOpen }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="expense-dialog">
-        <DialogHeader><DialogTitle>Add expense</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Add expense</DialogTitle>
+          <DialogDescription className="sr-only">Create a new expense with optional sharing and item-level splitting</DialogDescription>
+        </DialogHeader>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>

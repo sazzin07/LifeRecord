@@ -1,0 +1,163 @@
+{
+  "project_name": "Life Manager for Sá",
+  "archetype": "THE PERFORMANCE PRO & SWISS HYBRID",
+  "tagline": "Private personal command center turning raw info into connected life insights.",
+  "philosophy": "What is going on with my life right now, and what should I know? Never a static spreadsheet — a living, connected intelligence center for Sá.",
+  "target_user": "Sá (Single Private User)",
+  "color_palette": {
+    "light_mode": {
+      "background_page": "#F8FAFC",
+      "background_card": "#FFFFFF",
+      "background_card_subtle": "#F1F5F9",
+      "border_subtle": "#E2E8F0",
+      "border_strong": "#CBD5E1",
+      "text_primary": "#0F172A",
+      "text_secondary": "#64748B",
+      "text_tertiary": "#94A3B8"
+    },
+    "dark_mode": {
+      "background_page": "#0B0F17",
+      "background_card": "#161F30",
+      "background_card_subtle": "#1E293B",
+      "border_subtle": "rgba(255, 255, 255, 0.08)",
+      "border_strong": "rgba(255, 255, 255, 0.18)",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#94A3B8",
+      "text_tertiary": "#64748B"
+    },
+    "signature_accent": {
+      "primary": "#059669",
+      "primary_hover": "#047857",
+      "light_tint": "#ECFDF5",
+      "dark_tint": "rgba(16, 185, 129, 0.12)",
+      "glowing_ring": "rgba(16, 185, 129, 0.3)"
+    },
+    "institution_indicators": {
+      "revolut_blue": "#1964FF",
+      "cash_emerald": "#10B981"
+    },
+    "semantic": {
+      "positive_green": "#10B981",
+      "warning_amber": "#F59E0B",
+      "negative_red": "#EF4444",
+      "info_indigo": "#6366F1"
+    },
+    "confidence_badges": {
+      "exact": { "bg": "#ECFDF5", "text": "#047857", "border": "#A7F3D0" },
+      "estimated": { "bg": "#FFFBEB", "text": "#B45309", "border": "#FDE68A" },
+      "historical": { "bg": "#EEF2FF", "text": "#4338CA", "border": "#C7D2FE" },
+      "unknown": { "bg": "#F1F5F9", "text": "#475569", "border": "#E2E8F0" }
+    }
+  },
+  "selective_liquid_glass_rules": {
+    "principle": "Liquid Glass is used SELECTIVELY for elevated interactive layers only. Never apply blanket glassmorphism across standard data cards.",
+    "applied_elements": {
+      "floating_ai_trigger": "backdrop-blur-xl bg-slate-900/90 dark:bg-slate-900/95 text-white border border-slate-700/60 shadow-2xl hover:bg-slate-800",
+      "top_header_nav": "backdrop-blur-md bg-slate-50/85 dark:bg-slate-950/85 border-b border-slate-200/80 dark:border-slate-800/80 z-40",
+      "mobile_bottom_bar": "backdrop-blur-xl bg-white/90 dark:bg-slate-900/90 border-t border-slate-200/80 dark:border-slate-800/80 z-50",
+      "command_bar_modal": "backdrop-blur-xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-2xl z-50",
+      "ai_assistant_drawer": "backdrop-blur-2xl bg-white/95 dark:bg-slate-900/95 border-l border-slate-200 dark:border-slate-800 shadow-2xl z-50",
+      "hero_stat_banner": "bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 text-white rounded-2xl shadow-xl border border-slate-800/80 p-6 md:p-8"
+    },
+    "standard_cards": "Solid background (#FFFFFF in Light mode, #161F30 in Dark mode) with 1px border (#E2E8F0 / slate-800), rounded-xl, and crisp subtle ambient shadow."
+  },
+  "typography": {
+    "font_family": "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    "scale": {
+      "hero_title": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight",
+      "section_heading": "text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50",
+      "card_title": "text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100",
+      "stat_number": "text-2xl sm:text-3xl font-extrabold tracking-tight font-mono text-slate-900 dark:text-slate-50",
+      "body_main": "text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-300",
+      "label_caps": "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
+    }
+  },
+  "entry_experience": {
+    "greeting_sequence": "Step 1: Welcome back, Sá -> Step 2: Here's what's happening today -> Step 3: Staggered reveal of Command Center Modules",
+    "motion_duration": "400ms ease-out sequence",
+    "accessibility_override": "Can be toggled off or muted instantly in Settings under 'Enable Motion Animations'."
+  },
+  "layout_and_navigation": {
+    "desktop": "Left collapsible sidebar with icon+label navigation + top bar with global Quick Add (+), Cmd+K trigger, AI status pill, theme switcher, and notifications. Content container max-w-7xl px-6 py-8.",
+    "mobile": "Sticky top bar with brand logo & AI status + floating bottom liquid-glass navigation bar with Quick Add (+) action center button.",
+    "global_quick_add_options": [
+      "+ Expense",
+      "+ Meal",
+      "+ Grocery Item",
+      "+ Workout",
+      "+ Weight / Body",
+      "+ Task",
+      "+ Payment Settlement",
+      "+ Person / Contact"
+    ]
+  },
+  "key_modules_and_components": {
+    "command_center_home": {
+      "hero_banner": "Financial & Life Net Snapshot with AI 'Things you should know' insight cards.",
+      "widgets": [
+        "Financial Snapshot (Cash + Revolut + Net Spent)",
+        "Reimbursements & People Owed (Debt Netting)",
+        "Nutrition & Macro Target Rings (Calories, Protein, Carbs, Fats)",
+        "Calisthenics Today & Workout Streak",
+        "Body Tracker & Weight Delta",
+        "Groceries Needing Restock",
+        "Priority Tasks & Reminders",
+        "Upcoming Calendar Events"
+      ]
+    },
+    "finance_dashboard": {
+      "accounts": ["Cash Wallet", "Revolut Account"],
+      "metrics": ["Total Available Cash", "Monthly Spending Actual", "Pending Reimbursements", "Net Position"],
+      "charts": ["Spending Over Time", "Category Allocation", "Cash vs Revolut Ratio", "Net Personal Spending vs Shared"],
+      "shared_expense_engine": {
+        "modes": ["Equal", "Custom Amount", "By-Item Split", "Percentage", "Exact Share"],
+        "itemized_receipt_parser": "Supports upload/paste receipt with item assignment per person"
+      },
+      "reimbursement_engine": {
+        "features": ["Track who paid upfront", "Net debt calculation across multiple shared expenses", "One-click 'Record Payment' settlement"]
+      }
+    },
+    "ai_assistant": {
+      "type": "Floating Liquid Glass Action Panel & Drawer",
+      "inputs": ["Natural Language Text Prompt", "Microphone Voice Recording", "Receipt Photo / Image Upload"],
+      "capabilities": [
+        "Parse receipt items into shared expenses",
+        "Log workouts, weight, meals, groceries, or expenses from raw natural text",
+        "Answer 'What is going on with my life right now?'",
+        "Action History with UNDO support for all state changes",
+        "Confirmation dialog for destructive operations (e.g. deleting expenses or clearing entries)"
+      ]
+    },
+    "confidence_badges": [
+      { "name": "Exact", "desc": "Bank verified or receipt matched entry" },
+      { "name": "Estimated", "desc": "AI or user approximated entry" },
+      { "name": "Historical", "desc": "Carried over past trend data" },
+      { "name": "Unknown", "desc": "Requires review or classification" }
+    ]
+  },
+  "media_assets": {
+    "avatar_sa": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?crop=entropy&cs=srgb&fm=jpg&q=85&w=400",
+    "people_avatars": [
+      "https://images.unsplash.com/photo-1581841064838-a470c740e8ee?crop=entropy&cs=srgb&fm=jpg&q=85&w=200",
+      "https://images.unsplash.com/photo-1506863530036-1efeddceb993?crop=entropy&cs=srgb&fm=jpg&q=85&w=200",
+      "https://images.unsplash.com/photo-1670012896865-f531c5fb65d9?crop=entropy&cs=srgb&fm=jpg&q=85&w=200"
+    ],
+    "nutrition_hero": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?crop=entropy&cs=srgb&fm=jpg&q=85&w=800",
+    "calisthenics_hero": "https://images.unsplash.com/photo-1549322360-cd6595c85129?crop=entropy&cs=srgb&fm=jpg&q=85&w=800"
+  },
+  "GENERAL UI UX DESIGN GUIDELINES": {
+    "testing_requirement": "All interactive elements (buttons, inputs, navigation links, quick-add triggers, modals, list rows, tabs, toggles) MUST include data-testid attributes in kebab-case format (e.g. data-testid='add-expense-button', data-testid='revolut-balance-card', data-testid='ai-mic-trigger').",
+    "no_universal_transition": "Do NOT apply universal transition (transition: all). Use explicit CSS transitions like transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease.",
+    "no_center_app_container": "Do NOT center-align the app container. Align text naturally to left.",
+    "contrast_and_accessibility": "Ensure high text contrast in both light and dark modes. Avoid light grey text on light cards. Headers must have non-transparent backgrounds.",
+    "skeleton_loaders": "Use elegant animated skeleton placeholders (pulse bg-slate-200 dark:bg-slate-800 rounded) while fetching data — never plain spinners.",
+    "toast_notifications": "Use Sonner for toasts located in src/components/ui/sonner.js or sonner.jsx with clear status feedback."
+  },
+  "instructions_to_main_agent": [
+    "Read /app/design_guidelines.json to guide all visual and interactive development.",
+    "Implement the app in React (.js/.jsx) with Tailwind CSS, Lucide icons, and Shadcn components.",
+    "Build the single-user experience customized for Sá with persistent local state or backend database.",
+    "Provide seamless tab switching between Home Command Center, Money/Finance, Shared & Reimbursements, Groceries, Nutrition, Fitness/Calisthenics, Body & Progress Photos, Tasks, Calendar, AI Assistant, and Settings.",
+    "Ensure all buttons and inputs have proper data-testid attributes."
+  ]
+}

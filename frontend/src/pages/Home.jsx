@@ -60,17 +60,17 @@ export default function Home() {
   const insights = useMemo(() => {
     const out = [];
     if (sum) {
-      const eatingOut = sum.by_category?.find((c) => c.name === "Eating Out");
-      if (eatingOut) out.push(`You've spent ${eur(eatingOut.value)} eating out recently.`);
-      if (sum.owed_to_me > 0) out.push(`People owe you ${eur(sum.owed_to_me)} in total.`);
+      if (sum.cash_spent > 0) out.push(`${eur(sum.cash_spent)} was spent in cash; ${eur(sum.card_spent)} on card.`);
+      if (sum.pending > 0) out.push(`You are currently owed ${eur(sum.pending)} in pending refunds.`);
+      if (sum.grocery?.out_of_stock?.length) out.push(`Out of stock: ${sum.grocery.out_of_stock.slice(0, 3).join(", ")}.`);
+      if (sum.grocery?.low_stock?.length) out.push(`${sum.grocery.low_stock.length} grocery item${sum.grocery.low_stock.length > 1 ? "s are" : " is"} running low.`);
     }
     const topDebt = (people || []).filter((p) => p.net > 0).sort((a, b) => b.net - a.net)[0];
     if (topDebt) out.push(`${topDebt.name} still owes you ${eur(topDebt.net)}.`);
-    if (lowStock.length) out.push(`You're low on ${lowStock.map((g) => g.name.toLowerCase()).slice(0, 3).join(", ")}.`);
     if (nutri.p) out.push(`You've logged ${Math.round(nutri.p)}g protein today.`);
     if (!weight?.length) out.push("You haven't completed a weight check-in yet.");
     return out.slice(0, 4);
-  }, [sum, people, lowStock, nutri, weight]);
+  }, [sum, people, nutri, weight]);
 
   if (loading) return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}</div>

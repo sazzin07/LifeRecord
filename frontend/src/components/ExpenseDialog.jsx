@@ -116,7 +116,10 @@ export function ExpenseDialog({ open, setOpen }) {
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Paid with</label>
               <Select value={account} onValueChange={setAccount}>
                 <SelectTrigger data-testid="expense-account" className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="revolut">Card (Revolut)</SelectItem>
+                </SelectContent>
               </Select>
             </div>
           </div>

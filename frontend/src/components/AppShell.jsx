@@ -61,6 +61,15 @@ export function AppShell({ children }) {
   const [intro, setIntro] = useState(true);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    const off = () => setOffline(true);
+    const on = () => setOffline(false);
+    window.addEventListener("lm:offline", off);
+    window.addEventListener("lm:online", on);
+    return () => { window.removeEventListener("lm:offline", off); window.removeEventListener("lm:online", on); };
+  }, []);
 
   useEffect(() => {
     const h = (e) => {
@@ -128,6 +137,11 @@ export function AppShell({ children }) {
 
       {/* Content */}
       <main className="lg:pl-60">
+        {offline && (
+          <div data-testid="offline-banner" className="bg-amber-500 text-white text-sm font-medium text-center py-2 px-4">
+            ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.
+          </div>
+        )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-28 lg:pb-10">{children}</div>
       </main>
 

@@ -144,6 +144,7 @@ class SettlementBody(BaseModel):
     account: str = "revolut"       # which of my accounts receives/pays it
     direction: str = "in"          # in = they paid me ; out = I paid them
     date: Optional[str] = None
+    transaction_id: Optional[str] = None
 
 
 class TransferBody(BaseModel):
@@ -183,6 +184,31 @@ class GroceryBody(BaseModel):
     price: Optional[float] = None
     store: Optional[str] = None
     low_threshold: float = 0
+    notes: str = ""
+    expiration: Optional[str] = None
+
+
+class GroceryUpdate(BaseModel):
+    name: Optional[str] = None
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    store: Optional[str] = None
+    low_threshold: Optional[float] = None
+    notes: Optional[str] = None
+    expiration: Optional[str] = None
+
+
+class TxnUpdate(BaseModel):
+    description: Optional[str] = None
+    category: Optional[str] = None
+    account: Optional[str] = None          # cash | revolut
+    payment_method: Optional[str] = None   # cash | card
+    date: Optional[str] = None
+    notes: Optional[str] = None
+    amount: Optional[float] = None
+    personal_amount: Optional[float] = None
 
 
 class MealBody(BaseModel):
@@ -192,6 +218,35 @@ class MealBody(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     date: Optional[str] = None
+
+
+class ShoppingBody(BaseModel):
+    name: str
+    quantity: float = 1
+    unit: str = "unit"
+    note: str = ""
+
+
+class BuyBody(BaseModel):
+    price: Optional[float] = None
+    store: Optional[str] = None
+
+
+class RecipeIngredient(BaseModel):
+    name: str
+    quantity: float = 1
+    unit: str = "unit"
+
+
+class RecipeBody(BaseModel):
+    name: str
+    servings: int = 1
+    ingredients: List[RecipeIngredient] = []
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbs: Optional[float] = None
+    fat: Optional[float] = None
+    notes: str = ""
 
 
 class AIChatBody(BaseModel):
@@ -338,6 +393,140 @@ async def people_balances() -> List[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Price intelligence + shopping helpers
+# ---------------------------------------------------------------------------
+async def record_price(name: str, store: Optional[str], price: Optional[float], unit: str = "unit"):
+    if not store or price is None:
+        return
+    await db.price_records.insert_one({
+        "id": new_id(), "name": name, "name_lower": name.lower(), "store": store,
+        "price": round(float(price), 2), "unit": unit,
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "created_at": now_iso()})
+
+
+async def latest_prices(name_lower: str) -> dict:
+    recs = await db.price_records.find({"name_lower": name_lower}, {"_id": 0}).sort("date", -1).to_list(200)
+    per_store = {}
+    for r in recs:
+        if r.get("store") and r["store"] not in per_store:
+            per_store[r["store"]] = {"price": r["price"], "date": r["date"]}
+    return per_store
+
+
+def cheapest_store(per_store: dict):
+    if not per_store:
+        return None
+    s, v = min(per_store.items(), key=lambda kv: kv[1]["price"])
+    return {"store": s, "price": v["price"], "date": v["date"]}
+
+
+async def shopping_payload() -> dict:
+    items = await db.shopping_items.find({}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    enriched = []
+    store_baskets = {}   # store -> {"total": x, "items": [names]}
+    split_total = 0.0
+    unknown = []
+    for it in items:
+        per_store = await latest_prices(it["name_lower"])
+        ch = cheapest_store(per_store)
+        if ch:
+            split_total += ch["price"]
+            for store, v in per_store.items():
+                b = store_baskets.setdefault(store, {"total": 0.0, "items": []})
+                b["total"] = round(b["total"] + v["price"], 2)
+                b["items"].append(it["name"])
+        else:
+            unknown.append(it["name"])
+        enriched.append({**it, "per_store": per_store, "best": ch, "known": ch is not None})
+
+    priced_count = len(items) - len(unknown)
+    stores = [{"store": s, "total": round(b["total"], 2), "covers": len(b["items"]), "items": b["items"]}
+              for s, b in store_baskets.items()]
+    # best single stop = most coverage, then cheapest
+    stores_sorted = sorted(stores, key=lambda s: (-s["covers"], s["total"]))
+    best_single = stores_sorted[0] if stores_sorted else None
+
+    recommendation = ""
+    if best_single and priced_count:
+        if best_single["covers"] >= priced_count:
+            saving = round(best_single["total"] - round(split_total, 2), 2)
+            recommendation = (f"{best_single['store']} covers all {priced_count} priced items for about "
+                              f"€{best_single['total']:.2f}. Splitting across stores would cost about "
+                              f"€{split_total:.2f} — a saving of only €{max(saving,0):.2f}, so one stop is usually enough.")
+        else:
+            recommendation = (f"{best_single['store']} is your best single stop, covering {best_single['covers']} of "
+                              f"{priced_count} priced items (~€{best_single['total']:.2f}).")
+    if unknown:
+        recommendation += f" No known price yet for: {', '.join(unknown)}."
+
+    return {
+        "items": enriched,
+        "stores": stores_sorted,
+        "best_single": best_single,
+        "split_total": round(split_total, 2),
+        "unknown": unknown,
+        "recommendation": recommendation.strip(),
+    }
+
+
+async def add_shopping_item_doc(name: str, quantity: float = 1, unit: str = "unit", note: str = "") -> dict:
+    existing = await db.shopping_items.find_one({"name_lower": name.lower(), "bought": False})
+    if existing:
+        return await db.shopping_items.find_one({"id": existing["id"]}, {"_id": 0})
+    doc = {"id": new_id(), "name": name, "name_lower": name.lower(), "quantity": quantity,
+           "unit": unit, "note": note, "bought": False, "created_at": now_iso()}
+    await db.shopping_items.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+async def generate_shopping_doc(days: int = 7) -> dict:
+    """Deterministic suggestions from low stock + previously purchased items not in stock."""
+    groceries = await db.groceries.find({}, {"_id": 0}).to_list(1000)
+    stock = {g["name_lower"]: g for g in groceries}
+    added = []
+    for g in groceries:
+        if g.get("low_threshold") and g["quantity"] <= g["low_threshold"]:
+            await add_shopping_item_doc(g["name"], max(1, round(days / 2)), g.get("unit", "unit"), "Running low")
+            added.append(g["name"])
+    # frequently seen priced items not currently stocked
+    known_names = await db.price_records.distinct("name")
+    for name in known_names:
+        nl = name.lower()
+        if nl not in stock or stock[nl]["quantity"] <= 0:
+            doc = await add_shopping_item_doc(name, 1, "unit", "From your usual buys")
+            if doc["name"] not in added:
+                added.append(doc["name"])
+    payload = await shopping_payload()
+    payload["added"] = added
+    return payload
+
+
+async def cook_recipe_doc(recipe: dict) -> dict:
+    changes = []
+    for ing in recipe.get("ingredients", []):
+        g = await db.groceries.find_one({"name_lower": ing["name"].lower()})
+        if g:
+            newq = max(0, round(g["quantity"] - (ing.get("quantity") or 0), 2))
+            await db.groceries.update_one({"id": g["id"]}, {"$set": {"quantity": newq}})
+            changes.append(f"{ing['name']} −{ing.get('quantity', 0)}{ing.get('unit', '')} (now {newq})")
+        else:
+            changes.append(f"{ing['name']} (not in inventory)")
+    servings = recipe.get("servings") or 1
+    meal = None
+    if recipe.get("calories"):
+        meal = {"id": new_id(), "description": f"{recipe['name']} (1 serving)",
+                "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "calories": round((recipe.get("calories") or 0) / servings, 1),
+                "protein": round((recipe.get("protein") or 0) / servings, 1),
+                "carbs": round((recipe.get("carbs") or 0) / servings, 1),
+                "fat": round((recipe.get("fat") or 0) / servings, 1), "created_at": now_iso()}
+        await db.meals.insert_one(dict(meal))
+        meal.pop("_id", None)
+    return {"recipe": recipe["name"], "inventory_changes": changes, "meal_logged": meal is not None}
+
+
+# ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
 @api_router.post("/auth/login")
@@ -428,12 +617,59 @@ async def get_accounts(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Transactions
 # ---------------------------------------------------------------------------
-@api_router.get("/transactions")
-async def get_transactions(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def refund_map() -> dict:
+    """Sum of settlements (direction=in) linked to each expense id."""
+    m = {}
+    async for s in db.settlements.find({"direction": "in", "transaction_id": {"$ne": None}}, {"_id": 0}):
+        if s.get("transaction_id"):
+            m[s["transaction_id"]] = round(m.get(s["transaction_id"], 0) + s["amount"], 2)
+    return m
+
+
+def serialize_txn(t: dict, rmap: dict) -> dict:
+    if t.get("type") != "expense":
+        return {**t, "payment_method": "cash" if t.get("account") == "cash" else "card"}
+    reimb = t.get("reimbursable_amount", 0) or 0
+    refunded = min(rmap.get(t["id"], 0.0), reimb)
+    remaining = round(max(reimb - refunded, 0), 2)
+    if reimb <= 0.005:
+        status = "personal"
+    elif remaining <= 0.005:
+        status = "settled"
+    elif refunded > 0.005:
+        status = "partial"
+    else:
+        status = "pending"
+    responsible = [s["person_name"] for s in t.get("splits", []) if not s["is_me"] and s["amount"] > 0.005]
+    return {**t, "amount_refunded": round(refunded, 2), "remaining_refund": remaining,
+            "refund_status": status, "responsible": responsible,
+            "payment_method": "cash" if t.get("account") == "cash" else "card"}
+
+
+def _date_query(month, start, end):
     q = {}
     if month:
         q["month"] = month
-    return await db.transactions.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
+    if start or end:
+        dq = {}
+        if start:
+            dq["$gte"] = start
+        if end:
+            dq["$lte"] = end
+        q["date"] = dq
+    return q
+
+
+@api_router.get("/transactions")
+async def get_transactions(month: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
+                           payment_method: Optional[str] = None, user: dict = Depends(get_current_user)):
+    q = _date_query(month, start, end)
+    rmap = await refund_map()
+    rows = await db.transactions.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
+    out = [serialize_txn(t, rmap) for t in rows]
+    if payment_method in ("cash", "card"):
+        out = [t for t in out if t.get("payment_method") == payment_method]
+    return out
 
 
 @api_router.post("/transactions/expense")
@@ -442,9 +678,64 @@ async def add_expense(body: ExpenseBody, user: dict = Depends(get_current_user))
     return res
 
 
+@api_router.put("/transactions/{tid}")
+async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get_current_user)):
+    t = await db.transactions.find_one({"id": tid}, {"_id": 0})
+    if not t:
+        raise HTTPException(404, "Transaction not found")
+    updates = {}
+    if body.description is not None:
+        updates["description"] = body.description
+        updates["merchant"] = body.description if not t.get("merchant") else t.get("merchant")
+    if body.category is not None:
+        updates["category"] = body.category
+    if body.notes is not None:
+        updates["notes"] = body.notes
+    if body.payment_method in ("cash", "card"):
+        updates["account"] = "cash" if body.payment_method == "cash" else "revolut"
+    if body.account in ("cash", "revolut"):
+        updates["account"] = body.account
+    if body.date:
+        updates["date"] = body.date
+        updates["month"] = month_of(body.date)
+    if body.amount is not None and t.get("type") == "expense":
+        new_gross = round(float(body.amount), 2)
+        old_gross = t.get("gross_amount", 0) or 0
+        splits = t.get("splits", [])
+        if body.personal_amount is not None:
+            personal = round(min(float(body.personal_amount), new_gross), 2)
+            splits = [{"person_id": "me", "person_name": "Me", "amount": personal, "is_me": True}]
+            others = round(new_gross - personal, 2)
+            existing_others = [s for s in t.get("splits", []) if not s["is_me"]]
+            if existing_others and others > 0:
+                each = round(others / len(existing_others), 2)
+                for s in existing_others:
+                    splits.append({**s, "amount": each})
+            updates["personal_amount"] = personal
+        elif len(splits) > 1 and old_gross > 0:
+            factor = new_gross / old_gross
+            splits = [{**s, "amount": round(s["amount"] * factor, 2)} for s in splits]
+            updates["personal_amount"] = round(next((s["amount"] for s in splits if s["is_me"]), 0), 2)
+        else:
+            splits = [{"person_id": "me", "person_name": "Me", "amount": new_gross, "is_me": True}]
+            updates["personal_amount"] = new_gross
+        updates["gross_amount"] = new_gross
+        updates["splits"] = splits
+        updates["reimbursable_amount"] = round(new_gross - updates["personal_amount"], 2)
+    elif body.personal_amount is not None and t.get("type") == "expense":
+        gross = t.get("gross_amount", 0)
+        personal = round(min(float(body.personal_amount), gross), 2)
+        updates["personal_amount"] = personal
+        updates["reimbursable_amount"] = round(gross - personal, 2)
+    await db.transactions.update_one({"id": tid}, {"$set": updates})
+    rmap = await refund_map()
+    return serialize_txn(await db.transactions.find_one({"id": tid}, {"_id": 0}), rmap)
+
+
 @api_router.delete("/transactions/{tid}")
 async def delete_transaction(tid: str, user: dict = Depends(get_current_user)):
     await db.transactions.delete_one({"id": tid})
+    await db.settlements.delete_many({"transaction_id": tid})
     return {"ok": True}
 
 
@@ -480,7 +771,8 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     s = {"id": new_id(), "person_id": person["id"], "person_name": person["name"],
          "amount": round(body.amount, 2), "method": body.method, "account": body.account,
-         "direction": body.direction, "date": date, "created_at": now_iso()}
+         "direction": body.direction, "date": date, "transaction_id": body.transaction_id,
+         "created_at": now_iso()}
     await db.settlements.insert_one(dict(s))
     s.pop("_id", None)
     return s
@@ -490,36 +782,60 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
 # Analytics
 # ---------------------------------------------------------------------------
 @api_router.get("/analytics/summary")
-async def analytics_summary(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def analytics_summary(month: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
+                            user: dict = Depends(get_current_user)):
     accounts = await get_accounts(user)
     cash = next((a["balance"] for a in accounts if a["id"] == "cash"), 0)
     revolut = next((a["balance"] for a in accounts if a["id"] == "revolut"), 0)
 
-    q = {"type": "expense"}
-    if month:
-        q["month"] = month
-    gross = personal = 0.0
+    q = {**_date_query(month, start, end), "type": "expense"}
+    gross = personal = cash_spent = card_spent = reimbursable = 0.0
     by_cat = {}
     by_day = {}
     async for t in db.transactions.find(q, {"_id": 0}):
         gross += t["gross_amount"]
-        personal += t["personal_amount"]
+        personal += t.get("personal_amount", 0)
+        reimbursable += t.get("reimbursable_amount", 0)
+        if t.get("account") == "cash":
+            cash_spent += t["gross_amount"]
+        else:
+            card_spent += t["gross_amount"]
         by_cat[t["category"]] = by_cat.get(t["category"], 0) + t["gross_amount"]
         by_day[t["date"]] = by_day.get(t["date"], 0) + t["gross_amount"]
+
+    # refunds received in the same window
+    sq = _date_query(None, start, end)
+    sq["direction"] = "in"
+    if month:
+        sq = {"direction": "in"}  # month filter uses settlement date prefix below
+    refunded = 0.0
+    async for s in db.settlements.find(sq, {"_id": 0}):
+        if month and not str(s.get("date", "")).startswith(month):
+            continue
+        refunded += s["amount"]
 
     people = await people_balances()
     owed_to_me = round(sum(p["owes_me"] for p in people), 2)
     i_owe = round(sum(p["i_owe"] for p in people), 2)
     outstanding = round(sum(max(p["net"], 0) for p in people), 2)
 
+    # grocery intelligence
+    groceries = await db.groceries.find({}, {"_id": 0}).to_list(2000)
+    out_of_stock = [g["name"] for g in groceries if (g.get("quantity") or 0) <= 0]
+    low_stock = [g["name"] for g in groceries if (g.get("quantity") or 0) > 0 and g.get("low_threshold") and g["quantity"] <= g["low_threshold"]]
+    unknown_price = [g["name"] for g in groceries if g.get("price") is None]
+
     months = await db.transactions.distinct("month")
     return {
         "cash": cash, "revolut": revolut, "total_available": round(cash + revolut, 2),
         "gross": round(gross, 2), "personal": round(personal, 2),
-        "reimbursable": round(gross - personal, 2),
+        "reimbursable": round(reimbursable, 2),
+        "cash_spent": round(cash_spent, 2), "card_spent": round(card_spent, 2),
+        "refunded": round(refunded, 2), "pending": outstanding,
         "owed_to_me": owed_to_me, "i_owe": i_owe, "outstanding": outstanding,
         "by_category": [{"name": k, "value": round(v, 2)} for k, v in sorted(by_cat.items(), key=lambda x: -x[1])],
         "by_day": [{"date": k, "value": round(v, 2)} for k, v in sorted(by_day.items())],
+        "grocery": {"total": len(groceries), "out_of_stock": out_of_stock, "low_stock": low_stock, "unknown_price": unknown_price},
         "months": sorted(months, reverse=True),
     }
 
@@ -585,19 +901,37 @@ async def get_groceries(user: dict = Depends(get_current_user)):
 
 @api_router.post("/groceries")
 async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user)):
+    await record_price(body.name, body.store, body.price, body.unit)
     existing = await db.groceries.find_one({"name_lower": body.name.lower()})
     if existing:
         await db.groceries.update_one({"id": existing["id"]}, {"$inc": {"quantity": body.quantity},
-                                                                "$set": {"price": body.price or existing.get("price"),
-                                                                         "store": body.store or existing.get("store")}})
+                                                                "$set": {"price": body.price if body.price is not None else existing.get("price"),
+                                                                         "store": body.store or existing.get("store"),
+                                                                         "updated_at": now_iso()}})
         return await db.groceries.find_one({"id": existing["id"]}, {"_id": 0})
     g = {"id": new_id(), "name": body.name, "name_lower": body.name.lower(),
          "quantity": body.quantity, "unit": body.unit, "category": body.category,
          "price": body.price, "store": body.store, "low_threshold": body.low_threshold,
-         "created_at": now_iso()}
+         "notes": body.notes or "", "expiration": body.expiration,
+         "created_at": now_iso(), "updated_at": now_iso()}
     await db.groceries.insert_one(dict(g))
     g.pop("_id", None)
     return g
+
+
+@api_router.put("/groceries/{gid}")
+async def update_grocery(gid: str, body: GroceryUpdate, user: dict = Depends(get_current_user)):
+    g = await db.groceries.find_one({"id": gid}, {"_id": 0})
+    if not g:
+        raise HTTPException(404, "Item not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "name" in updates:
+        updates["name_lower"] = updates["name"].lower()
+    if updates.get("price") is not None:
+        await record_price(updates.get("name", g["name"]), updates.get("store", g.get("store")), updates["price"], updates.get("unit", g.get("unit", "unit")))
+    updates["updated_at"] = now_iso()
+    await db.groceries.update_one({"id": gid}, {"$set": updates})
+    return await db.groceries.find_one({"id": gid}, {"_id": 0})
 
 
 @api_router.delete("/groceries/{gid}")
@@ -632,6 +966,78 @@ async def add_meal(body: MealBody, user: dict = Depends(get_current_user)):
 async def delete_meal(mid: str, user: dict = Depends(get_current_user)):
     await db.meals.delete_one({"id": mid})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Shopping list + price intelligence
+# ---------------------------------------------------------------------------
+@api_router.get("/shopping")
+async def get_shopping(user: dict = Depends(get_current_user)):
+    return await shopping_payload()
+
+
+@api_router.post("/shopping")
+async def post_shopping(body: ShoppingBody, user: dict = Depends(get_current_user)):
+    return await add_shopping_item_doc(body.name, body.quantity, body.unit, body.note)
+
+
+@api_router.post("/shopping/generate")
+async def gen_shopping(days: int = 7, user: dict = Depends(get_current_user)):
+    return await generate_shopping_doc(days)
+
+
+@api_router.delete("/shopping/{sid}")
+async def del_shopping(sid: str, user: dict = Depends(get_current_user)):
+    await db.shopping_items.delete_one({"id": sid})
+    return {"ok": True}
+
+
+@api_router.post("/shopping/{sid}/buy")
+async def buy_shopping(sid: str, body: BuyBody, user: dict = Depends(get_current_user)):
+    it = await db.shopping_items.find_one({"id": sid}, {"_id": 0})
+    if not it:
+        raise HTTPException(404, "Item not found")
+    await add_grocery(GroceryBody(name=it["name"], quantity=it.get("quantity", 1), unit=it.get("unit", "unit"),
+                                  price=body.price, store=body.store), user)
+    await db.shopping_items.delete_one({"id": sid})
+    return {"ok": True}
+
+
+@api_router.get("/prices/{name}")
+async def get_prices(name: str, user: dict = Depends(get_current_user)):
+    per_store = await latest_prices(name.lower())
+    history = await db.price_records.find({"name_lower": name.lower()}, {"_id": 0}).sort("date", -1).to_list(100)
+    return {"name": name, "per_store": per_store, "cheapest": cheapest_store(per_store), "history": history}
+
+
+# ---------------------------------------------------------------------------
+# Recipes
+# ---------------------------------------------------------------------------
+@api_router.get("/recipes")
+async def get_recipes(user: dict = Depends(get_current_user)):
+    return await db.recipes.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+
+
+@api_router.post("/recipes")
+async def create_recipe(body: RecipeBody, user: dict = Depends(get_current_user)):
+    r = {"id": new_id(), **body.model_dump(), "created_at": now_iso()}
+    await db.recipes.insert_one(dict(r))
+    r.pop("_id", None)
+    return r
+
+
+@api_router.delete("/recipes/{rid}")
+async def delete_recipe(rid: str, user: dict = Depends(get_current_user)):
+    await db.recipes.delete_one({"id": rid})
+    return {"ok": True}
+
+
+@api_router.post("/recipes/{rid}/cook")
+async def cook_recipe(rid: str, user: dict = Depends(get_current_user)):
+    r = await db.recipes.find_one({"id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Recipe not found")
+    return await cook_recipe_doc(r)
 
 
 # ---------------------------------------------------------------------------
@@ -750,6 +1156,59 @@ AI_TOOLS = [
         "description": "Get how much each person owes Sá and how much Sá owes them.",
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "update_expense",
+        "description": "Modify an existing expense. Identify it by a text 'match' on its merchant/description. You can change amount, personal_amount, category, payment_method (cash or card), date or notes.",
+        "parameters": {"type": "object", "properties": {
+            "match": {"type": "string", "description": "Text to find the expense, e.g. 'restaurant' or 'Lidl'"},
+            "amount": {"type": "number"}, "personal_amount": {"type": "number"},
+            "category": {"type": "string"}, "payment_method": {"type": "string", "enum": ["cash", "card"]},
+            "date": {"type": "string"}, "notes": {"type": "string"}, "description": {"type": "string"}},
+            "required": ["match"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_expense",
+        "description": "Delete an expense identified by a text 'match'. This is destructive: call first WITHOUT confirm to preview, then only call again with confirm=true after the user explicitly agrees.",
+        "parameters": {"type": "object", "properties": {
+            "match": {"type": "string"}, "confirm": {"type": "boolean"}}, "required": ["match"]},
+    }},
+    {"type": "function", "function": {
+        "name": "mark_refunded",
+        "description": "Record that a person refunded part or all of an expense. Links the refund to the matched expense so its remaining refund updates. direction is always 'in'.",
+        "parameters": {"type": "object", "properties": {
+            "match": {"type": "string", "description": "Text to find the expense being refunded"},
+            "person": {"type": "string"}, "amount": {"type": "number"},
+            "method": {"type": "string", "enum": ["MB WAY", "Revolut", "Cash"]},
+            "account": {"type": "string", "enum": ["cash", "revolut"]}}, "required": ["person", "amount"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_grocery",
+        "description": "Update a grocery inventory item by name: change quantity/stock, price, unit, category, low_threshold or notes.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "quantity": {"type": "number"}, "price": {"type": "number"},
+            "unit": {"type": "string"}, "category": {"type": "string"}, "low_threshold": {"type": "number"},
+            "notes": {"type": "string"}}, "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "generate_shopping_list",
+        "description": "Build a shopping list from current inventory (low/out of stock) and the owner's usual buys, then return price intelligence and the cheaper store recommendation.",
+        "parameters": {"type": "object", "properties": {"days": {"type": "number"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "create_recipe",
+        "description": "Create a recipe with ingredients (name, quantity, unit) and optional nutrition per whole recipe.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "servings": {"type": "number"},
+            "ingredients": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"}}}},
+            "calories": {"type": "number"}, "protein": {"type": "number"}, "carbs": {"type": "number"}, "fat": {"type": "number"}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "cook_recipe",
+        "description": "Cook a recipe by name: subtract its ingredients from grocery inventory and log a meal.",
+        "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    }},
 ]
 
 AI_SYSTEM = f"""You are the intelligence layer of Life Manager, a private personal life-management app for its owner, {OWNER_NAME}.
@@ -757,12 +1216,27 @@ You turn raw natural language into structured, connected data by calling tools. 
 
 Rules:
 - When the owner refers to themselves, use the participant name "Me".
+- Payment methods are "cash" and "card" (card = Revolut). When creating expenses, map card->account "revolut", cash->account "cash".
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
-- If something is genuinely ambiguous and financially important (e.g. who to split with, or an amount), ASK a short clarifying question instead of guessing.
-- For nutrition you MAY estimate calories/macros from typical food values, but keep estimates reasonable and mention they are estimates.
-- After performing actions, give a concise summary of exactly what changed (amounts, shares, reimbursements, inventory). Be warm but brief. Use € for currency.
+- To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record a refund use mark_refunded (or record_payment for a general person payment).
+- NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
+- If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
+- For destructive actions (delete, large bulk changes) always confirm with the user first.
+- For nutrition you MAY estimate calories/macros from typical food values, but say they are estimates.
+- After performing actions, give a concise summary of exactly what changed (amounts, shares, refunds, remaining owed, inventory). Be warm but brief. Use € for currency.
 - Today's date is {{today}}.
 """
+
+
+async def find_expense(match: str) -> Optional[dict]:
+    match = (match or "").strip()
+    if not match:
+        rows = await db.transactions.find({"type": "expense"}, {"_id": 0}).sort("date", -1).to_list(1)
+        return rows[0] if rows else None
+    rx = {"$regex": match, "$options": "i"}
+    return await db.transactions.find_one(
+        {"type": "expense", "$or": [{"merchant": rx}, {"description": rx}, {"category": rx}]},
+        {"_id": 0}, sort=[("date", -1)])
 
 
 async def dispatch_tool(name: str, args: dict, created: list) -> dict:
@@ -811,6 +1285,56 @@ async def dispatch_tool(name: str, args: dict, created: list) -> dict:
             return await analytics_summary(month=args.get("month"), user={"_id": "ai"})
         if name == "get_people_balances":
             return await people_balances()
+        if name == "update_expense":
+            t = await find_expense(args.get("match", ""))
+            if not t:
+                return {"error": f"No expense found matching '{args.get('match')}'"}
+            upd = TxnUpdate(amount=args.get("amount"), personal_amount=args.get("personal_amount"),
+                            category=args.get("category"), payment_method=args.get("payment_method"),
+                            date=args.get("date"), notes=args.get("notes"), description=args.get("description"))
+            res = await update_transaction(t["id"], upd, {"_id": "ai"})
+            return {"updated": res}
+        if name == "delete_expense":
+            t = await find_expense(args.get("match", ""))
+            if not t:
+                return {"error": f"No expense found matching '{args.get('match')}'"}
+            if not args.get("confirm"):
+                return {"needs_confirmation": True,
+                        "message": f"This will permanently delete '{t.get('merchant') or t.get('description')}' (€{t.get('gross_amount')}) from {t.get('date')}. Ask the user to confirm before deleting."}
+            await delete_transaction(t["id"], {"_id": "ai"})
+            return {"deleted": t.get("merchant") or t.get("description"), "amount": t.get("gross_amount")}
+        if name == "mark_refunded":
+            tid = None
+            if args.get("match"):
+                t = await find_expense(args["match"])
+                tid = t["id"] if t else None
+            s = await add_settlement(SettlementBody(
+                person=args["person"], amount=args["amount"], method=args.get("method", "Revolut"),
+                account=args.get("account", "revolut"), direction="in", transaction_id=tid), {"_id": "ai"})
+            created.append({"collection": "settlements", "id": s["id"]})
+            return {"settlement": s, "linked_to_expense": tid is not None}
+        if name == "update_grocery":
+            g = await db.groceries.find_one({"name_lower": args["name"].lower()}, {"_id": 0})
+            if not g:
+                return {"error": f"No grocery item named '{args['name']}'"}
+            upd = GroceryUpdate(**{k: v for k, v in args.items() if k in GroceryUpdate.model_fields and k != "name"})
+            res = await update_grocery(g["id"], upd, {"_id": "ai"})
+            return {"updated": res}
+        if name == "generate_shopping_list":
+            return await generate_shopping_doc(int(args.get("days", 7)))
+        if name == "create_recipe":
+            body = RecipeBody(name=args["name"], servings=int(args.get("servings", 1)),
+                              ingredients=[RecipeIngredient(**i) for i in args.get("ingredients", [])],
+                              calories=args.get("calories"), protein=args.get("protein"),
+                              carbs=args.get("carbs"), fat=args.get("fat"))
+            r = await create_recipe(body, {"_id": "ai"})
+            created.append({"collection": "recipes", "id": r["id"]})
+            return r
+        if name == "cook_recipe":
+            r = await db.recipes.find_one({"name": {"$regex": f"^{args['name']}$", "$options": "i"}}, {"_id": 0})
+            if not r:
+                return {"error": f"No recipe named '{args['name']}'"}
+            return await cook_recipe_doc(r)
     except Exception as e:
         logger.exception("tool error")
         return {"error": str(e)}
@@ -947,7 +1471,29 @@ async def seed():
         for n, q, u, c, p, s, lt in gs:
             await db.groceries.insert_one({"id": new_id(), "name": n, "name_lower": n.lower(), "quantity": q,
                                            "unit": u, "category": c, "price": p, "store": s, "low_threshold": lt,
-                                           "created_at": now_iso()})
+                                           "notes": "", "expiration": None,
+                                           "created_at": now_iso(), "updated_at": now_iso()})
+
+    if await db.price_records.count_documents({}) == 0:
+        pr = [
+            ("Eggs", "Lidl", 3.49, "2025-09-25"), ("Eggs", "Mercadona", 3.89, "2025-09-17"), ("Eggs", "Supeco", 3.29, "2025-09-10"),
+            ("Milk", "Mercadona", 0.89, "2025-09-17"), ("Milk", "Lidl", 0.95, "2025-09-25"),
+            ("Chicken breast", "Mercadona", 5.20, "2025-10-08"), ("Chicken breast", "Lidl", 5.60, "2025-11-04"),
+            ("Tuna", "Supeco", 3.29, "2025-09-10"), ("Tuna", "Lidl", 2.99, "2025-11-04"), ("Tuna", "Mercadona", 3.49, "2025-10-08"),
+            ("Gouda", "Lidl", 4.98, "2025-09-25"), ("Gouda", "Mercadona", 5.20, "2025-10-08"),
+            ("Bread", "Lidl", 0.95, "2025-11-04"), ("Bread", "Mercadona", 1.10, "2025-10-08"),
+        ]
+        for n, s, p, d in pr:
+            await db.price_records.insert_one({"id": new_id(), "name": n, "name_lower": n.lower(), "store": s,
+                                               "price": p, "unit": "unit", "date": d, "created_at": now_iso()})
+
+    if await db.recipes.count_documents({}) == 0:
+        await db.recipes.insert_one({"id": new_id(), "name": "Protein scramble", "servings": 1,
+                                     "ingredients": [{"name": "Eggs", "quantity": 3, "unit": "unit"},
+                                                     {"name": "Gouda", "quantity": 30, "unit": "g"},
+                                                     {"name": "Bread", "quantity": 1, "unit": "unit"}],
+                                     "calories": 520, "protein": 34, "carbs": 30, "fat": 28,
+                                     "notes": "Quick high-protein breakfast.", "created_at": now_iso()})
 
     if await db.meals.count_documents({}) == 0:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1010,12 +1556,21 @@ async def seed_transactions():
     await exp(13.20, "McDonald's", "Eating Out", "cash", "2025-11-09", participants=["Me", "Ferreira"], split_mode="equal")
     await exp(52.00, "Decathlon", "Fitness", "revolut", "2025-11-12")
 
+    # recent activity (so Day / Week views show real data relative to today)
+    now = datetime.now(timezone.utc)
+    d0 = now.strftime("%Y-%m-%d")
+    d2 = (now - timedelta(days=2)).strftime("%Y-%m-%d")
+    d5 = (now - timedelta(days=5)).strftime("%Y-%m-%d")
+    await exp(8.60, "Mercadona", "Groceries", "cash", d0)
+    await exp(23.40, "Lidl", "Groceries", "revolut", d2, participants=["Me", "Broca"], split_mode="equal")
+    await exp(6.90, "McDonald's", "Eating Out", "cash", d5)
+
     # a couple of settlements
     ferreira = pmap.get("Ferreira")
     if ferreira:
         await db.settlements.insert_one({"id": new_id(), "person_id": ferreira["id"], "person_name": "Ferreira",
                                          "amount": 5.00, "method": "Revolut", "account": "revolut",
-                                         "direction": "in", "date": "2025-10-20", "created_at": now_iso()})
+                                         "direction": "in", "date": "2025-10-20", "transaction_id": None, "created_at": now_iso()})
 
 
 @app.on_event("startup")

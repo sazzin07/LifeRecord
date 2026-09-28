@@ -12,11 +12,17 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    window.dispatchEvent(new CustomEvent("lm:online"));
+    return r;
+  },
   (err) => {
     if (err.response && err.response.status === 401 && localStorage.getItem("lm_token")) {
       localStorage.removeItem("lm_token");
       if (!window.location.pathname.includes("/login")) window.location.href = "/login";
+    }
+    if (!err.response) {
+      window.dispatchEvent(new CustomEvent("lm:offline"));
     }
     return Promise.reject(err);
   }

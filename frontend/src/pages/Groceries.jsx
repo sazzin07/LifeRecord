@@ -131,7 +131,7 @@ export default function Groceries() {
             <Card>
               <div className="divide-y divide-border">
                 {arr.map((g) => {
-                  const isLow = (g.quantity || 0) > 0 && g.low_threshold && g.quantity <= g.low_threshold;
+                  const isLow = (g.quantity || 0) > 0 && !!g.low_threshold && g.quantity <= g.low_threshold;
                   const isOut = (g.quantity || 0) <= 0;
                   return (
                     <div key={g.id} data-testid={`grocery-${g.id}`} className="flex items-center gap-3 px-5 py-3 group">

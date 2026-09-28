@@ -32,3 +32,15 @@ Money (accounts, expenses, splits, reimbursements, settlements, analytics), Peop
 
 ## Next tasks
 Recipes + inventory consumption; workout logging with history; progress photos via object storage.
+
+## Iteration 2 (2026-09) — Expense/Refund + Grocery + AI deep control
+- Expense management fully dynamic: per-expense total, personal cost, to-be-refunded, already-refunded (linked settlements), remaining, responsible people, payment method (Cash/Card=Revolut), refund status. Full CRUD incl. EDIT (PUT /api/transactions/{id}, proportional split-scaling) and delete (removes linked refunds).
+- Money page: period filters Day / Week / All Time + September/October/November 2026, future months auto-disabled from real current date (2026-09-28 → Oct/Nov disabled). Payment-method filter All/Card/Cash. Card-vs-cash spending, pending-vs-refunded totals.
+- Refund engine: settlements can link to a specific expense (transaction_id) → per-expense remaining + person balances stay consistent (single source of truth, no double counting).
+- Groceries: full CRUD, stock +/- steppers, price shown or "Unknown", notes/expiration, low/out-of-stock intelligence, per-store price history.
+- Smart shopping list + price intelligence: generate from low stock + usual buys; per-item cheapest store; single vs split store basket comparison + recommendation.
+- Recipes: create + Cook (subtracts ingredients from inventory, logs a meal).
+- AI tools: update_expense, delete_expense (confirms first), mark_refunded, update_grocery, generate_shopping_list, create_recipe, cook_recipe — all real DB ops, verified live.
+- Dashboard insights from real summary; offline/fallback banner; no fabricated financial data.
+- Tests: backend 23/23 + 10/10 new pass; frontend verified end-to-end.
+

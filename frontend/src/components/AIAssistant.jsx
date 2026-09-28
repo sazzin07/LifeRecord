@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, X, Send, Mic, Paperclip, Loader2, Square, Undo2 } from "lucide-react";
+import { Sparkles, X, Send, Mic, Paperclip, Loader2, Square, Undo2, ScanLine, MessageSquare, History } from "lucide-react";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Avatar } from "@/components/common";
+import { ReceiptReview } from "@/components/ReceiptReview";
 import { toast } from "sonner";
 
 const SUGGESTIONS = [
@@ -26,8 +27,27 @@ export function AIAssistant() {
   const scrollRef = useRef(null);
   const recRef = useRef(null);
   const loc = useLocation();
+  const [tab, setTab] = useState("chat");
+  const [actions, setActions] = useState([]);
+  const [receiptData, setReceiptData] = useState(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => { setOpen(false); }, [loc.pathname]);
+
+  const loadActions = async () => { try { const { data } = await api.get("/ai/actions"); setActions(data); } catch { /* ignore */ } };
+  useEffect(() => { if (open && tab === "activity") loadActions(); }, [open, tab]);
+  const undoAction = async (id) => {
+    try { await api.post(`/ai/actions/${id}/undo`); toast.success("Change undone"); refreshAll(); loadActions(); }
+    catch { toast.error("Could not undo this action"); }
+  };
+  const scanReceipt = async () => {
+    if (!image) return;
+    setScanning(true);
+    try { const { data } = await api.post("/ai/receipt", { image_base64: image }); setReceiptData(data); setReceiptOpen(true); setImage(null); }
+    catch { toast.error("Could not read receipt"); }
+    finally { setScanning(false); }
+  };
 
   useEffect(() => { localStorage.setItem("lm_ai_session", session); }, [session]);
 
@@ -132,7 +152,38 @@ export function AIAssistant() {
                 </button>
               </div>
 
+              <div className="flex gap-1 px-4 pt-3">
+                {[["chat", "Chat", MessageSquare], ["activity", "Activity", History]].map(([k, l, Ic]) => (
+                  <button key={k} data-testid={`ai-tab-${k}`} onClick={() => setTab(k)}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${tab === k ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100" : "text-slate-500"}`}>
+                    <Ic className="h-3.5 w-3.5" />{l}
+                  </button>
+                ))}
+              </div>
+
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                {tab === "activity" ? (
+                  <div className="space-y-2" data-testid="activity-feed">
+                    {actions.length === 0 ? (
+                      <p className="text-sm text-slate-500 pt-6 text-center">No AI activity yet. Ask me to add or change something.</p>
+                    ) : actions.map((a) => (
+                      <div key={a.id} data-testid={`activity-${a.id}`} className="rounded-xl border border-border bg-card p-3">
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5 h-6 w-6 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 grid place-items-center shrink-0"><Sparkles className="h-3 w-3 text-emerald-600" /></div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] text-slate-400">{new Date(a.created_at).toLocaleString()}</p>
+                            <p className="text-sm mt-0.5">{a.label}</p>
+                            {a.tools?.length > 0 && <p className="text-[11px] text-slate-400 mt-1">{a.tools.join(", ")}</p>}
+                          </div>
+                        </div>
+                        {a.undoable && !a.undone && (
+                          <button onClick={() => undoAction(a.id)} data-testid={`undo-${a.id}`} className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1 hover:underline"><Undo2 className="h-3 w-3" />Undo</button>
+                        )}
+                        {a.undone && <span className="mt-2 inline-block text-xs text-slate-400">✓ Undone</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (<>
                 {msgs.length === 0 && (
                   <div className="pt-6">
                     <p className="text-sm text-slate-500 mb-3">Try one of these</p>
@@ -166,13 +217,17 @@ export function AIAssistant() {
                     </div>
                   </div>
                 )}
+                </>)}
               </div>
 
-              <div className="border-t border-border p-3">
+              <div className="border-t border-border p-3" style={{ display: tab === "chat" ? "block" : "none" }}>
                 {image && (
                   <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
                     <img src={image} alt="preview" className="h-10 w-10 rounded-lg object-cover" />
-                    Receipt attached
+                    Image attached
+                    <button onClick={scanReceipt} disabled={scanning} data-testid="ai-scan-receipt" className="rounded-lg bg-emerald-600 text-white px-2.5 py-1 font-medium inline-flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-50">
+                      <ScanLine className="h-3.5 w-3.5" />{scanning ? "Reading…" : "Scan receipt"}
+                    </button>
                     <button onClick={() => setImage(null)} className="ml-auto text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 )}
@@ -199,6 +254,7 @@ export function AIAssistant() {
           </>
         )}
       </AnimatePresence>
+      <ReceiptReview data={receiptData} open={receiptOpen} setOpen={setReceiptOpen} />
     </>
   );
 }

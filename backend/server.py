@@ -12,8 +12,9 @@ from datetime import datetime, timezone, timedelta
 
 import jwt
 import bcrypt
+import requests
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File, Header, Query, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -36,6 +37,47 @@ api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lifemanager")
+
+
+# ---------------------------------------------------------------------------
+# Object storage (Emergent) for progress photos
+# ---------------------------------------------------------------------------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+APP_NAME = "life-manager"
+_storage_key = None
+
+
+def init_storage(force: bool = False):
+    global _storage_key
+    if _storage_key and not force:
+        return _storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=30)
+    resp.raise_for_status()
+    _storage_key = resp.json()["storage_key"]
+    return _storage_key
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    resp = requests.put(f"{STORAGE_URL}/objects/{path}",
+                        headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+    if resp.status_code == 404:
+        key = init_storage(force=True)
+        resp = requests.put(f"{STORAGE_URL}/objects/{path}",
+                            headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str):
+    key = init_storage()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    if resp.status_code == 404:
+        key = init_storage(force=True)
+        resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
 def now_iso():
@@ -254,6 +296,30 @@ class AIChatBody(BaseModel):
     session_id: Optional[str] = None
     image_base64: Optional[str] = None
     confirm_token: Optional[str] = None
+
+
+class WorkoutSet(BaseModel):
+    reps: Optional[int] = None
+    weight: Optional[float] = None
+
+
+class WorkoutExercise(BaseModel):
+    name: str
+    is_isometric: bool = False
+    sets: List[WorkoutSet] = []
+    duration: Optional[int] = None
+    note: str = ""
+
+
+class WorkoutBody(BaseModel):
+    type: str = "Push"
+    date: Optional[str] = None
+    exercises: List[WorkoutExercise] = []
+    notes: str = ""
+
+
+class PhotoNote(BaseModel):
+    note: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -892,6 +958,97 @@ async def delete_weight(wid: str, user: dict = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Workouts
+# ---------------------------------------------------------------------------
+@api_router.get("/workouts")
+async def get_workouts(user: dict = Depends(get_current_user)):
+    return await db.workouts.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
+
+
+async def create_workout(body: WorkoutBody, user) -> dict:
+    date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    w = {"id": new_id(), "type": body.type, "date": date, "notes": body.notes,
+         "exercises": [e.model_dump() for e in body.exercises], "created_at": now_iso()}
+    await db.workouts.insert_one(dict(w))
+    w.pop("_id", None)
+    return w
+
+
+@api_router.post("/workouts")
+async def post_workout(body: WorkoutBody, user: dict = Depends(get_current_user)):
+    return await create_workout(body, user)
+
+
+@api_router.delete("/workouts/{wid}")
+async def delete_workout(wid: str, user: dict = Depends(get_current_user)):
+    await db.workouts.delete_one({"id": wid})
+    return {"ok": True}
+
+
+@api_router.get("/workouts/prs")
+async def workout_prs(user: dict = Depends(get_current_user)):
+    prs = {}
+    async for w in db.workouts.find({}, {"_id": 0}):
+        for e in w.get("exercises", []):
+            name = e["name"]
+            p = prs.setdefault(name, {"name": name, "best_weight": 0, "best_reps": 0, "best_duration": 0, "is_isometric": e.get("is_isometric", False)})
+            if e.get("duration"):
+                p["best_duration"] = max(p["best_duration"], e["duration"])
+                p["is_isometric"] = True
+            for s in e.get("sets", []):
+                if s.get("weight"):
+                    p["best_weight"] = max(p["best_weight"], s["weight"])
+                if s.get("reps"):
+                    p["best_reps"] = max(p["best_reps"], s["reps"])
+    return list(prs.values())
+
+
+# ---------------------------------------------------------------------------
+# Progress photos (object storage)
+# ---------------------------------------------------------------------------
+@api_router.post("/photos")
+async def upload_photo(file: UploadFile = File(...), note: str = Query(""), user: dict = Depends(get_current_user)):
+    ext = (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg").lower()
+    path = f"{APP_NAME}/photos/{user['_id']}/{new_id()}.{ext}"
+    data = await file.read()
+    ct = file.content_type or {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+    result = put_object(path, data, ct)
+    doc = {"id": new_id(), "storage_path": result["path"], "content_type": ct, "note": note,
+           "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "is_deleted": False, "created_at": now_iso()}
+    await db.photos.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/photos")
+async def list_photos(user: dict = Depends(get_current_user)):
+    rows = await db.photos.find({"is_deleted": False}, {"_id": 0}).sort("date", -1).to_list(1000)
+    for r in rows:
+        r["url"] = f"/api/photos/file/{r['storage_path']}"
+    return rows
+
+
+@api_router.delete("/photos/{pid}")
+async def delete_photo(pid: str, user: dict = Depends(get_current_user)):
+    await db.photos.update_one({"id": pid}, {"$set": {"is_deleted": True}})
+    return {"ok": True}
+
+
+@api_router.get("/photos/file/{path:path}")
+async def serve_photo(path: str, auth: str = Query(None), authorization: str = Header(None)):
+    token = auth or (authorization[7:] if authorization and authorization.startswith("Bearer ") else None)
+    try:
+        jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except Exception:
+        raise HTTPException(401, "Not authenticated")
+    record = await db.photos.find_one({"storage_path": path, "is_deleted": False})
+    if not record:
+        raise HTTPException(404, "Not found")
+    data, ct = get_object(path)
+    return Response(content=data, media_type=record.get("content_type", ct))
+
+
+# ---------------------------------------------------------------------------
 # Groceries
 # ---------------------------------------------------------------------------
 @api_router.get("/groceries")
@@ -1080,6 +1237,36 @@ async def transcribe(file: UploadFile = File(...), user: dict = Depends(get_curr
 
 
 # ---------------------------------------------------------------------------
+# Receipt parsing (extract only, no save — for the review screen)
+# ---------------------------------------------------------------------------
+@api_router.post("/ai/receipt")
+async def parse_receipt(body: AIChatBody, user: dict = Depends(get_current_user)):
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    if not body.image_base64:
+        raise HTTPException(400, "No image provided")
+    chat = (LlmChat(api_key=EMERGENT_LLM_KEY, session_id=new_id(),
+                    system_message="You extract structured data from receipt photos. Respond ONLY with compact JSON, no prose.")
+            .with_model("gemini", "gemini-3-flash-preview"))
+    b64 = body.image_base64.split(",")[-1]
+    prompt = ('Extract this receipt as JSON with this exact shape: '
+              '{"merchant": string, "date": "YYYY-MM-DD" or null, "total": number, '
+              '"items": [{"name": string, "price": number}]}. '
+              'Only include line items and prices you can actually read. NEVER invent prices. Respond with JSON only.')
+    try:
+        resp = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b64)]))
+        text = resp if isinstance(resp, str) else getattr(resp, "content", str(resp))
+        import re
+        m = re.search(r"\{.*\}", text, re.S)
+        data = json.loads(m.group(0)) if m else {"items": []}
+    except Exception as e:
+        logger.exception("receipt parse failed")
+        raise HTTPException(500, f"Could not read receipt: {e}")
+    data.setdefault("items", [])
+    data.setdefault("merchant", "")
+    return data
+
+
+# ---------------------------------------------------------------------------
 # AI Assistant with tools
 # ---------------------------------------------------------------------------
 AI_TOOLS = [
@@ -1209,6 +1396,18 @@ AI_TOOLS = [
         "description": "Cook a recipe by name: subtract its ingredients from grocery inventory and log a meal.",
         "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }},
+    {"type": "function", "function": {
+        "name": "log_workout",
+        "description": "Log a completed workout session. type is Push/Pull/Legs or custom. Each exercise has a name, optional is_isometric, a duration in seconds (for isometrics like dead hang) and/or a list of sets with reps and weight (kg, 0 for bodyweight).",
+        "parameters": {"type": "object", "properties": {
+            "type": {"type": "string"}, "date": {"type": "string"},
+            "exercises": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "is_isometric": {"type": "boolean"},
+                "duration": {"type": "number"},
+                "sets": {"type": "array", "items": {"type": "object", "properties": {
+                    "reps": {"type": "number"}, "weight": {"type": "number"}}}}}}},
+            "notes": {"type": "string"}}, "required": ["type"]},
+    }},
 ]
 
 AI_SYSTEM = f"""You are the intelligence layer of Life Manager, a private personal life-management app for its owner, {OWNER_NAME}.
@@ -1335,6 +1534,14 @@ async def dispatch_tool(name: str, args: dict, created: list) -> dict:
             if not r:
                 return {"error": f"No recipe named '{args['name']}'"}
             return await cook_recipe_doc(r)
+        if name == "log_workout":
+            body = WorkoutBody(type=args.get("type", "Push"), date=args.get("date"), notes=args.get("notes", ""),
+                               exercises=[WorkoutExercise(name=e["name"], is_isometric=e.get("is_isometric", False),
+                                                          duration=e.get("duration"),
+                                                          sets=[WorkoutSet(**s) for s in e.get("sets", [])]) for e in args.get("exercises", [])])
+            w = await create_workout(body, {"_id": "ai"})
+            created.append({"collection": "workouts", "id": w["id"]})
+            return w
     except Exception as e:
         logger.exception("tool error")
         return {"error": str(e)}
@@ -1394,15 +1601,15 @@ async def ai_chat(body: AIChatBody, user: dict = Depends(get_current_user)):
     await db.ai_messages.insert_one({"session_id": session_id, "role": "user", "text": body.message, "created_at": now_iso()})
     await db.ai_messages.insert_one({"session_id": session_id, "role": "assistant", "text": reply or "", "created_at": now_iso()})
 
-    if created:
-        label = tool_summary[0]["tool"].replace("_", " ").title() if tool_summary else "AI action"
+    if tool_summary:
+        label = reply[:140] if reply else (tool_summary[0]["tool"].replace("_", " ").title())
         await db.ai_actions.insert_one({
-            "id": new_id(), "label": reply[:120] if reply else label,
+            "id": new_id(), "label": label,
             "tools": [t["tool"] for t in tool_summary], "created": created,
-            "undone": False, "created_at": now_iso(),
+            "undoable": len(created) > 0, "undone": False, "created_at": now_iso(),
         })
 
-    return {"reply": reply, "session_id": session_id, "actions": tool_summary, "changed": len(created) > 0}
+    return {"reply": reply, "session_id": session_id, "actions": tool_summary, "changed": len(created) > 0 or len(tool_summary) > 0}
 
 
 @api_router.get("/ai/history")
@@ -1502,6 +1709,22 @@ async def seed():
             {"id": new_id(), "description": "200g alcatra, 3 eggs, 300ml milk", "date": today, "calories": 690, "protein": 62, "carbs": 14, "fat": 42, "created_at": now_iso()},
         ])
 
+    if await db.workouts.count_documents({}) == 0:
+        now = datetime.now(timezone.utc)
+        await db.workouts.insert_many([
+            {"id": new_id(), "type": "Pull", "date": (now - timedelta(days=3)).strftime("%Y-%m-%d"), "notes": "",
+             "exercises": [
+                 {"name": "Pull-ups", "is_isometric": False, "duration": None, "note": "", "sets": [{"reps": 8, "weight": 0}, {"reps": 7, "weight": 0}, {"reps": 6, "weight": 0}]},
+                 {"name": "Rows", "is_isometric": False, "duration": None, "note": "", "sets": [{"reps": 10, "weight": 20}, {"reps": 10, "weight": 20}, {"reps": 9, "weight": 20}]},
+                 {"name": "Dead hang", "is_isometric": True, "duration": 45, "note": "", "sets": []},
+             ], "created_at": now_iso()},
+            {"id": new_id(), "type": "Push", "date": (now - timedelta(days=1)).strftime("%Y-%m-%d"), "notes": "",
+             "exercises": [
+                 {"name": "Dips", "is_isometric": False, "duration": None, "note": "", "sets": [{"reps": 12, "weight": 0}, {"reps": 11, "weight": 0}, {"reps": 10, "weight": 0}]},
+                 {"name": "Push-ups", "is_isometric": False, "duration": None, "note": "", "sets": [{"reps": 15, "weight": 0}, {"reps": 15, "weight": 0}]},
+             ], "created_at": now_iso()},
+        ])
+
     # write test credentials
     try:
         cred_path = Path("/app/memory/test_credentials.md")
@@ -1579,6 +1802,11 @@ async def on_startup():
     await db.people.create_index("name_lower")
     await db.transactions.create_index("month")
     await seed()
+    try:
+        init_storage()
+        logger.info("Storage initialized.")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
     logger.info("Life Manager ready.")
 
 

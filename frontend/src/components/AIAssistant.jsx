@@ -44,7 +44,9 @@ export function AIAssistant() {
   const scanReceipt = async () => {
     if (!image) return;
     setScanning(true);
-    try { const { data } = await api.post("/ai/receipt", { image_base64: image }); setReceiptData(data); setReceiptOpen(true); setImage(null); }
+    try { const { data } = await api.post("/ai/receipt", { image_base64: image }); 
+      if (!data.items?.length && !data.merchant) { toast.error("No receipt detected in that image"); return; }
+      setReceiptData(data); setReceiptOpen(true); setImage(null); }
     catch { toast.error("Could not read receipt"); }
     finally { setScanning(false); }
   };

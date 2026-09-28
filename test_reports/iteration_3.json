@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 3 frontend testing for the four new features: Workout Logging, AI Activity Feed with Undo, Receipt Scan Review, Progress Photos. All four flows work end-to-end after one small backend fix (AIChatBody.message made Optional so /api/ai/receipt no longer 422s when only image_base64 is sent). Regression on Money/Groceries/People/Tasks/Nutrition/Home pages: all load without errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/receipt", "issue": "AIChatBody required `message: str`, so the receipt-scan payload {image_base64:...} returned 422 Unprocessable Entity and the review dialog never opened. FIXED by making `message` Optional[str] = ''. Retested and dialog opens correctly."},
+      {"endpoint": "/api/ai/receipt", "issue": "Gemini prompt says 'NEVER invent prices' but on a blank / unreadable image it still hallucinated a plausible merchant ('WHOLE FOODS MARKET') and five item lines with prices. Not blocking (user reviews before saving) but the guardrail is not effective — consider adding a confidence check or a 'no items detected' path."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/backend/tests/test_iteration2.py"],
+  "action_items": [
+    "Review the AIChatBody change — `message` is now Optional; /api/ai/chat still receives a message from the UI so no regression expected, but confirm.",
+    "Harden the /api/ai/receipt prompt or post-process to drop hallucinated items when the image is not actually a receipt (e.g. accept an empty items[] instead of inventing WHOLE FOODS lines)."
+  ],
+  "critical_code_review_comments": [
+    "AIChatBody is reused for /ai/chat, /ai/receipt and elsewhere but the required fields differ per endpoint; better to split into ChatBody vs ReceiptBody to keep contracts explicit.",
+    "photoSrc() in Body.jsx embeds the JWT in the URL query string (?auth=<token>). Works and matches backend, but tokens end up in browser history / server access logs — consider using Authorization header via a signed <img> proxy or short-lived signed URLs.",
+    "Fitness LogDialog: pressing Save with the default template creates a session with zero editing — good UX for quick log, but there is no explicit 'Save' confirmation state and no validation (e.g. all zero sets are still saved).",
+    "server.py continues to grow (>1830 lines now); splitting into routers is overdue."
+  ],
+  "updated_files": ["/app/backend/server.py (AIChatBody.message -> Optional)"],
+  "success_rate": {"backend": "n/a (frontend-only run; one endpoint fixed)", "frontend": "100% of exercised flows after fix"},
+  "test_credentials": "sa@lifemanager.app / lifemanager123",
+  "seed_data_creation": "Created 2 fitness sessions (1 default Push, 1 AI-logged Pull with dead hang 50s -> new PR), 1 AI-created task 'buy protein' which was then Undone via Activity, 2 progress photos (one deleted, one left as fixture), 1 expense from receipt scan (TEST_ReceiptShop_v2 with TestItem €3.50). Leftover data is minimal and prefixed TEST_ where relevant.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Container date 2026-09-28. All 4 iteration-3 features verified via Playwright: log-workout-btn -> workout-log-dialog -> workout-save flow works; AI 'Log a Pull workout: pull-ups 3 sets of 9, dead hang 50 seconds' produces a new history row and updates dead-hang PR to 50s; ai-tab-activity lists entries with undo-<id> buttons and 'Undone' state after click; receipt scan requires backend fix (now in place) then opens receipt-review with editable fields and receipt-save creates a transaction; progress photos upload (photo-upload-btn), render via ?auth=<token>, allow selecting two for compare-view, and photo-del-<id> removes them. All regressed pages loaded without visible error elements.",
+  "rca of the issue": "Receipt scan dialog never opened because /api/ai/receipt returned 422. Root cause: FastAPI Pydantic model AIChatBody declared `message: str` (required), while ReceiptReview flow only sends {image_base64}. Fix: make `message` Optional with default empty string. Verified end-to-end after fix."
+}

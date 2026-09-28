@@ -292,7 +292,7 @@ class RecipeBody(BaseModel):
 
 
 class AIChatBody(BaseModel):
-    message: str
+    message: Optional[str] = ""
     session_id: Optional[str] = None
     image_base64: Optional[str] = None
     confirm_token: Optional[str] = None
@@ -1251,7 +1251,9 @@ async def parse_receipt(body: AIChatBody, user: dict = Depends(get_current_user)
     prompt = ('Extract this receipt as JSON with this exact shape: '
               '{"merchant": string, "date": "YYYY-MM-DD" or null, "total": number, '
               '"items": [{"name": string, "price": number}]}. '
-              'Only include line items and prices you can actually read. NEVER invent prices. Respond with JSON only.')
+              'Only include line items and prices you can actually read. NEVER invent prices or a store name. '
+              'If the image is not clearly a receipt, or you cannot read it, return {"merchant": "", "items": []} — do NOT guess. '
+              'Respond with JSON only.')
     try:
         resp = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b64)]))
         text = resp if isinstance(resp, str) else getattr(resp, "content", str(resp))

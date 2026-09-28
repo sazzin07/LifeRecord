@@ -44,3 +44,11 @@ Recipes + inventory consumption; workout logging with history; progress photos v
 - Dashboard insights from real summary; offline/fallback banner; no fabricated financial data.
 - Tests: backend 23/23 + 10/10 new pass; frontend verified end-to-end.
 
+## Iteration 3 (2026-09) — Workouts, AI Activity Feed, Receipt Scan, Progress Photos
+- Workout logging: Push/Pull/Legs templates → logged sessions (sets/reps/weight, isometric durations), session history, and personal-best records (/api/workouts, /workouts/prs). AI tool log_workout.
+- AI Activity Feed: every AI tool run is logged (/api/ai/actions) with an undoable flag; in-panel Activity tab lists changes with one-tap Undo (/api/ai/actions/{id}/undo).
+- Receipt Scan Review: /api/ai/receipt extracts merchant/date/items/prices from a photo WITHOUT saving; a review dialog lets the user edit and confirm before the expense is created; parser instructed to never invent data and returns empty when no receipt detected.
+- Progress Photos: Body tab, stored in Emergent object storage (/api/photos, served via /api/photos/file/{path}?auth=token), gallery by date + tap-two side-by-side comparison, soft-delete.
+- Verified: frontend all 4 flows pass; backend spot-checked via curl (workouts/PRs, photo upload+serve auth 200/no-auth 401, AI log_workout, receipt parse).
+
+

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X, Send, Mic, Paperclip, Loader2, Square, Undo2, ScanLine, MessageSquare, History } from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Avatar } from "@/components/common";
@@ -14,6 +16,14 @@ const SUGGESTIONS = [
   "I spent €14 at McDonald's on cash",
   "Log 3 eggs, 200g chicken and 300ml milk",
 ];
+
+function MarkdownMessage({ text }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-table:my-2">
+      <Markdown remarkPlugins={[remarkGfm]}>{text || ""}</Markdown>
+    </div>
+  );
+}
 
 export function AIAssistant() {
   const [open, setOpen] = useState(false);
@@ -203,10 +213,10 @@ export function AIAssistant() {
                   <div key={i} className={m.role === "user" ? "flex justify-end" : "flex gap-2.5"}>
                     {m.role === "assistant" && <Avatar name="AI" size="h-7 w-7" />}
                     <div className={m.role === "user"
-                      ? "max-w-[80%] rounded-2xl rounded-br-md bg-emerald-600 text-white px-3.5 py-2.5 text-sm"
-                      : "max-w-[85%] rounded-2xl rounded-bl-md bg-card border border-border px-3.5 py-2.5 text-sm whitespace-pre-wrap"}>
+                      ? "max-w-[80%] rounded-2xl rounded-br-md bg-emerald-600 text-white px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+                      : "max-w-[85%] rounded-2xl rounded-bl-md bg-card border border-border px-3.5 py-2.5 text-sm"}>
                       {m.image && <img src={m.image} alt="upload" className="rounded-lg mb-2 max-h-40" />}
-                      {m.text}
+                      {m.role === "assistant" ? <MarkdownMessage text={m.text} /> : m.text}
                       {m.changed && <div className="mt-1.5 text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">✓ Your data was updated</div>}
                     </div>
                   </div>
@@ -244,7 +254,7 @@ export function AIAssistant() {
                   </button>
                   <textarea data-testid="ai-input" value={input} onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                    rows={1} placeholder="Ask Life Manager…"
+                    rows={1} placeholder="Ask Life Record…"
                     className="flex-1 resize-none rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-emerald-400 max-h-28" />
                   <button data-testid="ai-send" onClick={() => send()} disabled={busy}
                     className="h-10 w-10 shrink-0 grid place-items-center rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">

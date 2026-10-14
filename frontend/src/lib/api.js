@@ -11,20 +11,71 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function onRefreshed(token) {
+  refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+function subscribeTokenRefresh(cb) {
+  refreshSubscribers.push(cb);
+}
+
+async function doRefresh() {
+  const refreshToken = localStorage.getItem("lm_refresh_token");
+  if (!refreshToken) throw new Error("No refresh token");
+  const { data } = await axios.post(`${API}/auth/refresh`, { token: refreshToken });
+  if (data.token) localStorage.setItem("lm_token", data.token);
+  if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
+  return data.token;
+}
+
 api.interceptors.response.use(
   (r) => {
     window.dispatchEvent(new CustomEvent("lm:online"));
     return r;
   },
-  (err) => {
-    if (err.response && err.response.status === 401 && localStorage.getItem("lm_token")) {
-      localStorage.removeItem("lm_token");
-      if (!window.location.pathname.includes("/login")) window.location.href = "/login";
-    }
+  async (err) => {
+    const originalRequest = err.config;
     if (!err.response) {
       window.dispatchEvent(new CustomEvent("lm:offline"));
+      return Promise.reject(err);
     }
-    return Promise.reject(err);
+    if (err.response.status !== 401 || originalRequest._retry || originalRequest.url === "/auth/refresh") {
+      if (err.response.status === 401 && localStorage.getItem("lm_token")) {
+        localStorage.removeItem("lm_token");
+        localStorage.removeItem("lm_refresh_token");
+        if (!window.location.pathname.includes("/login")) window.location.href = "/login";
+      }
+      return Promise.reject(err);
+    }
+
+    originalRequest._retry = true;
+    if (isRefreshing) {
+      return new Promise((resolve) => {
+        subscribeTokenRefresh((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          resolve(api(originalRequest));
+        });
+      });
+    }
+
+    isRefreshing = true;
+    try {
+      const newToken = await doRefresh();
+      isRefreshing = false;
+      onRefreshed(newToken);
+      originalRequest.headers.Authorization = `Bearer ${newToken}`;
+      return api(originalRequest);
+    } catch {
+      isRefreshing = false;
+      localStorage.removeItem("lm_token");
+      localStorage.removeItem("lm_refresh_token");
+      if (!window.location.pathname.includes("/login")) window.location.href = "/login";
+      return Promise.reject(err);
+    }
   }
 );
 

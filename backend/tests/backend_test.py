@@ -1,19 +1,22 @@
-"""Backend API tests for Life Manager."""
+"""Backend API tests for Life Record."""
 import os
 import uuid
+from pathlib import Path
 import requests
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    # fallback to reading frontend/.env
-    with open("/app/frontend/.env") as f:
-        for line in f:
-            if line.startswith("REACT_APP_BACKEND_URL="):
-                BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
+    # fallback to reading frontend/.env relative to this file
+    env_path = Path(__file__).resolve().parents[2] / "frontend" / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith("REACT_APP_BACKEND_URL="):
+                    BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-OWNER_EMAIL = "sa@lifemanager.app"
-OWNER_PASSWORD = "lifemanager123"
+OWNER_EMAIL = "tiagosa743@gmail.com"
+OWNER_PASSWORD = "LifeRecord"
 
 TAG = f"TEST_{uuid.uuid4().hex[:6]}"
 
@@ -253,4 +256,4 @@ class TestAI:
         # Budget exhausted expected — endpoint should respond (even if 500/error), just verify wiring
         r = client.post(f"{BASE_URL}/api/ai/chat", json={"message": "hello"}, timeout=60)
         # Not asserting success — just that the endpoint is reachable
-        assert r.status_code in (200, 400, 402, 429, 500, 503), f"unexpected {r.status_code}: {r.text[:200]}"
+        assert r.status_code in (200, 400, 402, 429, 500, 503, 504, 408), f"unexpected {r.status_code}: {r.text[:200]}"

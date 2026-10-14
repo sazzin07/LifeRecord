@@ -28,8 +28,8 @@ export default function Settings() {
       <SectionHeading title="Settings" sub="Appearance, categories and your account" />
 
       <Card className="p-5 flex items-center gap-4">
-        <Avatar name={user?.name || "Sá"} size="h-12 w-12" />
-        <div className="flex-1"><p className="font-semibold">{user?.name || "Sá"}</p><p className="text-sm text-slate-500">{user?.email}</p></div>
+        <Avatar name={user?.name || "?"} size="h-12 w-12" />
+        <div className="flex-1"><p className="font-semibold">{user?.name || "User"}</p><p className="text-sm text-slate-500">{user?.email}</p></div>
         <Button variant="outline" onClick={logout} data-testid="settings-logout"><LogOut className="h-4 w-4 mr-1" />Sign out</Button>
       </Card>
 

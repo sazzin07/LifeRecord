@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { Plus, Trash2, Scale, Camera, GitCompare, X } from "lucide-react";
 import { api, API } from "@/lib/api";
@@ -9,7 +9,30 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const photoSrc = (p) => `${API}/photos/file/${p.storage_path}?auth=${localStorage.getItem("lm_token")}`;
+function SecurePhoto({ src, alt, className }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let objectUrl = null;
+    const load = async () => {
+      try {
+        const token = localStorage.getItem("lm_token");
+        const res = await fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch {
+        setUrl(null);
+      }
+    };
+    load();
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [src]);
+  if (!url) return <div className={cn("bg-slate-100 dark:bg-slate-800 animate-pulse", className)} />;
+  return <img src={url} alt={alt} className={className} />;
+}
+
+const photoSrc = (p) => `${API}/photos/file/${p.storage_path}`;
 
 export default function Body() {
   const { data: weight, loading } = useFetch("/weight");
@@ -87,7 +110,7 @@ export default function Body() {
             <div className="grid grid-cols-2 gap-3">
               {comparePics.map((p) => (
                 <div key={p.id}>
-                  <img src={photoSrc(p)} alt={p.date} className="rounded-lg w-full aspect-[3/4] object-cover" />
+                  <SecurePhoto src={photoSrc(p)} alt={p.date} className="rounded-lg w-full aspect-[3/4] object-cover" />
                   <p className="text-xs text-center text-slate-500 mt-1">{p.date}</p>
                 </div>
               ))}
@@ -104,7 +127,7 @@ export default function Body() {
               {pics.map((p) => (
                 <div key={p.id} data-testid={`photo-${p.id}`} className="relative group">
                   <button onClick={() => toggleCompare(p.id)} className={cn("block w-full rounded-lg overflow-hidden border-2 transition-colors", compare.includes(p.id) ? "border-emerald-500" : "border-transparent")}>
-                    <img src={photoSrc(p)} alt={p.date} className="w-full aspect-[3/4] object-cover" />
+                    <SecurePhoto src={photoSrc(p)} alt={p.date} className="w-full aspect-[3/4] object-cover" />
                   </button>
                   <span className="absolute bottom-1 left-1 right-1 text-[10px] text-white bg-black/50 rounded px-1 text-center">{p.date}</span>
                   <button onClick={() => delPhoto(p.id)} className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100" data-testid={`photo-del-${p.id}`}><X className="h-3.5 w-3.5" /></button>

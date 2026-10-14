@@ -5,6 +5,9 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { AppShell } from "@/components/AppShell";
 import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Home from "@/pages/Home";
 import Money from "@/pages/Money";
 import People from "@/pages/People";
@@ -24,6 +27,13 @@ function Protected() {
   return <AppShell><Outlet /></AppShell>;
 }
 
+function PublicOnly() {
+  const { user, ready } = useAuth();
+  if (!ready) return <div className="min-h-screen bg-background" />;
+  if (user?.email_verified) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
 export default function App() {
   return (
     <SettingsProvider>
@@ -31,7 +41,12 @@ export default function App() {
         <Toaster position="top-center" richColors closeButton />
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route element={<PublicOnly />}>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+            </Route>
             <Route element={<Protected />}>
               <Route path="/" element={<Home />} />
               <Route path="/money" element={<Money />} />

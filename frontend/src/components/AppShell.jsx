@@ -32,7 +32,7 @@ export function openAI(prompt) {
   window.dispatchEvent(new CustomEvent("lm:openAI", { detail: { prompt } }));
 }
 
-function Intro({ onDone }) {
+function Intro({ name, onDone }) {
   useEffect(() => {
     const seen = sessionStorage.getItem("lm_intro");
     if (seen) { onDone(); return; }
@@ -45,7 +45,7 @@ function Intro({ onDone }) {
       className="fixed inset-0 z-[100] grid place-items-center bg-slate-950 text-white">
       <div className="text-center px-6">
         <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="text-3xl sm:text-4xl font-extrabold tracking-tight">Welcome back, Sá</motion.p>
+          className="text-3xl sm:text-4xl font-extrabold tracking-tight">Welcome back{name ? `, ${name}` : ""}</motion.p>
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.6 }}
           className="mt-3 text-slate-400">Here's what's happening today.</motion.p>
       </div>
@@ -84,13 +84,13 @@ export function AppShell({ children }) {
 
   return (
     <div className="App min-h-screen bg-background">
-      <AnimatePresence>{intro && <Intro key="intro" onDone={() => setIntro(false)} />}</AnimatePresence>
+      <AnimatePresence>{intro && <Intro key="intro" name={user?.name} onDone={() => setIntro(false)} />}</AnimatePresence>
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 border-r border-border bg-card/60 backdrop-blur-sm z-30">
         <div className="h-16 flex items-center gap-2 px-5 border-b border-border">
           <div className="h-8 w-8 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
-          <span className="font-bold tracking-tight text-slate-900 dark:text-slate-50">Life Manager</span>
+          <span className="font-bold tracking-tight text-slate-900 dark:text-slate-50">Life Record</span>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV.map((n) => (
@@ -116,7 +116,7 @@ export function AppShell({ children }) {
       <header className="glass sticky top-0 z-20 h-16 border-b border-border lg:pl-60 flex items-center px-4 sm:px-6 gap-3">
         <div className="lg:hidden flex items-center gap-2">
           <div className="h-8 w-8 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
-          <span className="font-bold tracking-tight">Life Manager</span>
+          <span className="font-bold tracking-tight">Life Record</span>
         </div>
         <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
           className="ml-auto lg:ml-0 flex items-center gap-2 rounded-xl border border-border bg-card px-3 h-9 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 min-w-[180px] max-w-[280px]">

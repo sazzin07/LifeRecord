@@ -60,7 +60,7 @@ export function QuickAdd({ open, setOpen }) {
               {mode && <button onClick={() => setMode(null)} className="text-slate-400 hover:text-slate-600"><ArrowLeft className="h-4 w-4" /></button>}
               {mode ? `Add ${mode}` : "Quick add"}
             </DialogTitle>
-            <DialogDescription className="sr-only">Quickly add an item to Life Manager</DialogDescription>
+            <DialogDescription className="sr-only">Quickly add an item to Life Record</DialogDescription>
           </DialogHeader>
 
           {!mode && (

@@ -21,7 +21,7 @@ export default function Nutrition() {
       refreshAll();
     } catch { toast.error("Could not cook recipe"); }
   };
-  const arr = meals || [];
+  const arr = useMemo(() => meals || [], [meals]);
 
   const tot = useMemo(() => ({
     cal: arr.reduce((s, x) => s + (x.calories || 0), 0),

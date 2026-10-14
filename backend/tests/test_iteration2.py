@@ -2,18 +2,21 @@
 shopping list, recipes cook, AI update/delete/mark_refunded."""
 import os
 import uuid
+from pathlib import Path
 import requests
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    with open("/app/frontend/.env") as f:
-        for line in f:
-            if line.startswith("REACT_APP_BACKEND_URL="):
-                BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
+    env_path = Path(__file__).resolve().parents[2] / "frontend" / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith("REACT_APP_BACKEND_URL="):
+                    BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-OWNER_EMAIL = "sa@lifemanager.app"
-OWNER_PASSWORD = "lifemanager123"
+OWNER_EMAIL = "tiagosa743@gmail.com"
+OWNER_PASSWORD = "LifeRecord"
 TAG = f"TEST2_{uuid.uuid4().hex[:6]}"
 
 

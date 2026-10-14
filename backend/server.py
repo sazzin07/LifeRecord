@@ -288,6 +288,7 @@ class CategoryBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     icon: str = Field(default="circle", max_length=50)
     color: str = Field(default="#64748B", max_length=50)
+    monthly_budget: Optional[float] = Field(default=None, ge=0)
 
 
 class ItemBody(BaseModel):
@@ -1102,8 +1103,28 @@ async def get_categories(user: dict = Depends(get_current_user), db: AsyncSessio
 
 @api_router.post("/categories")
 async def create_category(body: CategoryBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    c = Category(id=new_id(), user_id=user["_id"], name=body.name, icon=body.icon, color=body.color, created_at=now_iso())
+    c = Category(
+        id=new_id(), user_id=user["_id"], name=body.name, icon=body.icon, color=body.color,
+        monthly_budget=round(body.monthly_budget, 2) if body.monthly_budget is not None else None,
+        created_at=now_iso(),
+    )
     db.add(c)
+    await db.commit()
+    await db.refresh(c)
+    return to_dict(c)
+
+
+@api_router.put("/categories/{cid}")
+async def update_category(cid: str, body: CategoryBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    c = (await db.execute(
+        select(Category).where(Category.id == cid, Category.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "Category not found")
+    c.name = body.name
+    c.icon = body.icon
+    c.color = body.color
+    c.monthly_budget = round(body.monthly_budget, 2) if body.monthly_budget is not None else None
     await db.commit()
     await db.refresh(c)
     return to_dict(c)
@@ -1414,19 +1435,108 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     low_stock = [g.name for g in groceries if (float(g.quantity) if g.quantity else 0) > 0 and g.low_threshold and float(g.quantity) <= float(g.low_threshold)]
     unknown_price = [g.name for g in groceries if g.price is None]
 
+    categories = (await db.execute(
+        select(Category).where(Category.user_id == user["_id"])
+    )).scalars().all()
+    cat_budgets = {c.name: float(c.monthly_budget) if c.monthly_budget else None for c in categories}
+
     months = sorted({r[0] async for r in await db.stream(
         select(Transaction.month).where(Transaction.user_id == user["_id"]).distinct()
     )}, reverse=True)
 
+    # Period metadata and projections
+    from datetime import date as _date
+    today = _date.today()
+    period_start = start or (month and f"{month}-01") or None
+    period_end = end or (month and f"{month}-31") or None
+    period_days = 0
+    if period_start and period_end:
+        try:
+            period_days = (max(_date.fromisoformat(period_end), today) - _date.fromisoformat(period_start)).days + 1
+        except Exception:
+            period_days = 0
+    daily_avg = round(gross / max(period_days, 1), 2) if period_days else round(gross / max(len(by_day) or 1, 1), 2)
+    days_in_month = 30
+    try:
+        if month:
+            y, m = map(int, month.split("-"))
+            import calendar
+            days_in_month = calendar.monthrange(y, m)[1]
+            spent_so_far_days = max(today.day if today.year == y and today.month == m else days_in_month, 1)
+            projected_month_spend = round(daily_avg * days_in_month, 2) if spent_so_far_days < days_in_month else round(gross, 2)
+        else:
+            projected_month_spend = round(daily_avg * days_in_month, 2)
+    except Exception:
+        projected_month_spend = round(daily_avg * days_in_month, 2)
+
+    # Previous period comparison
+    prev_gross = 0.0
+    if start and end:
+        try:
+            s = _date.fromisoformat(start)
+            e = _date.fromisoformat(end)
+            delta = (e - s).days + 1
+            ps = (s - timedelta(days=delta)).isoformat()
+            pe = (e - timedelta(days=delta)).isoformat()
+            pfilters = [Transaction.user_id == user["_id"], Transaction.type == "expense", Transaction.date >= ps, Transaction.date <= pe]
+            prev_rows = (await db.execute(select(Transaction).where(*pfilters))).scalars().all()
+            prev_gross = round(sum(float(t.gross_amount) for t in prev_rows), 2)
+        except Exception:
+            prev_gross = 0.0
+    elif month:
+        try:
+            y, m = map(int, month.split("-"))
+            pm = m - 1 if m > 1 else 12
+            py = y if m > 1 else y - 1
+            pm_key = f"{py}-{str(pm).zfill(2)}"
+            prev_rows = (await db.execute(
+                select(Transaction).where(
+                    Transaction.user_id == user["_id"],
+                    Transaction.type == "expense",
+                    Transaction.month == pm_key,
+                )
+            )).scalars().all()
+            prev_gross = round(sum(float(t.gross_amount) for t in prev_rows), 2)
+        except Exception:
+            prev_gross = 0.0
+
+    # Top merchants
+    by_merchant = {}
+    for t in rows:
+        if t.merchant:
+            by_merchant[t.merchant] = by_merchant.get(t.merchant, 0) + float(t.gross_amount)
+    top_merchants = [{"name": k, "value": round(v, 2)} for k, v in sorted(by_merchant.items(), key=lambda x: -x[1])[:5]]
+
+    # Income vs expense for the period
+    income_rows = (await db.execute(
+        select(Transaction).where(
+            Transaction.user_id == user["_id"], Transaction.type == "income", *filters[1:]
+        )
+    )).scalars().all()
+    income_total = round(sum(float(t.gross_amount) for t in income_rows), 2)
+
+    total_available = round(cash + revolut, 2)
+    by_category_out = []
+    for k, v in sorted(by_cat.items(), key=lambda x: -x[1]):
+        budget = cat_budgets.get(k)
+        pct = round(v / gross * 100, 1) if gross else 0
+        by_category_out.append({"name": k, "value": round(v, 2), "percentage": pct, "budget": budget})
+
     return {
-        "cash": cash, "revolut": revolut, "total_available": round(cash + revolut, 2),
+        "cash": cash, "revolut": revolut, "total_available": total_available,
         "gross": round(gross, 2), "personal": round(personal, 2),
         "reimbursable": round(reimbursable, 2),
         "cash_spent": round(cash_spent, 2), "card_spent": round(card_spent, 2),
         "refunded": round(refunded, 2), "pending": outstanding,
         "owed_to_me": owed_to_me, "i_owe": i_owe, "outstanding": outstanding,
-        "by_category": [{"name": k, "value": round(v, 2)} for k, v in sorted(by_cat.items(), key=lambda x: -x[1])],
+        "by_category": by_category_out,
         "by_day": [{"date": k, "value": round(v, 2)} for k, v in sorted(by_day.items())],
+        "top_merchants": top_merchants,
+        "income": income_total, "net": round(income_total - gross, 2),
+        "daily_average": daily_avg,
+        "projected_month_spend": projected_month_spend,
+        "previous_period_gross": prev_gross,
+        "period_days": period_days,
         "grocery": {"total": len(groceries), "out_of_stock": out_of_stock, "low_stock": low_stock, "unknown_price": unknown_price},
         "months": months,
     }
@@ -2162,6 +2272,7 @@ async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
 
     created = []
     tool_summary = []
+    previewed_this_turn: set = set()
     AI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "25"))
     reply = ""
     try:
@@ -2180,7 +2291,7 @@ async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
             for part in fc_parts:
                 call = part.function_call
                 args = dict(call.args) if call.args else {}
-                result = await dispatch_tool(db, call.name, args, created, user, session_id)
+                result = await dispatch_tool(db, call.name, args, created, user, session_id, previewed_this_turn)
                 tool_summary.append({"tool": call.name, "args": args})
                 tool_responses.append(types.Part.from_function_response(name=call.name, response=result))
             contents.append(types.Content(role="user", parts=tool_responses))
@@ -2335,7 +2446,7 @@ async def find_expense(db: AsyncSession, match: str, user_id: str) -> Optional[d
     return txn_to_dict(t) if t else None
 
 
-async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None) -> dict:
+async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
     try:
         if name == "create_expense":
             body = ExpenseBody(
@@ -2405,13 +2516,14 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             if not t:
                 return {"error": f"No expense found matching '{match}'"}
             pending = _pending_confirmations.get(session_id or "")
-            confirmed = (
-                args.get("confirm") is True
-                and pending
+            has_pending = (
+                pending
                 and pending.get("tool") == "delete_expense"
                 and pending.get("target_id") == t["id"]
                 and datetime.now(timezone.utc) < pending.get("expires_at", datetime.min.replace(tzinfo=timezone.utc))
             )
+            self_confirming = previewed_this_turn is not None and t["id"] in previewed_this_turn
+            confirmed = args.get("confirm") is True and has_pending and not self_confirming
             if not confirmed:
                 _pending_confirmations[session_id or ""] = {
                     "tool": "delete_expense",
@@ -2419,11 +2531,13 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                     "match": match,
                     "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
                 }
+                if previewed_this_turn is not None:
+                    previewed_this_turn.add(t["id"])
                 return {"needs_confirmation": True,
                         "message": f"This will permanently delete '{t.get('merchant') or t.get('description')}' (€{t.get('gross_amount')}) from {t.get('date')}. Ask the user to confirm before deleting."}
             await delete_transaction(t["id"], user, db)
             _pending_confirmations.pop(session_id or "", None)
-            return {"deleted": t.get("merchant") or t.get("description"), "amount": t.get("gross_amount")}
+            return {"deleted": t.get("merchant") or t.get('description'), "amount": t.get("gross_amount")}
         if name == "mark_refunded":
             tid = None
             if args.get("match"):

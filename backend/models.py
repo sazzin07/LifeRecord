@@ -40,6 +40,7 @@ class Category(Base):
     name = Column(String(255), nullable=False)
     icon = Column(String(50), nullable=False)
     color = Column(String(50), nullable=False)
+    monthly_budget = Column(DECIMAL(12, 2), nullable=True)
     created_at = Column(String(32), nullable=False)
 
 

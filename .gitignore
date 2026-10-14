@@ -47,6 +47,7 @@ frontend/.env.*
 # Local runtime data
 backend/storage/
 tools/mysql-data/
+tools/mysql-data-backup/
 tools/phpmyadmin/
 backend/memory/
 

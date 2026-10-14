@@ -189,9 +189,30 @@ with HTTP 503.
 
 ---
 
-## 4. Post-Report Fixes
+## 4. Post-Report Enhancements
 
-- Hardened AI `delete_expense` confirmation flow. The tool now stores a session-scoped pending confirmation after the first (non-destructive) preview call; `confirm=true` is honored only when it matches the same session and record within a 5-minute window. This prevents the model from deleting an expense in a single turn without explicit user confirmation.
+### AI delete confirmation
+
+Hardened `delete_expense` confirmation flow. The tool stores a session-scoped pending confirmation after the first (non-destructive) preview call; `confirm=true` is honored only when it matches the same session and record within a 5-minute window **and** is not part of the same user turn. This prevents the model from deleting an expense in a single turn without explicit user confirmation.
+
+### Money tab overhaul
+
+Redesigned the Money page with new analytics, budgeting, and transaction-management features:
+
+- **Dynamic month selector** — months are derived from actual transaction history instead of hardcoded values.
+- **Insights row** — daily average spend, projected monthly spend, trend vs previous period, and top category.
+- **Category budgets** — set monthly spending targets per category; visual progress bars show usage, amber warning near 80%, red when over budget. Backed by new `categories.monthly_budget` column and `PUT /categories/{id}` endpoint.
+- **Top merchants** — quick-look list of the 5 highest-spending merchants.
+- **Income vs expense** — summary cards plus a mini bar chart.
+- **Transaction list upgrades**:
+  - Search by merchant, description, category, or person.
+  - Category filter dropdown.
+  - Sort by date (newest/oldest), amount (high/low), or merchant.
+  - Sticky date headers with daily totals.
+  - Export filtered list to CSV.
+- **Responsive improvements** — horizontally scrollable period chips, stacked controls on small screens, larger touch targets for edit/delete actions.
+
+All backend analytics additions are exposed through the existing `/analytics/summary` endpoint.
 
 ## 5. What Remains Blocked
 

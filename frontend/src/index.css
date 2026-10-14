@@ -107,3 +107,11 @@
 .dark ::-webkit-scrollbar-thumb { background: hsl(217 24% 30% / 0.6); }
 
 [data-debug-wrapper="true"] { display: contents !important; }
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

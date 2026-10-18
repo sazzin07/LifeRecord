@@ -1,14 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  ArrowUpRight, ArrowDownRight, HandCoins, Receipt, Wallet, CreditCard,
-  CalendarDays, CheckCircle2, AlertCircle, Trash2, Pencil, X,
+  HandCoins, Receipt, Trash2, Pencil,
 } from "lucide-react";
 import { api, eur, CATEGORY_COLORS } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Card, Avatar, Label, EmptyState, SkeletonCard } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -27,14 +25,25 @@ const TYPE_META = {
   payment_out: { label: "Payment sent", icon: HandCoins, color: "text-red-500", bg: "bg-red-50 dark:bg-red-500/10", sign: "+" },
 };
 
-export default function PersonDetailModal({ personId, open, onClose, onEdit, onArchive }) {
+export default function PersonDetailModal({ personId, open, onClose, onEdit, onDelete }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Revolut");
   const [account, setAccount] = useState("revolut");
-  const [archiveConfirm, setArchiveConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!personId) return;
+    setLoading(true);
+    try {
+      const r = await api.get(`/people/${personId}`);
+      setData(r.data);
+    } finally {
+      setLoading(false);
+    }
+  }, [personId]);
 
   useEffect(() => {
     if (!open || !personId) {
@@ -74,7 +83,6 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onA
   const net = data?.person?.net || 0;
   const theyOwe = net > 0.005;
   const iOwe = net < -0.005;
-  const settled = !theyOwe && !iOwe;
 
   const runningBalance = useMemo(() => {
     if (!data?.ledger) return [];
@@ -137,13 +145,13 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onA
 
                 <div className="flex flex-wrap gap-2 mt-5">
                   {theyOwe && (
-                    <Button onClick={() => setPayOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Button onClick={() => setPayOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="record-payment-btn">
                       <HandCoins className="h-4 w-4 mr-1" /> Record payment
                     </Button>
                   )}
-                  <Button variant="outline" onClick={onEdit}><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
-                  <Button variant="outline" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setArchiveConfirm(true)}>
-                    <Trash2 className="h-4 w-4 mr-1" /> Archive
+                  <Button variant="outline" onClick={onEdit} data-testid="detail-edit-btn"><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
+                  <Button variant="outline" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setDeleteConfirm(true)} data-testid="detail-delete-btn">
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete
                   </Button>
                 </div>
               </div>
@@ -193,27 +201,27 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onA
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Record payment from {data?.person?.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="Amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input placeholder="Amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="payment-amount" />
             <div className="grid grid-cols-2 gap-2">
-              <Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Revolut">Revolut</SelectItem><SelectItem value="MB WAY">MB WAY</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent></Select>
-              <Select value={account} onValueChange={setAccount}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="revolut">Into Revolut</SelectItem><SelectItem value="cash">Into Cash</SelectItem></SelectContent></Select>
+              <Select value={method} onValueChange={setMethod}><SelectTrigger data-testid="payment-method"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Revolut">Revolut</SelectItem><SelectItem value="MB WAY">MB WAY</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent></Select>
+              <Select value={account} onValueChange={setAccount}><SelectTrigger data-testid="payment-account"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="revolut">Into Revolut</SelectItem><SelectItem value="cash">Into Cash</SelectItem></SelectContent></Select>
             </div>
-            <Button onClick={recordPayment} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">Record {amount ? eur(parseFloat(amount)) : ""}</Button>
+            <Button onClick={recordPayment} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="payment-save">Record {amount ? eur(parseFloat(amount)) : ""}</Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={archiveConfirm} onOpenChange={setArchiveConfirm}>
+      <AlertDialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive {data?.person?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {data?.person?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This person has transaction history, so they will be archived instead of deleted. Their debts and payments remain visible and the balances stay accurate.
+              This will permanently delete the person and remove their splits and payments from your ledger. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { onArchive(data.person.id); setArchiveConfirm(false); }} className="bg-red-500 hover:bg-red-600 text-white">Archive</AlertDialogAction>
+            <AlertDialogCancel data-testid="detail-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { const id = data?.person?.id; if (id) { onDelete(id); } setDeleteConfirm(false); }} className="bg-red-500 hover:bg-red-600 text-white" data-testid="detail-delete-confirm">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

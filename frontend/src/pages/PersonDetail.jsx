@@ -10,7 +10,7 @@ export default function PersonDetail() {
       open={true}
       onClose={() => nav("/people")}
       onEdit={() => nav("/people")}
-      onArchive={() => nav("/people")}
+      onDelete={() => nav("/people")}
     />
   );
 }

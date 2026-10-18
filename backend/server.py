@@ -600,12 +600,9 @@ async def compute_account_balance(db: AsyncSession, account: str, user_id: str) 
     return round(bal, 2)
 
 
-async def people_balances(db: AsyncSession, user_id: str, include_archived: bool = False) -> List[dict]:
-    filters = [Person.user_id == user_id]
-    if not include_archived:
-        filters.append(Person.archived == False)
+async def people_balances(db: AsyncSession, user_id: str) -> List[dict]:
     people = (await db.execute(
-        select(Person).where(*filters).order_by(Person.name)
+        select(Person).where(Person.user_id == user_id, Person.archived == False).order_by(Person.name)
     )).scalars().all()
     result = []
     for p in people:
@@ -1044,9 +1041,13 @@ async def me(user: dict = Depends(get_current_user_optional_unverified)):
 # ---------------------------------------------------------------------------
 # People
 # ---------------------------------------------------------------------------
+class BulkDeleteBody(BaseModel):
+    ids: List[str] = Field(..., min_length=1)
+
+
 @api_router.get("/people")
-async def get_people(include_archived: bool = False, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await people_balances(db, user["_id"], include_archived=include_archived)
+async def get_people(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await people_balances(db, user["_id"])
 
 
 @api_router.post("/people")
@@ -1073,39 +1074,44 @@ async def update_person(pid: str, body: PersonBody, user: dict = Depends(get_cur
     p.photo = body.photo
     p.notes = body.notes or ""
     p.payment_preference = body.payment_preference or ""
-    if body.archived is not None:
-        p.archived = body.archived
     await db.commit()
     await db.refresh(p)
     return to_dict(p)
 
 
+async def _delete_people(db: AsyncSession, user_id: str, ids: List[str]) -> int:
+    # Remove associated financial records first to keep the ledger consistent.
+    txn_ids = select(Transaction.id).where(Transaction.user_id == user_id).scalar_subquery()
+    await db.execute(
+        delete(Split).where(Split.person_id.in_(ids), Split.transaction_id.in_(txn_ids))
+    )
+    await db.execute(
+        delete(Settlement).where(Settlement.person_id.in_(ids), Settlement.user_id == user_id)
+    )
+    result = await db.execute(
+        delete(Person).where(Person.id.in_(ids), Person.user_id == user_id)
+    )
+    await db.commit()
+    return result.rowcount
+
+
 @api_router.delete("/people/{pid}")
 async def delete_person(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    p = (await db.execute(
-        select(Person).where(Person.id == pid, Person.user_id == user["_id"])
-    )).scalar_one_or_none()
-    if not p:
+    count = await _delete_people(db, user["_id"], [pid])
+    if count == 0:
         raise HTTPException(404, "Person not found")
-    # If the person has financial history, archive instead of deleting to preserve records.
-    has_history = (await db.execute(
-        select(func.count()).select_from(Split).where(Split.person_id == pid)
-    )).scalar() > 0 or (await db.execute(
-        select(func.count()).select_from(Settlement).where(Settlement.person_id == pid)
-    )).scalar() > 0
-    if has_history:
-        p.archived = True
-        await db.commit()
-        await db.refresh(p)
-        return {"archived": True, "message": "Person archived to preserve transaction history"}
-    await db.delete(p)
-    await db.commit()
-    return {"deleted": True}
+    return {"deleted": count}
+
+
+@api_router.post("/people/bulk-delete")
+async def bulk_delete_people(body: BulkDeleteBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    count = await _delete_people(db, user["_id"], body.ids)
+    return {"deleted": count}
 
 
 @api_router.get("/people/{pid}")
 async def person_detail(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    people = await people_balances(db, user["_id"], include_archived=True)
+    people = await people_balances(db, user["_id"])
     person = next((p for p in people if p["id"] == pid), None)
     if not person:
         raise HTTPException(404, "Person not found")

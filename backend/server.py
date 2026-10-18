@@ -282,6 +282,7 @@ class PersonBody(BaseModel):
     photo: Optional[str] = Field(default=None, max_length=2048)
     notes: Optional[str] = Field(default="", max_length=2000)
     payment_preference: Optional[str] = Field(default="", max_length=255)
+    archived: Optional[bool] = Field(default=False)
 
 
 class CategoryBody(BaseModel):
@@ -599,9 +600,12 @@ async def compute_account_balance(db: AsyncSession, account: str, user_id: str) 
     return round(bal, 2)
 
 
-async def people_balances(db: AsyncSession, user_id: str) -> List[dict]:
+async def people_balances(db: AsyncSession, user_id: str, include_archived: bool = False) -> List[dict]:
+    filters = [Person.user_id == user_id]
+    if not include_archived:
+        filters.append(Person.archived == False)
     people = (await db.execute(
-        select(Person).where(Person.user_id == user_id).order_by(Person.name)
+        select(Person).where(*filters).order_by(Person.name)
     )).scalars().all()
     result = []
     for p in people:
@@ -1041,16 +1045,36 @@ async def me(user: dict = Depends(get_current_user_optional_unverified)):
 # People
 # ---------------------------------------------------------------------------
 @api_router.get("/people")
-async def get_people(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await people_balances(db, user["_id"])
+async def get_people(include_archived: bool = False, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await people_balances(db, user["_id"], include_archived=include_archived)
 
 
 @api_router.post("/people")
 async def create_person(body: PersonBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     p = Person(id=new_id(), user_id=user["_id"], name=body.name, name_lower=body.name.lower(),
                photo=body.photo, notes=body.notes or "",
-               payment_preference=body.payment_preference or "", created_at=now_iso())
+               payment_preference=body.payment_preference or "",
+               archived=False, created_at=now_iso())
     db.add(p)
+    await db.commit()
+    await db.refresh(p)
+    return to_dict(p)
+
+
+@api_router.put("/people/{pid}")
+async def update_person(pid: str, body: PersonBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(
+        select(Person).where(Person.id == pid, Person.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Person not found")
+    p.name = body.name
+    p.name_lower = body.name.lower()
+    p.photo = body.photo
+    p.notes = body.notes or ""
+    p.payment_preference = body.payment_preference or ""
+    if body.archived is not None:
+        p.archived = body.archived
     await db.commit()
     await db.refresh(p)
     return to_dict(p)
@@ -1058,37 +1082,105 @@ async def create_person(body: PersonBody, user: dict = Depends(get_current_user)
 
 @api_router.delete("/people/{pid}")
 async def delete_person(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(delete(Person).where(Person.id == pid, Person.user_id == user["_id"]))
-    await db.commit()
-    if result.rowcount == 0:
+    p = (await db.execute(
+        select(Person).where(Person.id == pid, Person.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not p:
         raise HTTPException(404, "Person not found")
-    return {"ok": True}
+    # If the person has financial history, archive instead of deleting to preserve records.
+    has_history = (await db.execute(
+        select(func.count()).select_from(Split).where(Split.person_id == pid)
+    )).scalar() > 0 or (await db.execute(
+        select(func.count()).select_from(Settlement).where(Settlement.person_id == pid)
+    )).scalar() > 0
+    if has_history:
+        p.archived = True
+        await db.commit()
+        await db.refresh(p)
+        return {"archived": True, "message": "Person archived to preserve transaction history"}
+    await db.delete(p)
+    await db.commit()
+    return {"deleted": True}
 
 
 @api_router.get("/people/{pid}")
 async def person_detail(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    people = await people_balances(db, user["_id"])
+    people = await people_balances(db, user["_id"], include_archived=True)
     person = next((p for p in people if p["id"] == pid), None)
     if not person:
         raise HTTPException(404, "Person not found")
-    txns = []
-    result = await db.execute(
+
+    # Build a unified ledger of debts and repayments
+    ledger = []
+    total_original_debt = 0.0
+    total_repaid = 0.0
+
+    splits = (await db.execute(
         select(Split, Transaction).join(Transaction).where(
             Split.person_id == pid,
             Transaction.user_id == user["_id"],
         ).order_by(desc(Transaction.date))
-    )
-    for sp, txn in result.all():
-        txns.append({"id": txn.id, "date": txn.date,
-                     "merchant": txn.merchant or txn.description,
-                     "amount": float(sp.amount), "gross": float(txn.gross_amount)})
-    settlements = [to_dict(s) for s in (await db.execute(
+    )).all()
+    for sp, txn in splits:
+        amount = float(sp.amount)
+        if txn.paid_by == "me":
+            total_original_debt += amount
+            ledger.append({
+                "id": txn.id, "type": "debt", "date": txn.date,
+                "merchant": txn.merchant or txn.description or txn.category,
+                "description": f"Paid by you · {txn.account}",
+                "amount": amount, "balance_effect": +amount,
+                "category": txn.category, "payment_method": txn.account,
+                "gross": float(txn.gross_amount),
+            })
+        elif txn.paid_by == pid and sp.is_me:
+            total_original_debt -= amount  # they paid, I owe them this share
+            ledger.append({
+                "id": txn.id, "type": "credit", "date": txn.date,
+                "merchant": txn.merchant or txn.description or txn.category,
+                "description": f"Paid by {person['name']} · {txn.account}",
+                "amount": amount, "balance_effect": -amount,
+                "category": txn.category, "payment_method": txn.account,
+                "gross": float(txn.gross_amount),
+            })
+
+    settlements = (await db.execute(
         select(Settlement).where(
             Settlement.person_id == pid,
             Settlement.user_id == user["_id"],
         ).order_by(desc(Settlement.date))
-    )).scalars().all()]
-    return {"person": person, "transactions": txns, "settlements": settlements}
+    )).scalars().all()
+    for s in settlements:
+        amount = float(s.amount)
+        if s.direction == "in":
+            total_repaid += amount
+            ledger.append({
+                "id": s.id, "type": "repayment", "date": s.date,
+                "merchant": f"Payment via {s.method}", "description": f"Received into {s.account}",
+                "amount": amount, "balance_effect": -amount,
+                "method": s.method, "account": s.account,
+            })
+        else:
+            ledger.append({
+                "id": s.id, "type": "payment_out", "date": s.date,
+                "merchant": f"Payment via {s.method}", "description": f"Sent from {s.account}",
+                "amount": amount, "balance_effect": +amount,
+                "method": s.method, "account": s.account,
+            })
+
+    ledger.sort(key=lambda x: x["date"], reverse=True)
+
+    return {
+        "person": person,
+        "summary": {
+            "total_original_debt": round(total_original_debt, 2),
+            "total_repaid": round(total_repaid, 2),
+            "current_balance": round(person["net"], 2),
+        },
+        "ledger": ledger,
+        "transactions": [l for l in ledger if l["type"] in ("debt", "credit")],
+        "settlements": [to_dict(s) for s in settlements],
+    }
 
 
 # ---------------------------------------------------------------------------

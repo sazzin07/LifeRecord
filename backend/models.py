@@ -53,6 +53,7 @@ class Person(Base):
     photo = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     payment_preference = Column(String(255), nullable=True)
+    archived = Column(Boolean, nullable=False, default=False)
     created_at = Column(String(32), nullable=False)
 
 

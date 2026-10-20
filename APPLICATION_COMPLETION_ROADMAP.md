@@ -108,7 +108,7 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 ### 3.3 Runtime Status at Audit Time
 
 - MySQL, backend and frontend are running locally via `start-all.ps1`.
-- Latest run: 51 backend tests pass; 7 Playwright e2e tests pass (smoke logout test is flaky on cold frontend dev-server startup but passes on retry).
+- Latest run: 55 backend tests pass; frontend `yarn build` succeeds with no ESLint warnings.
 - No Docker or CI/CD configuration exists; deployment is manual via PowerShell scripts.
 
 ---
@@ -584,18 +584,18 @@ Use the IDs below to track progress. Update the status column as work is complet
 | GROC-004 | Implement shopping list CRUD backend | Critical | Completed |
 | GROC-005 | Implement shopping item CRUD backend | Critical | Completed |
 | GROC-006 | Add budget tracking backend | High | Completed |
-| GROC-007 | Add recurring lists backend | Medium | Not started |
-| GROC-008 | Add frequently bought suggestions backend | Medium | Not started |
+| GROC-007 | Add recurring lists backend | Medium | Completed |
+| GROC-008 | Add frequently bought suggestions backend | Medium | Completed |
 | GROC-009 | Add low-stock reminders backend | High | Completed |
 | GROC-010 | Update analytics summary for groceries | High | Completed |
 | GROC-011 | Build multiple lists UI | Critical | Completed |
 | GROC-012 | Build shopping mode UI | Critical | Completed |
 | GROC-013 | Add item-level edit/complete/restore/remove UI | Critical | Completed |
 | GROC-014 | Add budget tracking UI | High | Completed |
-| GROC-015 | Add recurring lists UI | Medium | Not started |
-| GROC-016 | Add suggestions UI | Medium | Not started |
+| GROC-015 | Add recurring lists UI | Medium | Completed |
+| GROC-016 | Add suggestions UI | Medium | Completed |
 | GROC-017 | Add low-stock reminders UI | High | Completed |
-| GROC-018 | Add price history chart UI | Low | Not started |
+| GROC-018 | Add price history chart UI | Low | Completed |
 
 ### AI Integration
 
@@ -618,10 +618,10 @@ Use the IDs below to track progress. Update the status column as work is complet
 | DASH-003 | Sync dashboard with mutations | High | Completed |
 | CAL-001 | Implement calendar grid | Medium | Not started |
 | CAL-002 | Show grocery/meal events on calendar | Low | Not started |
-| NUTR-001 | Add manual meal form | High | Not started |
-| NUTR-002 | Add manual recipe form | High | Not started |
-| NUTR-003 | Add recipe edit/delete backend | Medium | Not started |
-| NUTR-004 | Add meal edit backend | Medium | Not started |
+| NUTR-001 | Add manual meal form | High | Completed |
+| NUTR-002 | Add manual recipe form | High | Completed |
+| NUTR-003 | Add recipe edit/delete backend | Medium | Completed |
+| NUTR-004 | Add meal edit backend | Medium | Completed |
 | TASK-001 | Add task edit/priority/due UI | High | Not started |
 | FIT-001 | Add workout edit/delete UI | Medium | Not started |
 | FIT-002 | Add workout edit backend | Medium | Not started |
@@ -707,16 +707,28 @@ Use the IDs below to track progress. Update the status column as work is complet
   - AI tools: `get_groceries`, `get_shopping_lists`, `create_shopping_list`, `add_shopping_item`, `update_shopping_item`, `delete_shopping_item`, `submit_purchase`, `get_grocery_summary`, `set_shopping_list_budget`, `get_price_history`.
   - Added backend tests for partial cart purchase, generate-list-not-touching-inventory, list budget, low-stock, and analytics integration.
 
+- **Groceries remaining polish (done in this session):**
+  - Added `RecurringList` model, migration, and backend endpoints (`GET/POST/PUT/DELETE /shopping/recurring`, `POST /shopping/recurring/{id}/spawn`).
+  - Added `/groceries/suggestions` endpoint for frequently bought / favorite items.
+  - Added price-history chart UI using `/prices/{name}` and recharts.
+  - Added recurring-list management UI and one-click suggestion chips to `Groceries.jsx`.
+  - Added AI tools: `get_grocery_suggestions`, `get_recurring_lists`, `create_recurring_list`, `spawn_recurring_list`.
+  - Fixed `ShoppingItem`/`ShoppingList` relationship so toggle/update endpoints no longer crash.
+  - Added backend test for recurring lists and suggestions.
+
+- **Nutrition manual forms (done in this session):**
+  - Added `PUT /meals/{id}` and `PUT /recipes/{id}` backend endpoints.
+  - Rewrote `Nutrition.jsx` with manual "Add meal" and "Add recipe" dialogs, plus edit/delete for both.
+  - Added macro progress rings and improved empty states.
+
 ### Test results
-- Backend: **54 passed**
-- Frontend e2e: **7 passed**
-- `yarn build`: success, no ESLint warnings
+- Backend: **55 passed**
+- Frontend `yarn build`: success, no ESLint warnings
 
 ### Stopping point
-Groceries is now functionally complete except for recurring lists, frequently bought suggestions, and price-history chart. **Next recommended tasks:**
-1. **GROC-007 / GROC-015** — Recurring lists
-2. **GROC-008 / GROC-016** — Frequently bought suggestions
-3. **GROC-018** — Price history chart UI
-4. **NUTR-001 / NUTR-002** — Manual add meal/recipe forms
-5. **TASK-001** — Task edit/priority/due UI
-6. **CAL-001** — Calendar grid
+All Groceries roadmap tasks are complete. Nutrition manual meal/recipe forms and edit/delete backends are complete. **Remaining tasks for the next session:**
+1. **TASK-001** — Task edit/priority/due/recurring UI (backend already supports these fields).
+2. **CAL-001** — Calendar grid view (currently task list only).
+3. **AI-007** — Load chat history in AI assistant UI.
+4. **TEST-002 / TEST-003** — Playwright e2e tests for Groceries and Nutrition.
+5. **DOC-001 / DOC-002** — Update README with Groceries features and testing instructions.

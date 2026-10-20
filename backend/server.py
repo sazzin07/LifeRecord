@@ -25,7 +25,7 @@ from database import engine, AsyncSessionLocal, get_db
 from models import (
     Base, User, Account, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, PriceRecord, ShoppingItem,
-    ShoppingList, Meal, Recipe, AIAction, AIMessage,
+    ShoppingList, RecurringList, Meal, Recipe, AIAction, AIMessage,
 )
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
@@ -488,6 +488,26 @@ class SubmitPurchaseBody(BaseModel):
     store: Optional[str] = Field(default=None, max_length=255)
     record_expense: bool = Field(default=False)
     payment_account: Optional[str] = Field(default=None, max_length=36)
+
+
+class RecurringItem(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    quantity: float = Field(default=1, ge=0)
+    unit: str = Field(default="unit", max_length=50)
+    category: Optional[str] = Field(default=None, max_length=255)
+    estimated_price: Optional[float] = Field(default=None, ge=0)
+
+
+class RecurringListBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    schedule: str = Field(default="weekly", max_length=50)
+    items: List[RecurringItem] = []
+
+
+class RecurringListUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    schedule: Optional[str] = Field(default=None, max_length=50)
+    items: Optional[List[RecurringItem]] = Field(default=None)
 
 
 class RecipeIngredient(BaseModel):
@@ -2319,6 +2339,46 @@ async def get_low_stock(user: dict = Depends(get_current_user), db: AsyncSession
     return out
 
 
+@api_router.get("/groceries/suggestions")
+async def get_grocery_suggestions(limit: int = 10, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Suggest frequently bought or favorite items that are not currently in shopping lists."""
+    # Active list item names
+    active_items = (await db.execute(
+        select(ShoppingItem.name_lower).where(
+            ShoppingItem.user_id == user["_id"],
+            ShoppingItem.bought == False,
+        )
+    )).scalars().all()
+    active_names = set(active_items)
+
+    # Favorites and frequently bought
+    favorites = (await db.execute(
+        select(Grocery).where(
+            Grocery.user_id == user["_id"],
+            Grocery.is_favorite == True,
+        ).order_by(desc(Grocery.purchase_count))
+    )).scalars().all()
+
+    frequent = (await db.execute(
+        select(Grocery).where(
+            Grocery.user_id == user["_id"],
+            Grocery.purchase_count > 0,
+        ).order_by(desc(Grocery.purchase_count))
+    )).scalars().all()
+
+    seen = set()
+    out = []
+    for g in list(favorites) + list(frequent):
+        nl = g.name_lower
+        if nl in seen or nl in active_names:
+            continue
+        seen.add(nl)
+        out.append({**to_dict(g), "reason": "favorite" if g.is_favorite else "frequently bought"})
+        if len(out) >= limit:
+            break
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Meals / Nutrition
 # ---------------------------------------------------------------------------
@@ -2341,6 +2401,19 @@ async def add_meal(body: MealBody, user: dict = Depends(get_current_user), db: A
     await db.commit()
     await db.refresh(m)
     return to_dict(m)
+
+
+@api_router.put("/meals/{mid}")
+async def update_meal(mid: str, body: MealBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    meal = (await db.execute(select(Meal).where(Meal.id == mid, Meal.user_id == user["_id"]))).scalar_one_or_none()
+    if not meal:
+        raise HTTPException(404, "Meal not found")
+    updates = body.model_dump()
+    updates["date"] = updates.get("date") or meal.date
+    await db.execute(update(Meal).where(Meal.id == mid, Meal.user_id == user["_id"]).values(**updates))
+    await db.commit()
+    await db.refresh(meal)
+    return to_dict(meal)
 
 
 @api_router.delete("/meals/{mid}")
@@ -2617,6 +2690,79 @@ async def get_prices(name: str, user: dict = Depends(get_current_user), db: Asyn
 
 
 # ---------------------------------------------------------------------------
+# Recurring shopping lists
+# ---------------------------------------------------------------------------
+@api_router.get("/shopping/recurring")
+async def get_recurring_lists(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(RecurringList).where(RecurringList.user_id == user["_id"]).order_by(desc(RecurringList.created_at))
+    )).scalars().all()
+    return [to_dict(r) for r in rows]
+
+
+@api_router.post("/shopping/recurring")
+async def create_recurring_list(body: RecurringListBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    now = now_iso()
+    rl = RecurringList(
+        id=new_id(), user_id=user["_id"], name=body.name, schedule=body.schedule,
+        items=[i.model_dump() for i in body.items], created_at=now, updated_at=now)
+    db.add(rl)
+    await db.commit()
+    await db.refresh(rl)
+    return to_dict(rl)
+
+
+@api_router.put("/shopping/recurring/{rid}")
+async def update_recurring_list(rid: str, body: RecurringListUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rl = (await db.execute(
+        select(RecurringList).where(RecurringList.id == rid, RecurringList.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not rl:
+        raise HTTPException(404, "Recurring list not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "items" in updates:
+        updates["items"] = [i.model_dump() for i in updates["items"]]
+    if updates:
+        updates["updated_at"] = now_iso()
+        await db.execute(update(RecurringList).where(RecurringList.id == rid, RecurringList.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(rl)
+    return to_dict(rl)
+
+
+@api_router.delete("/shopping/recurring/{rid}")
+async def delete_recurring_list(rid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(RecurringList).where(RecurringList.id == rid, RecurringList.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Recurring list not found")
+    return {"ok": True}
+
+
+@api_router.post("/shopping/recurring/{rid}/spawn")
+async def spawn_recurring_list(rid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    rl = (await db.execute(
+        select(RecurringList).where(RecurringList.id == rid, RecurringList.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not rl:
+        raise HTTPException(404, "Recurring list not found")
+    now = now_iso()
+    lst = ShoppingList(id=new_id(), user_id=user["_id"], name=rl.name, budget=None, archived=False, created_at=now, updated_at=now)
+    db.add(lst)
+    await db.flush()
+    for it in (rl.items or []):
+        db.add(ShoppingItem(
+            id=new_id(), user_id=user["_id"], list_id=lst.id, name=it["name"],
+            name_lower=it["name"].lower(), category=it.get("category"),
+            quantity=it.get("quantity", 1), unit=it.get("unit", "unit"),
+            estimated_price=it.get("estimated_price"), bought=False, selected=False,
+            created_at=now))
+    rl.last_spawned_at = now
+    await db.commit()
+    return {"list": to_dict(lst), "spawned": len(rl.items or [])}
+
+
+# ---------------------------------------------------------------------------
 # Recipes
 # ---------------------------------------------------------------------------
 @api_router.get("/recipes")
@@ -2633,6 +2779,19 @@ async def create_recipe(body: RecipeBody, user: dict = Depends(get_current_user)
                calories=body.calories, protein=body.protein, carbs=body.carbs,
                fat=body.fat, notes=body.notes, created_at=now_iso())
     db.add(r)
+    await db.commit()
+    await db.refresh(r)
+    return to_dict(r)
+
+
+@api_router.put("/recipes/{rid}")
+async def update_recipe(rid: str, body: RecipeBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    r = (await db.execute(select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, "Recipe not found")
+    updates = body.model_dump()
+    updates["ingredients"] = [i.model_dump() for i in updates["ingredients"]]
+    await db.execute(update(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]).values(**updates))
     await db.commit()
     await db.refresh(r)
     return to_dict(r)
@@ -2801,6 +2960,30 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }},
     {"type": "function", "function": {
+        "name": "get_grocery_suggestions",
+        "description": "Get frequently bought or favorite grocery suggestions that are not already on a shopping list.",
+        "parameters": {"type": "object", "properties": {"limit": {"type": "number"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_recurring_lists",
+        "description": "Get recurring shopping list templates.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "create_recurring_list",
+        "description": "Create a recurring shopping list template with items and a schedule (weekly/biweekly/monthly).",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "schedule": {"type": "string", "enum": ["weekly", "biweekly", "monthly"]},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"}, "category": {"type": "string"}, "estimated_price": {"type": "number"}}}}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "spawn_recurring_list",
+        "description": "Spawn a shopping list from a recurring template now.",
+        "parameters": {"type": "object", "properties": {"recurring_list_id": {"type": "string"}}, "required": ["recurring_list_id"]},
+    }},
+    {"type": "function", "function": {
         "name": "log_meal",
         "description": "Log a meal with estimated nutrition. Estimate calories/macros from the foods and quantities described.",
         "parameters": {"type": "object", "properties": {
@@ -2931,7 +3114,7 @@ Rules:
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record a refund use mark_refunded (or record_payment for a general person payment).
 - To move money between the user's own places (e.g. "I withdrew 50€ from the bank") use transfer_money. To correct a balance or set the bank's initial balance use update_account_balance.
 - Actual spending is calculated as: money that left the bank (initial bank balance - current bank balance) minus money still in hand (cash + Revolut). Do not double-count transfers between the user's own accounts as spending.
-- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases.
+- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists.
 - NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
 - If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
 - For destructive actions (delete, large bulk changes) always confirm with the user first.
@@ -3451,6 +3634,18 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             return await update_shopping_list(lid, upd, user, db)
         if name == "get_price_history":
             return await get_prices(args.get("name", ""), user, db)
+        if name == "get_grocery_suggestions":
+            return await get_grocery_suggestions(args.get("limit", 10), user, db)
+        if name == "get_recurring_lists":
+            return await get_recurring_lists(user, db)
+        if name == "create_recurring_list":
+            rl = await create_recurring_list(RecurringListBody(
+                name=args["name"], schedule=args.get("schedule", "weekly"),
+                items=[RecurringItem(**i) for i in args.get("items", [])]), user, db)
+            created.append({"collection": "recurring_lists", "id": rl["id"]})
+            return rl
+        if name == "spawn_recurring_list":
+            return await spawn_recurring_list(args.get("recurring_list_id"), user, db)
         if name == "create_recipe":
             body = RecipeBody(name=args["name"], servings=int(args.get("servings", 1)),
                               ingredients=[RecipeIngredient(**i) for i in args.get("ingredients", [])],

@@ -307,6 +307,35 @@ class TestShopping:
         client.delete(f"{BASE_URL}/api/shopping/{it['id']}")
         client.delete(f"{BASE_URL}/api/shopping/lists/{lst['id']}")
 
+    def test_recurring_list_and_suggestions(self, client):
+        # Create favorite grocery
+        g = client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_fav", "quantity": 1, "is_favorite": True}).json()
+
+        # Suggestions should include it
+        sugg = client.get(f"{BASE_URL}/api/groceries/suggestions").json()
+        assert any(x["name"] == f"{TAG}_fav" for x in sugg)
+
+        # Create recurring list
+        rl = client.post(f"{BASE_URL}/api/shopping/recurring", json={
+            "name": f"{TAG}_weekly",
+            "schedule": "weekly",
+            "items": [{"name": f"{TAG}_fav", "quantity": 2, "unit": "unit"}]
+        }).json()
+        assert rl["schedule"] == "weekly"
+        assert len(rl["items"]) == 1
+
+        # Spawn it
+        spawned = client.post(f"{BASE_URL}/api/shopping/recurring/{rl['id']}/spawn").json()
+        assert spawned["spawned"] == 1
+
+        # Spawned list has the item
+        payload = client.get(f"{BASE_URL}/api/shopping", params={"list_id": spawned["list"]["id"]}).json()
+        assert any(x["name"] == f"{TAG}_fav" for x in payload["items"])
+
+        client.delete(f"{BASE_URL}/api/shopping/recurring/{rl['id']}")
+        client.delete(f"{BASE_URL}/api/shopping/lists/{spawned['list']['id']}")
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
 
 # --- Recipes cook ---
 class TestRecipes:

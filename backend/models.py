@@ -204,6 +204,19 @@ class ShoppingList(Base):
     archived = Column(Boolean, nullable=False, default=False)
     created_at = Column(String(32), nullable=False)
     updated_at = Column(String(32), nullable=False)
+    items = relationship("ShoppingItem", back_populates="list", cascade="all, delete-orphan", lazy="selectin")
+
+
+class RecurringList(Base):
+    __tablename__ = "recurring_lists"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    schedule = Column(String(50), nullable=False, default="weekly")  # weekly, biweekly, monthly
+    items = Column(JSON, nullable=False, default=list)
+    last_spawned_at = Column(String(32), nullable=True)
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=False)
 
 
 class ShoppingItem(Base):
@@ -225,6 +238,7 @@ class ShoppingItem(Base):
     completed_at = Column(String(32), nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(String(32), nullable=False)
+    list = relationship("ShoppingList", back_populates="items")
 
 
 class Meal(Base):

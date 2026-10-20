@@ -8,6 +8,7 @@ import { Card, SectionHeading, Label, Avatar } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -17,9 +18,12 @@ export default function Settings() {
   const { data: cats } = useFetch("/categories");
   const { data: accounts } = useFetch("/accounts");
   const [newCat, setNewCat] = useState("");
+  const [deleteCatId, setDeleteCatId] = useState(null);
+  const [deleteCatOpen, setDeleteCatOpen] = useState(false);
 
   const addCat = async () => { if (!newCat.trim()) return; await api.post("/categories", { name: newCat }); setNewCat(""); refreshAll(); toast.success("Category added"); };
   const delCat = async (id) => { await api.delete(`/categories/${id}`); refreshAll(); };
+  const catToDelete = (cats || []).find((c) => c.id === deleteCatId);
 
   const themes = [{ k: "light", i: Sun, l: "Light" }, { k: "dark", i: Moon, l: "Dark" }, { k: "system", i: Monitor, l: "System" }];
 
@@ -71,7 +75,7 @@ export default function Settings() {
           {(cats || []).map((c) => (
             <span key={c.id} className="group inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm">
               <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.name}
-              <button onClick={() => delCat(c.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+              <button onClick={() => { setDeleteCatId(c.id); setDeleteCatOpen(true); }} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
             </span>
           ))}
         </div>
@@ -81,6 +85,16 @@ export default function Settings() {
         <Sparkles className="h-5 w-5 text-emerald-600" />
         <div><p className="font-medium text-sm">AI assistant</p><p className="text-xs text-slate-500">Powered by Gemini · text, voice and receipt photos. Your key is stored securely on the server.</p></div>
       </Card>
+
+      <ConfirmDialog
+        open={deleteCatOpen}
+        onOpenChange={setDeleteCatOpen}
+        title="Delete category?"
+        description={catToDelete ? `This will permanently delete the "${catToDelete.name}" category.` : "This will permanently delete the category."}
+        onConfirm={() => { const id = deleteCatId; if (id) delCat(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

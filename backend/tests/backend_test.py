@@ -64,8 +64,8 @@ class TestListEndpoints:
         r = client.get(f"{BASE_URL}/api/accounts")
         assert r.status_code == 200
         accs = r.json()
-        ids = {a["id"] for a in accs}
-        assert "cash" in ids and "revolut" in ids
+        types = {a["type"] for a in accs}
+        assert "cash" in types and "revolut" in types
         for a in accs:
             assert "balance" in a
 
@@ -166,11 +166,13 @@ class TestMeals:
 class TestFinance:
     def test_personal_expense_updates_balance(self, client):
         before = client.get(f"{BASE_URL}/api/accounts").json()
-        cash_before = next(a["balance"] for a in before if a["id"] == "cash")
+        cash_acc = next((a for a in before if a["type"] == "cash"), None)
+        assert cash_acc, "No cash account found"
+        cash_before = cash_acc["balance"]
 
         r = client.post(f"{BASE_URL}/api/transactions/expense", json={
             "amount": 12.34, "merchant": f"{TAG}_shop", "category": "Other",
-            "account": "cash", "participants": ["Me"], "split_mode": "equal",
+            "account": cash_acc["id"], "participants": ["Me"], "split_mode": "equal",
         })
         assert r.status_code == 200
         txn = r.json()["transaction"]
@@ -180,7 +182,7 @@ class TestFinance:
         assert txn["reimbursable_amount"] == 0.0
 
         after = client.get(f"{BASE_URL}/api/accounts").json()
-        cash_after = next(a["balance"] for a in after if a["id"] == "cash")
+        cash_after = next(a["balance"] for a in after if a["id"] == cash_acc["id"])
         assert round(cash_before - cash_after, 2) == 12.34
 
         # Appears in list

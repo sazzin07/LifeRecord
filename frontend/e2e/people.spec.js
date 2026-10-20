@@ -35,8 +35,11 @@ test.describe("People tab", () => {
     await expect(page.getByText(newName)).toBeVisible();
 
     // Delete person
-    page.on("dialog", async (dialog) => await dialog.accept());
     await page.getByTestId(`person-delete-${personId}`).click();
+    const dialog1 = page.getByRole("alertdialog");
+    await expect(dialog1).toContainText("Delete");
+    await dialog1.getByTestId("person-delete-confirm").click();
+    await expect(dialog1).not.toBeVisible();
     await expect(page.getByText(newName)).not.toBeVisible();
   });
 
@@ -112,8 +115,11 @@ test.describe("People tab", () => {
 
     // Close detail and delete the person
     await page.keyboard.press("Escape");
-    page.on("dialog", async (dialog) => await dialog.accept());
     await page.getByTestId(`person-delete-${person.id}`).click();
+    const dialog2 = page.getByRole("alertdialog");
+    await expect(dialog2).toContainText("Delete");
+    await dialog2.getByTestId("person-delete-confirm").click();
+    await expect(dialog2).not.toBeVisible();
     await expect(page.getByText(name)).not.toBeVisible();
   });
 
@@ -132,5 +138,39 @@ test.describe("People tab", () => {
     await page.getByTestId("detail-delete-confirm").click();
 
     await expect(page.getByText(name)).not.toBeVisible();
+  });
+
+  test("edit and delete person from standalone detail route", async ({ authenticatedPage: page }) => {
+    const name = uniqueName();
+
+    await page.getByTestId("add-person-btn").click();
+    await page.getByTestId("person-name-input").fill(name);
+    await page.getByTestId("person-form-save").click();
+    await expect(page.getByText(name)).toBeVisible();
+
+    const card = page.getByTestId(/^person-card-/).filter({ hasText: name });
+    const personId = (await card.getAttribute("data-testid")).replace("person-card-", "");
+
+    // Navigate to standalone detail route
+    await page.goto(`/people/${personId}`);
+    await expect(page.getByRole("dialog")).toContainText(name);
+
+    // Edit from detail route
+    await page.getByTestId("detail-edit-btn").click();
+    await expect(page.getByRole("dialog")).toContainText("Edit person");
+    const newName = `${name}-route`;
+    await page.getByTestId("person-name-input").fill(newName);
+    await page.getByTestId("person-form-save").click();
+    await expect(page.getByText(newName)).toBeVisible();
+
+    // Delete from detail route
+    await page.goto(`/people/${personId}`);
+    await expect(page.getByRole("dialog")).toContainText(newName);
+    await page.getByTestId("detail-delete-btn").click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Delete");
+    await dialog.getByTestId("detail-delete-confirm").click();
+    await expect(page.getByRole("heading", { name: "People" })).toBeVisible();
+    await expect(page.getByText(newName)).not.toBeVisible();
   });
 });

@@ -17,22 +17,33 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
   const [cats, setCats] = useState([]);
   const [people, setPeople] = useState([]);
   const [f, setF] = useState({});
+  const [accounts, setAccounts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
-  const [refund, setRefund] = useState({ amount: "", method: "Revolut", account: "revolut", person: "" });
+  const [refund, setRefund] = useState({ amount: "", method: "Revolut", account: "", person: "" });
 
   useEffect(() => {
     if (!open || !txn) return;
     api.get("/categories").then((r) => setCats(r.data));
     api.get("/people").then((r) => setPeople(r.data));
+    api.get("/accounts").then((r) => {
+      const accs = r.data.filter((a) => a.type !== "owed" && a.type !== "owed_person");
+      setAccounts(accs);
+      if (!refund.account && accs.length) {
+        const rev = accs.find((a) => a.type === "revolut");
+        setRefund((prev) => ({ ...prev, account: rev?.id || accs[0].id }));
+      }
+    });
     setF({
       description: txn.merchant || txn.description || "",
       amount: txn.gross_amount, personal_amount: txn.personal_amount,
-      category: txn.category, payment_method: txn.payment_method || (txn.account === "cash" ? "cash" : "card"),
+      category: txn.category, payment_method: txn.account || txn.payment_method || "",
       date: txn.date, notes: txn.notes || "",
     });
     setRefund((r) => ({ ...r, person: txn.responsible?.[0] || "" }));
+    // Only run when dialog opens or txn changes; refund account state should not reset on edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, txn]);
 
   if (!txn) return null;
@@ -104,7 +115,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment</label>
                 <Select value={f.payment_method} onValueChange={(v) => setF((p) => ({ ...p, payment_method: v }))}>
                   <SelectTrigger className="mt-1" data-testid="edit-method"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="card">Card (Revolut)</SelectItem></SelectContent>
+                  <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
@@ -158,7 +169,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
               </Select>
               <Select value={refund.account} onValueChange={(v) => setRefund((r) => ({ ...r, account: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="revolut">Into Revolut</SelectItem><SelectItem value="cash">Into Cash</SelectItem></SelectContent>
+                <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <Button onClick={recordRefund} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="refund-submit">Record</Button>

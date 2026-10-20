@@ -243,7 +243,31 @@ On startup the backend ensures an `owner` role account exists with the credentia
 
 ## Database migrations
 
-This project uses raw SQL migrations in addition to SQLAlchemy models. The migration that introduced multi-user columns is:
+This project uses **Alembic** for schema migrations. Migrations live in `backend/alembic/versions/` and are driven by the SQLAlchemy models in `backend/models.py`.
+
+### Common commands
+
+```powershell
+cd backend
+
+# Create a new migration after changing models
+.venv\Scripts\alembic.exe revision --autogenerate -m "description"
+
+# Apply pending migrations
+.venv\Scripts\alembic.exe upgrade head
+
+# Downgrade one revision
+.venv\Scripts\alembic.exe downgrade -1
+
+# Mark an existing database as up-to-date without running migrations
+.venv\Scripts\alembic.exe stamp head
+```
+
+Alembic reads the same `DATABASE_*` environment variables as the application (from `backend/.env`).
+
+### Legacy raw-SQL migration
+
+The one-time migration that introduced multi-user columns is preserved for reference:
 
 ```
 migrate_multiuser.py
@@ -291,17 +315,18 @@ The default model is `gemini-3.5-flash-lite` because it has the highest free-tie
 
 ## Production deployment checklist
 
-- Change `JWT_SECRET` to a cryptographically random value.
-- Set strong `ADMIN_PASSWORD`.
-- Configure real SMTP credentials.
-- Use HTTPS and set `FRONTEND_URL` to the HTTPS URL.
-- Run MySQL/MariaDB with TLS and a non-root application user.
-- Restrict `CORS_ORIGINS` to the production frontend domain.
-- Set `ALLOWED_HOSTS` to the production domain(s).
-- Serve the frontend `build/` folder with a production web server or reverse proxy.
-- Do not expose phpMyAdmin to the public internet.
-- Rotate the Gemini API key before going live; the existing key should be treated as compromised.
-- Review and patch frontend build-tool dependencies regularly (`yarn audit`).
+1. Copy `backend/.env.production.example` to `backend/.env.production` and fill in real values.
+2. Change `JWT_SECRET` to a cryptographically random value (e.g. `python -c "import secrets; print(secrets.token_urlsafe(64))"`).
+3. Set a strong `ADMIN_PASSWORD`.
+4. Configure real SMTP credentials.
+5. Use HTTPS and set `FRONTEND_URL` to the HTTPS URL.
+6. Run MySQL/MariaDB with TLS and a non-root application user.
+7. Restrict `CORS_ORIGINS` to the production frontend domain.
+8. Set `ALLOWED_HOSTS` to the production domain(s).
+9. Serve the frontend `build/` folder with a production web server or reverse proxy.
+10. Do not expose phpMyAdmin to the public internet.
+11. Rotate the Gemini API key before going live; the existing key should be treated as compromised.
+12. Review and patch frontend build-tool dependencies regularly (`yarn audit`).
 
 ## Security notes
 

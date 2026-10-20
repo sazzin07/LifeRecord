@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Users, Plus, Search, Trash2, Pencil, HandCoins, TrendingDown,
   TrendingUp, X,
@@ -42,7 +42,21 @@ export default function People() {
   const [editing, setEditing] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [singleDeleteOpen, setSingleDeleteOpen] = useState(false);
+  const [singleDeleteId, setSingleDeleteId] = useState(null);
+  const [singleDeleteName, setSingleDeleteName] = useState("");
   const [form, setForm] = useState({ name: "", notes: "", payment_preference: "" });
+  const location = useLocation();
+
+  useEffect(() => {
+    const editPerson = location.state?.editPerson;
+    if (editPerson) {
+      setEditing(editPerson);
+      setForm({ name: editPerson.name, notes: editPerson.notes || "", payment_preference: editPerson.payment_preference || "" });
+      setFormOpen(true);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const allPeople = useMemo(() => people || [], [people]);
 
@@ -258,7 +272,7 @@ export default function People() {
                         <Button variant="outline" size="sm" className="h-8 flex-1" onClick={(e) => startEdit(p, e)} data-testid={`person-edit-${p.id}`}>
                           <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 flex-1 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this person permanently? Their splits and payments will also be removed.")) deletePerson(p.id); }} data-testid={`person-delete-${p.id}`}>
+                        <Button variant="outline" size="sm" className="h-8 flex-1 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); setSingleDeleteId(p.id); setSingleDeleteName(p.name); setSingleDeleteOpen(true); }} data-testid={`person-delete-${p.id}`}>
                           <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                         </Button>
                       </div>
@@ -300,6 +314,20 @@ export default function People() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Single delete confirmation */}
+      <AlertDialog open={singleDeleteOpen} onOpenChange={setSingleDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {singleDeleteName || "this person"}?</AlertDialogTitle>
+            <AlertDialogDescription>This will permanently delete the person and remove their splits and payments from your ledger. This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="person-delete-cancel" onClick={() => setSingleDeleteOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction data-testid="person-delete-confirm" className="bg-red-500 hover:bg-red-600 text-white" onClick={() => { const id = singleDeleteId; if (id) { deletePerson(id); } }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bulk delete confirmation */}
       <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>

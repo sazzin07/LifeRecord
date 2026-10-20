@@ -25,7 +25,7 @@ from database import engine, AsyncSessionLocal, get_db
 from models import (
     Base, User, Account, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, PriceRecord, ShoppingItem,
-    Meal, Recipe, AIAction, AIMessage,
+    ShoppingList, Meal, Recipe, AIAction, AIMessage,
 )
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
@@ -363,6 +363,9 @@ class GroceryBody(BaseModel):
     low_threshold: float = Field(default=0, ge=0)
     notes: str = Field(default="", max_length=2000)
     expiration: Optional[str] = None
+    is_favorite: bool = Field(default=False)
+    default_quantity: Optional[float] = Field(default=None, ge=0)
+    default_store: Optional[str] = Field(default=None, max_length=255)
 
 
 class GroceryUpdate(BaseModel):
@@ -375,6 +378,9 @@ class GroceryUpdate(BaseModel):
     low_threshold: Optional[float] = Field(default=None, ge=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
     expiration: Optional[str] = None
+    is_favorite: Optional[bool] = Field(default=None)
+    default_quantity: Optional[float] = Field(default=None, ge=0)
+    default_store: Optional[str] = Field(default=None, max_length=255)
 
 
 class TxnUpdate(BaseModel):
@@ -388,6 +394,38 @@ class TxnUpdate(BaseModel):
     personal_amount: Optional[float] = None
 
 
+class AccountBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    type: str = Field(..., min_length=1, max_length=50)
+    parent_id: Optional[str] = Field(default=None, max_length=36)
+    currency: str = Field(default="EUR", max_length=10)
+    opening_balance: float = Field(default=0, ge=0)
+    initial_balance: Optional[float] = Field(default=None, ge=0)
+    is_locked: bool = Field(default=False)
+    sort_order: int = Field(default=0)
+    is_active: bool = Field(default=True)
+
+
+class AccountUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    type: Optional[str] = Field(default=None, max_length=50)
+    parent_id: Optional[str] = Field(default=None, max_length=36)
+    currency: Optional[str] = Field(default=None, max_length=10)
+    opening_balance: Optional[float] = Field(default=None, ge=0)
+    initial_balance: Optional[float] = Field(default=None, ge=0)
+    is_locked: Optional[bool] = Field(default=None)
+    sort_order: Optional[int] = Field(default=None)
+    is_active: Optional[bool] = Field(default=None)
+
+
+class AccountTransferBody(BaseModel):
+    from_account_id: str = Field(..., min_length=1, max_length=36)
+    to_account_id: str = Field(..., min_length=1, max_length=36)
+    amount: float = Field(..., gt=0)
+    date: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
 class MealBody(BaseModel):
     description: str = Field(..., min_length=1, max_length=500)
     calories: Optional[float] = Field(default=None, ge=0, le=50000)
@@ -399,14 +437,57 @@ class MealBody(BaseModel):
 
 class ShoppingBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=255)
     quantity: float = Field(default=1, ge=0)
     unit: str = Field(default="unit", max_length=50)
+    estimated_price: Optional[float] = Field(default=None, ge=0)
+    store: Optional[str] = Field(default=None, max_length=255)
     note: str = Field(default="", max_length=1000)
+    list_id: Optional[str] = Field(default=None, max_length=36)
+    sort_order: int = Field(default=0)
 
 
 class BuyBody(BaseModel):
     price: Optional[float] = None
     store: Optional[str] = Field(default=None, max_length=255)
+
+
+class ShoppingItemUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=255)
+    quantity: Optional[float] = Field(default=None, ge=0)
+    unit: Optional[str] = Field(default=None, max_length=50)
+    estimated_price: Optional[float] = Field(default=None, ge=0)
+    actual_price: Optional[float] = Field(default=None, ge=0)
+    store: Optional[str] = Field(default=None, max_length=255)
+    note: Optional[str] = Field(default=None, max_length=1000)
+    sort_order: Optional[int] = Field(default=None)
+    selected: Optional[bool] = Field(default=None)
+
+
+class ShoppingListBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    budget: Optional[float] = Field(default=None, ge=0)
+
+
+class ShoppingListUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    budget: Optional[float] = Field(default=None, ge=0)
+    archived: Optional[bool] = Field(default=None)
+
+
+class PurchaseItem(BaseModel):
+    item_id: str = Field(..., max_length=36)
+    quantity: Optional[float] = Field(default=None, ge=0)
+    actual_price: Optional[float] = Field(default=None, ge=0)
+    store: Optional[str] = Field(default=None, max_length=255)
+
+
+class SubmitPurchaseBody(BaseModel):
+    items: List[PurchaseItem] = []
+    store: Optional[str] = Field(default=None, max_length=255)
+    record_expense: bool = Field(default=False)
+    payment_account: Optional[str] = Field(default=None, max_length=36)
 
 
 class RecipeIngredient(BaseModel):
@@ -476,6 +557,33 @@ async def resolve_person(db: AsyncSession, name: str, user_id: str) -> dict:
     return {"id": p.id, "name": p.name}
 
 
+async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[Account]:
+    """Resolve an account by id, name, or legacy cash/revolut alias."""
+    if not ref:
+        return None
+    ref_lower = ref.strip().lower()
+    if ref_lower == "cash":
+        return (await db.execute(
+            select(Account).where(Account.user_id == user_id, Account.type == "cash")
+        )).scalars().first()
+    if ref_lower in ("revolut", "card"):
+        return (await db.execute(
+            select(Account).where(Account.user_id == user_id, Account.type == "revolut")
+        )).scalars().first()
+    # Try by id first.
+    acc = (await db.execute(
+        select(Account).where(Account.id == ref, Account.user_id == user_id, Account.is_active == True)
+    )).scalar_one_or_none()
+    if acc:
+        return acc
+    # Try by name (exact or partial).
+    acc = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.is_active == True,
+                              Account.name_lower.ilike(f"%{ref_lower}%"))
+    )).scalars().first()
+    return acc
+
+
 def normalize_name(n: str) -> str:
     return "Me" if n.strip().lower() in ("me", "eu", "sá", "sa") else n.strip()
 
@@ -542,23 +650,33 @@ async def create_expense_record(db: AsyncSession, body: ExpenseBody, user_id: st
 
     inventory_added = []
     if body.add_to_inventory and items:
-        for it in items:
-            g = Grocery(id=new_id(), user_id=user_id, name=it["name"], name_lower=it["name"].lower(),
-                        quantity=1, unit="unit", category="Other",
-                        price=it["price"], store=body.merchant, low_threshold=0,
-                        notes="", expiration=None, created_at=now_iso(), updated_at=now_iso())
-            db.add(g)
-            inventory_added.append(it["name"])
+        from collections import Counter
+        counts = Counter(it.get("name", "").strip() for it in items if it.get("name"))
+        for name, count in counts.items():
+            g = (await db.execute(
+                select(Grocery).where(Grocery.name_lower == name.lower(), Grocery.user_id == user_id)
+            )).scalar_one_or_none()
+            if g:
+                g.quantity = float(g.quantity) + count
+                g.updated_at = now_iso()
+            else:
+                first_item = next(it for it in items if it.get("name", "").strip() == name)
+                g = Grocery(id=new_id(), user_id=user_id, name=name, name_lower=name.lower(),
+                            quantity=count, unit="unit", category="Other",
+                            price=first_item.get("price"), store=body.merchant, low_threshold=0,
+                            notes="", expiration=None, created_at=now_iso(), updated_at=now_iso())
+                db.add(g)
+            inventory_added.extend([name] * count)
 
     await db.commit()
     await db.refresh(txn)
     return {"transaction": txn_to_dict(txn), "inventory_added": inventory_added}
 
 
-def txn_to_dict(txn: Transaction, rmap: Dict[str, float] = None) -> dict:
+def txn_to_dict(txn: Transaction, rmap: Dict[str, float] = None, account_types: dict = None) -> dict:
     d = to_dict(txn)
     d["splits"] = [to_dict(s) for s in txn.splits]
-    d = serialize_txn(d, rmap or {})
+    d = serialize_txn(d, rmap or {}, account_types)
     return d
 
 
@@ -678,13 +796,31 @@ def cheapest_store(per_store: dict):
     return {"store": s, "price": v["price"], "date": v["date"]}
 
 
-async def shopping_payload(db: AsyncSession, user_id: str) -> dict:
-    items = (await db.execute(
-        select(ShoppingItem).where(
-            ShoppingItem.user_id == user_id,
-            ShoppingItem.bought == False,
-        ).order_by(asc(ShoppingItem.created_at))
+async def shopping_payload(db: AsyncSession, user_id: str, list_id: Optional[str] = None) -> dict:
+    lists = (await db.execute(
+        select(ShoppingList).where(
+            ShoppingList.user_id == user_id,
+        ).order_by(desc(ShoppingList.created_at))
     )).scalars().all()
+    list_map = {lst.id: to_dict(lst) for lst in lists}
+
+    # Ensure at least a default list exists if there are items without a list.
+    items_query = select(ShoppingItem).where(
+        ShoppingItem.user_id == user_id,
+        ShoppingItem.bought == False,
+    )
+    if list_id:
+        items_query = items_query.where(ShoppingItem.list_id == list_id)
+    items = (await db.execute(items_query.order_by(asc(ShoppingItem.sort_order), asc(ShoppingItem.created_at)))).scalars().all()
+
+    if items and not lists:
+        default_list = await get_or_create_default_list(db, user_id)
+        list_map[default_list.id] = to_dict(default_list)
+        for it in items:
+            if not it.list_id:
+                it.list_id = default_list.id
+        await db.commit()
+
     enriched = []
     store_baskets = {}
     split_total = 0.0
@@ -700,7 +836,8 @@ async def shopping_payload(db: AsyncSession, user_id: str) -> dict:
                 b["items"].append(it.name)
         else:
             unknown.append(it.name)
-        enriched.append({**to_dict(it), "per_store": per_store, "best": ch, "known": ch is not None})
+        enriched.append({**to_dict(it), "list": list_map.get(it.list_id),
+                         "per_store": per_store, "best": ch, "known": ch is not None})
 
     priced_count = len(items) - len(unknown)
     stores = [{"store": s, "total": round(b["total"], 2), "covers": len(b["items"]), "items": b["items"]}
@@ -721,36 +858,82 @@ async def shopping_payload(db: AsyncSession, user_id: str) -> dict:
     if unknown:
         recommendation += f" No known price yet for: {', '.join(unknown)}."
 
+    # Budget summary for the requested/current list
+    active_list = list_map.get(list_id) if list_id else None
+    budget_summary = None
+    if active_list:
+        list_items = [it for it in items if it.list_id == active_list["id"]]
+        estimated_total = round(sum(float(it.estimated_price or 0) * float(it.quantity) for it in list_items), 2)
+        budget_summary = {
+            "list_id": active_list["id"],
+            "budget": float(active_list["budget"]) if active_list.get("budget") is not None else None,
+            "estimated_total": estimated_total,
+            "remaining": round(float(active_list["budget"]) - estimated_total, 2) if active_list.get("budget") is not None else None,
+            "item_count": len(list_items),
+            "selected_count": sum(1 for it in list_items if it.selected),
+        }
+
     return {
         "items": enriched,
+        "lists": list(list_map.values()),
         "stores": stores_sorted,
         "best_single": best_single,
         "split_total": round(split_total, 2),
         "unknown": unknown,
         "recommendation": recommendation.strip(),
+        "budget_summary": budget_summary,
     }
 
 
+async def get_or_create_default_list(db: AsyncSession, user_id: str) -> ShoppingList:
+    lst = (await db.execute(
+        select(ShoppingList).where(
+            ShoppingList.user_id == user_id,
+            ShoppingList.archived == False,
+        ).order_by(asc(ShoppingList.created_at))
+    )).scalars().first()
+    if not lst:
+        now = now_iso()
+        lst = ShoppingList(id=new_id(), user_id=user_id, name="Shopping list",
+                           archived=False, created_at=now, updated_at=now)
+        db.add(lst)
+        await db.commit()
+        await db.refresh(lst)
+    return lst
+
+
 async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1,
-                                     unit: str = "unit", note: str = "", user_id: str = None) -> dict:
+                                     unit: str = "unit", note: str = "", user_id: str = None,
+                                     list_id: str = None, category: Optional[str] = None,
+                                     estimated_price: Optional[float] = None,
+                                     store: Optional[str] = None, sort_order: int = 0) -> dict:
+    if not list_id:
+        default_list = await get_or_create_default_list(db, user_id)
+        list_id = default_list.id
     existing = (await db.execute(
         select(ShoppingItem).where(
             ShoppingItem.user_id == user_id,
+            ShoppingItem.list_id == list_id,
             ShoppingItem.name_lower == name.lower(),
             ShoppingItem.bought == False,
         )
     )).scalar_one_or_none()
     if existing:
         return to_dict(existing)
-    doc = ShoppingItem(id=new_id(), user_id=user_id, name=name, name_lower=name.lower(), quantity=quantity,
-                       unit=unit, note=note, bought=False, created_at=now_iso())
+    doc = ShoppingItem(id=new_id(), user_id=user_id, list_id=list_id, name=name, name_lower=name.lower(),
+                       category=category, quantity=quantity, unit=unit,
+                       estimated_price=estimated_price, store=store,
+                       note=note, bought=False, sort_order=sort_order, created_at=now_iso())
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
     return to_dict(doc)
 
 
-async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = None) -> dict:
+async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = None, list_id: Optional[str] = None) -> dict:
+    if not list_id:
+        default_list = await get_or_create_default_list(db, user_id)
+        list_id = default_list.id
     groceries = (await db.execute(
         select(Grocery).where(Grocery.user_id == user_id)
     )).scalars().all()
@@ -758,7 +941,7 @@ async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = 
     added = []
     for g in groceries:
         if g.low_threshold and float(g.quantity) <= float(g.low_threshold):
-            await add_shopping_item_doc(db, g.name, max(1, round(days / 2)), g.unit or "unit", "Running low", user_id)
+            await add_shopping_item_doc(db, g.name, max(1, round(days / 2)), g.unit or "unit", "Running low", user_id, list_id=list_id)
             added.append(g.name)
     known_names = [r[0] async for r in await db.stream(
         select(PriceRecord.name).where(PriceRecord.user_id == user_id).distinct()
@@ -766,10 +949,10 @@ async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = 
     for name in known_names:
         nl = name.lower()
         if nl not in stock or float(stock[nl].quantity) <= 0:
-            doc = await add_shopping_item_doc(db, name, 1, "unit", "From your usual buys", user_id)
+            doc = await add_shopping_item_doc(db, name, 1, "unit", "From your usual buys", user_id, list_id=list_id)
             if doc["name"] not in added:
                 added.append(doc["name"])
-    payload = await shopping_payload(db, user_id)
+    payload = await shopping_payload(db, user_id, list_id=list_id)
     payload["added"] = added
     return payload
 
@@ -1240,7 +1423,7 @@ async def delete_category(cid: str, user: dict = Depends(get_current_user), db: 
 @api_router.get("/accounts")
 async def get_accounts(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     accs = (await db.execute(
-        _user_owned_query(Account, user).order_by(Account.name)
+        _user_owned_query(Account, user).where(Account.is_active == True).order_by(Account.sort_order, Account.name)
     )).scalars().all()
     out = []
     for a in accs:
@@ -1248,6 +1431,110 @@ async def get_accounts(user: dict = Depends(get_current_user), db: AsyncSession 
         d["balance"] = await compute_account_balance(db, a.id, user["_id"])
         out.append(d)
     return out
+
+
+@api_router.post("/accounts")
+async def create_account(body: AccountBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if body.parent_id:
+        parent = (await db.execute(
+            select(Account).where(Account.id == body.parent_id, Account.user_id == user["_id"])
+        )).scalar_one_or_none()
+        if not parent:
+            raise HTTPException(400, "Parent account not found")
+    acc = Account(
+        id=new_id(), user_id=user["_id"], name=body.name, type=body.type,
+        parent_id=body.parent_id, currency=body.currency,
+        opening_balance=round(body.opening_balance, 2),
+        initial_balance=round(body.initial_balance, 2) if body.initial_balance is not None else None,
+        is_locked=body.is_locked,
+        sort_order=body.sort_order,
+        is_active=body.is_active, created_at=now_iso(),
+    )
+    db.add(acc)
+    await db.commit()
+    await db.refresh(acc)
+    return to_dict(acc)
+
+
+@api_router.put("/accounts/{aid}")
+async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    acc = (await db.execute(
+        select(Account).where(Account.id == aid, Account.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(404, "Account not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "parent_id" in updates:
+        if updates["parent_id"] == aid:
+            raise HTTPException(400, "Account cannot be its own parent")
+        if updates["parent_id"]:
+            parent = (await db.execute(
+                select(Account).where(Account.id == updates["parent_id"], Account.user_id == user["_id"])
+            )).scalar_one_or_none()
+            if not parent:
+                raise HTTPException(400, "Parent account not found")
+    if updates:
+        await db.execute(update(Account).where(Account.id == aid, Account.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(acc)
+    acc = (await db.execute(
+        select(Account).where(Account.id == aid, Account.user_id == user["_id"])
+    )).scalar_one_or_none()
+    return to_dict(acc)
+
+
+@api_router.delete("/accounts/{aid}")
+async def delete_account(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Prevent deleting accounts with children or transactions.
+    children = (await db.execute(
+        select(Account).where(Account.parent_id == aid, Account.user_id == user["_id"])
+    )).scalars().first()
+    if children:
+        raise HTTPException(400, "Delete child accounts first")
+    txn = (await db.execute(
+        select(Transaction).where(
+            ((Transaction.account == aid) & (Transaction.type == "expense")) |
+            ((Transaction.account == aid) & (Transaction.type == "income")) |
+            ((Transaction.from_account == aid) & (Transaction.type == "transfer")) |
+            ((Transaction.to_account == aid) & (Transaction.type == "transfer"))
+        ).where(Transaction.user_id == user["_id"])
+    )).scalars().first()
+    if txn:
+        raise HTTPException(400, "Cannot delete account with transactions")
+    result = await db.execute(delete(Account).where(Account.id == aid, Account.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Account not found")
+    return {"ok": True}
+
+
+@api_router.post("/accounts/transfer")
+async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if body.from_account_id == body.to_account_id:
+        raise HTTPException(400, "Source and destination must differ")
+    from_acc = (await db.execute(
+        select(Account).where(Account.id == body.from_account_id, Account.user_id == user["_id"])
+    )).scalar_one_or_none()
+    to_acc = (await db.execute(
+        select(Account).where(Account.id == body.to_account_id, Account.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not from_acc or not to_acc:
+        raise HTTPException(404, "Account not found")
+    bal = await compute_account_balance(db, from_acc.id, user["_id"])
+    if bal < body.amount - 0.005:
+        raise HTTPException(400, "Insufficient funds")
+    date = body.date or now_iso()[:10]
+    txn = Transaction(
+        id=new_id(), user_id=user["_id"], type="transfer",
+        gross_amount=round(body.amount, 2), personal_amount=0, reimbursable_amount=0,
+        description=body.note or f"Transfer to {to_acc.name}", category="Transfer",
+        account=from_acc.id, from_account=from_acc.id, to_account=to_acc.id,
+        date=date, month=month_of(date), created_at=now_iso(),
+    )
+    db.add(txn)
+    await db.commit()
+    await db.refresh(txn)
+    return {"ok": True, "transaction": txn_to_dict(txn, {})}
 
 
 # ---------------------------------------------------------------------------
@@ -1268,9 +1555,21 @@ async def refund_map(db: AsyncSession, user_id: str) -> dict:
     return m
 
 
-def serialize_txn(t: dict, rmap: dict) -> dict:
+def _payment_method_for_account(account_id: str, account_types: dict) -> str:
+    if not account_id:
+        return "card"
+    if account_types:
+        t = account_types.get(account_id, "")
+        if t in ("cash", "cash_place"):
+            return "cash"
+        if t:
+            return "card"
+    return "cash" if account_id == "cash" else "card"
+
+
+def serialize_txn(t: dict, rmap: dict, account_types: dict = None) -> dict:
     if t.get("type") != "expense":
-        return {**t, "payment_method": "cash" if t.get("account") == "cash" else "card"}
+        return {**t, "payment_method": _payment_method_for_account(t.get("account"), account_types)}
     reimb = t.get("reimbursable_amount", 0) or 0
     refunded = min(rmap.get(t["id"], 0.0), reimb)
     remaining = round(max(reimb - refunded, 0), 2)
@@ -1285,7 +1584,7 @@ def serialize_txn(t: dict, rmap: dict) -> dict:
     responsible = [s["person_name"] for s in t.get("splits", []) if not s.get("is_me") and s["amount"] > 0.005]
     return {**t, "amount_refunded": round(refunded, 2), "remaining_refund": remaining,
             "refund_status": status, "responsible": responsible,
-            "payment_method": "cash" if t.get("account") == "cash" else "card"}
+            "payment_method": _payment_method_for_account(t.get("account"), account_types)}
 
 
 def _date_query(month, start, end):
@@ -1321,7 +1620,9 @@ async def get_transactions(month: Optional[str] = None, start: Optional[str] = N
     stmt = select(Transaction).where(*filters).order_by(desc(Transaction.date))
     rmap = await refund_map(db, user["_id"])
     rows = (await db.execute(stmt)).scalars().all()
-    out = [txn_to_dict(t, rmap) for t in rows]
+    accs = (await db.execute(select(Account.id, Account.type).where(Account.user_id == user["_id"]))).all()
+    account_types = {a.id: a.type for a in accs}
+    out = [txn_to_dict(t, rmap, account_types) for t in rows]
     if payment_method in ("cash", "card"):
         out = [t for t in out if t.get("payment_method") == payment_method]
     return out
@@ -1347,10 +1648,20 @@ async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get
         updates["category"] = body.category
     if body.notes is not None:
         updates["notes"] = body.notes
-    if body.payment_method in ("cash", "card"):
-        updates["account"] = "cash" if body.payment_method == "cash" else "revolut"
-    if body.account in ("cash", "revolut"):
-        updates["account"] = body.account
+    if body.payment_method:
+        if body.payment_method == "cash":
+            updates["account"] = "cash"
+        elif body.payment_method == "card":
+            updates["account"] = "revolut"
+        else:
+            updates["account"] = body.payment_method
+    if body.account:
+        if body.account == "cash":
+            updates["account"] = "cash"
+        elif body.account == "card":
+            updates["account"] = "revolut"
+        else:
+            updates["account"] = body.account
     if body.date:
         updates["date"] = body.date
         updates["month"] = month_of(body.date)
@@ -1425,13 +1736,19 @@ async def delete_transaction(tid: str, user: dict = Depends(get_current_user), d
     if not txn:
         raise HTTPException(404, "Transaction not found")
     if txn.items:
-        for it in txn.items:
+        from collections import Counter
+        counts = Counter(it.get("name", "").strip().lower() for it in txn.items if it.get("name"))
+        for name_lower, count in counts.items():
             g = (await db.execute(
-                select(Grocery).where(Grocery.name_lower == it["name"].lower(), Grocery.user_id == user["_id"])
+                select(Grocery).where(Grocery.name_lower == name_lower, Grocery.user_id == user["_id"])
             )).scalar_one_or_none()
             if g:
-                g.quantity = max(0, float(g.quantity) - 1)
-                g.updated_at = now_iso()
+                new_qty = float(g.quantity) - count
+                if new_qty <= 0:
+                    await db.execute(delete(Grocery).where(Grocery.id == g.id))
+                else:
+                    g.quantity = new_qty
+                    g.updated_at = now_iso()
     await db.execute(delete(Split).where(Split.transaction_id == tid))
     await db.execute(delete(Settlement).where(Settlement.transaction_id == tid, Settlement.user_id == user["_id"]))
     await db.execute(delete(Transaction).where(Transaction.id == tid, Transaction.user_id == user["_id"]))
@@ -1484,12 +1801,34 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
 # ---------------------------------------------------------------------------
 # Analytics
 # ---------------------------------------------------------------------------
+def _account_type_lookup(accounts: list) -> dict:
+    return {a["id"]: a["type"] for a in accounts}
+
+
 @api_router.get("/analytics/summary")
 async def analytics_summary(month: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
                             user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     accounts = await get_accounts(user, db)
-    cash = next((a["balance"] for a in accounts if a["id"] == "cash"), 0)
-    revolut = next((a["balance"] for a in accounts if a["id"] == "revolut"), 0)
+    type_by_id = _account_type_lookup(accounts)
+
+    def sum_by_types(*types):
+        return round(sum(a["balance"] for a in accounts if a["type"] in types), 2)
+
+    bank = sum_by_types("bank")
+    bank_current = bank
+    bank_initial = round(sum(a.get("initial_balance") if a.get("initial_balance") is not None else a["balance"] for a in accounts if a["type"] == "bank"), 2)
+    money_left_bank = round(bank_initial - bank_current, 2)
+    # Cash places: separate freely available from locked funds.
+    cash_available = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and not a.get("is_locked")), 2)
+    cash_locked = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and a.get("is_locked")), 2)
+    cash_parent = round(sum(a["balance"] for a in accounts if a["type"] == "cash"), 2)
+    cash = round(cash_available + cash_locked + cash_parent, 2)
+    revolut = sum_by_types("revolut")
+    in_hand = round(cash_available + cash_locked + revolut, 2)
+    actual_spent = round(money_left_bank - in_hand, 2) if money_left_bank > 0 else None
+    owed = sum_by_types("owed", "owed_person")
+    total_available = round(bank + cash_available + revolut, 2)
+    total_with_owed = round(total_available + owed, 2)
 
     filters = [Transaction.user_id == user["_id"]] + _date_filter(month, start, end)
     stmt = select(Transaction).where(Transaction.type == "expense").where(*filters)
@@ -1502,8 +1841,11 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
         gross += float(t.gross_amount)
         personal += float(t.personal_amount) if t.personal_amount else 0
         reimbursable += float(t.reimbursable_amount) if t.reimbursable_amount else 0
-        if t.account == "cash":
+        acc_type = type_by_id.get(t.account, "")
+        if acc_type in ("cash", "cash_place"):
             cash_spent += float(t.gross_amount)
+        elif acc_type == "revolut":
+            card_spent += float(t.gross_amount)
         else:
             card_spent += float(t.gross_amount)
         by_cat[t.category] = by_cat.get(t.category, 0) + float(t.gross_amount)
@@ -1532,6 +1874,36 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     out_of_stock = [g.name for g in groceries if (float(g.quantity) if g.quantity else 0) <= 0]
     low_stock = [g.name for g in groceries if (float(g.quantity) if g.quantity else 0) > 0 and g.low_threshold and float(g.quantity) <= float(g.low_threshold)]
     unknown_price = [g.name for g in groceries if g.price is None]
+
+    # Active shopping lists summary for dashboard
+    active_lists = (await db.execute(
+        select(ShoppingList).where(
+            ShoppingList.user_id == user["_id"],
+            ShoppingList.archived == False,
+        ).order_by(desc(ShoppingList.created_at))
+    )).scalars().all()
+    list_ids = [lst.id for lst in active_lists]
+    pending_items = []
+    if list_ids:
+        pending_items = (await db.execute(
+            select(ShoppingItem).where(
+                ShoppingItem.user_id == user["_id"],
+                ShoppingItem.list_id.in_(list_ids),
+                ShoppingItem.bought == False,
+            ).order_by(asc(ShoppingItem.created_at))
+        )).scalars().all()
+    list_summaries = []
+    for lst in active_lists:
+        its = [it for it in pending_items if it.list_id == lst.id]
+        estimated = round(sum(float(it.estimated_price or 0) * float(it.quantity) for it in its), 2)
+        list_summaries.append({
+            "id": lst.id,
+            "name": lst.name,
+            "budget": float(lst.budget) if lst.budget is not None else None,
+            "pending_count": len(its),
+            "estimated_total": estimated,
+            "remaining": round(float(lst.budget) - estimated, 2) if lst.budget is not None else None,
+        })
 
     categories = (await db.execute(
         select(Category).where(Category.user_id == user["_id"])
@@ -1613,7 +1985,6 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     )).scalars().all()
     income_total = round(sum(float(t.gross_amount) for t in income_rows), 2)
 
-    total_available = round(cash + revolut, 2)
     by_category_out = []
     for k, v in sorted(by_cat.items(), key=lambda x: -x[1]):
         budget = cat_budgets.get(k)
@@ -1621,12 +1992,18 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
         by_category_out.append({"name": k, "value": round(v, 2), "percentage": pct, "budget": budget})
 
     return {
-        "cash": cash, "revolut": revolut, "total_available": total_available,
+        "bank": bank, "cash": cash, "revolut": revolut,
+        "cash_available": cash_available, "cash_locked": cash_locked,
+        "total_available": total_available, "owed_to_me": owed,
+        "total_with_owed": total_with_owed,
+        "bank_initial": bank_initial, "money_left_bank": money_left_bank,
+        "in_hand": in_hand, "actual_spent": actual_spent,
+        "accounts": accounts,
         "gross": round(gross, 2), "personal": round(personal, 2),
         "reimbursable": round(reimbursable, 2),
         "cash_spent": round(cash_spent, 2), "card_spent": round(card_spent, 2),
         "refunded": round(refunded, 2), "pending": outstanding,
-        "owed_to_me": owed_to_me, "i_owe": i_owe, "outstanding": outstanding,
+        "i_owe": i_owe, "outstanding": outstanding,
         "by_category": by_category_out,
         "by_day": [{"date": k, "value": round(v, 2)} for k, v in sorted(by_day.items())],
         "top_merchants": top_merchants,
@@ -1635,7 +2012,11 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
         "projected_month_spend": projected_month_spend,
         "previous_period_gross": prev_gross,
         "period_days": period_days,
-        "grocery": {"total": len(groceries), "out_of_stock": out_of_stock, "low_stock": low_stock, "unknown_price": unknown_price},
+        "grocery": {
+            "total": len(groceries), "out_of_stock": out_of_stock, "low_stock": low_stock,
+            "unknown_price": unknown_price, "active_lists": list_summaries,
+            "pending_total": len(pending_items),
+        },
         "months": months,
     }
 
@@ -1865,10 +2246,17 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
     )).scalar_one_or_none()
     if existing:
         existing.quantity = float(existing.quantity) + body.quantity
+        existing.purchase_count = int(existing.purchase_count or 0) + 1
         if body.price is not None:
             existing.price = body.price
         if body.store:
             existing.store = body.store
+        if body.is_favorite:
+            existing.is_favorite = True
+        if body.default_quantity is not None:
+            existing.default_quantity = body.default_quantity
+        if body.default_store:
+            existing.default_store = body.default_store
         existing.updated_at = now_iso()
         await db.commit()
         await db.refresh(existing)
@@ -1877,6 +2265,10 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
                 quantity=body.quantity, unit=body.unit, category=body.category,
                 price=body.price, store=body.store, low_threshold=body.low_threshold,
                 notes=body.notes or "", expiration=body.expiration,
+                is_favorite=body.is_favorite,
+                default_quantity=body.default_quantity,
+                default_store=body.default_store,
+                purchase_count=1,
                 created_at=now_iso(), updated_at=now_iso())
     db.add(g)
     await db.commit()
@@ -1911,6 +2303,20 @@ async def delete_grocery(gid: str, user: dict = Depends(get_current_user), db: A
     if result.rowcount == 0:
         raise HTTPException(404, "Item not found")
     return {"ok": True}
+
+
+@api_router.get("/groceries/low-stock")
+async def get_low_stock(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    groceries = (await db.execute(
+        select(Grocery).where(Grocery.user_id == user["_id"]).order_by(Grocery.name)
+    )).scalars().all()
+    out = []
+    for g in groceries:
+        qty = float(g.quantity) if g.quantity else 0
+        threshold = float(g.low_threshold) if g.low_threshold else 0
+        if threshold > 0 and qty <= threshold:
+            out.append({**to_dict(g), "status": "low" if qty > 0 else "out"})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1950,27 +2356,98 @@ async def delete_meal(mid: str, user: dict = Depends(get_current_user), db: Asyn
 # Shopping list + price intelligence
 # ---------------------------------------------------------------------------
 @api_router.get("/shopping")
-async def get_shopping(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await shopping_payload(db, user["_id"])
+async def get_shopping(list_id: Optional[str] = None, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await shopping_payload(db, user["_id"], list_id=list_id)
+
+
+@api_router.get("/shopping/lists")
+async def get_shopping_lists(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    lists = (await db.execute(
+        select(ShoppingList).where(ShoppingList.user_id == user["_id"]).order_by(desc(ShoppingList.created_at))
+    )).scalars().all()
+    return [to_dict(lst) for lst in lists]
+
+
+@api_router.post("/shopping/lists")
+async def create_shopping_list(body: ShoppingListBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    now = now_iso()
+    lst = ShoppingList(id=new_id(), user_id=user["_id"], name=body.name,
+                       budget=round(body.budget, 2) if body.budget is not None else None,
+                       archived=False, created_at=now, updated_at=now)
+    db.add(lst)
+    await db.commit()
+    await db.refresh(lst)
+    return to_dict(lst)
+
+
+@api_router.put("/shopping/lists/{lid}")
+async def update_shopping_list(lid: str, body: ShoppingListUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    lst = (await db.execute(
+        select(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not lst:
+        raise HTTPException(404, "List not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "budget" in updates and updates["budget"] is not None:
+        updates["budget"] = round(updates["budget"], 2)
+    if updates:
+        updates["updated_at"] = now_iso()
+        await db.execute(update(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(lst)
+    return to_dict(lst)
+
+
+@api_router.delete("/shopping/lists/{lid}")
+async def delete_shopping_list(lid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    lst = (await db.execute(
+        select(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not lst:
+        raise HTTPException(404, "List not found")
+    await db.execute(delete(ShoppingItem).where(ShoppingItem.list_id == lid, ShoppingItem.user_id == user["_id"]))
+    await db.execute(delete(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"]))
+    await db.commit()
+    return {"ok": True}
 
 
 @api_router.post("/shopping")
 async def post_shopping(body: ShoppingBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await add_shopping_item_doc(db, body.name, body.quantity, body.unit, body.note, user_id=user["_id"])
+    return await add_shopping_item_doc(
+        db, body.name, body.quantity, body.unit, body.note, user_id=user["_id"],
+        list_id=body.list_id, category=body.category, estimated_price=body.estimated_price,
+        store=body.store, sort_order=body.sort_order,
+    )
 
 
-@api_router.post("/shopping/generate")
-async def gen_shopping(days: int = 7, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await generate_shopping_doc(db, days, user_id=user["_id"])
-
-
-@api_router.delete("/shopping/{sid}")
-async def del_shopping(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(delete(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"]))
-    await db.commit()
-    if result.rowcount == 0:
+@api_router.put("/shopping/{sid}")
+async def update_shopping_item(sid: str, body: ShoppingItemUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    it = (await db.execute(
+        select(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not it:
         raise HTTPException(404, "Item not found")
-    return {"ok": True}
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "name" in updates:
+        updates["name_lower"] = updates["name"].lower()
+    if updates:
+        await db.execute(update(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(it)
+    return {**to_dict(it), "list": to_dict(it.list) if it.list else None}
+
+
+@api_router.post("/shopping/{sid}/toggle")
+async def toggle_shopping_item(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    it = (await db.execute(
+        select(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not it:
+        raise HTTPException(404, "Item not found")
+    it.selected = not it.selected
+    await db.commit()
+    await db.refresh(it)
+    return {**to_dict(it), "list": to_dict(it.list) if it.list else None}
 
 
 @api_router.post("/shopping/{sid}/buy")
@@ -1985,6 +2462,146 @@ async def buy_shopping(sid: str, body: BuyBody, user: dict = Depends(get_current
     await db.execute(delete(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"]))
     await db.commit()
     return {"ok": True}
+
+
+@api_router.post("/shopping/bulk-delete")
+async def bulk_delete_shopping(body: dict, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    ids = body.get("ids", [])
+    if not ids:
+        return {"deleted": 0}
+    result = await db.execute(
+        delete(ShoppingItem).where(ShoppingItem.id.in_(ids), ShoppingItem.user_id == user["_id"])
+    )
+    await db.commit()
+    return {"deleted": result.rowcount}
+
+
+@api_router.post("/shopping/bulk-update")
+async def bulk_update_shopping(body: dict, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    ids = body.get("ids", [])
+    updates = body.get("updates", {})
+    if not ids:
+        return {"updated": 0}
+    allowed = {"selected", "list_id", "category", "store"}
+    safe = {k: v for k, v in updates.items() if k in allowed}
+    if not safe:
+        return {"updated": 0}
+    result = await db.execute(
+        update(ShoppingItem).where(ShoppingItem.id.in_(ids), ShoppingItem.user_id == user["_id"]).values(**safe)
+    )
+    await db.commit()
+    return {"updated": result.rowcount}
+
+
+async def _upsert_grocery_from_purchase(db: AsyncSession, user_id: str, name: str, quantity: float,
+                                        unit: str, category: Optional[str], price: Optional[float],
+                                        store: Optional[str]) -> dict:
+    """Add or update grocery inventory inside an existing transaction."""
+    name_lower = name.lower()
+    existing = (await db.execute(
+        select(Grocery).where(Grocery.name_lower == name_lower, Grocery.user_id == user_id)
+    )).scalar_one_or_none()
+
+    if store and price is not None:
+        pr = PriceRecord(id=new_id(), user_id=user_id, name=name, name_lower=name_lower, store=store,
+                         price=round(float(price), 2), unit=unit or "unit",
+                         date=datetime.now(timezone.utc).strftime("%Y-%m-%d"), created_at=now_iso())
+        db.add(pr)
+
+    if existing:
+        existing.quantity = round(float(existing.quantity) + quantity, 2)
+        existing.purchase_count = int(existing.purchase_count or 0) + 1
+        if price is not None:
+            existing.price = price
+        if store:
+            existing.store = store
+        if category:
+            existing.category = category
+        existing.updated_at = now_iso()
+        await db.flush()
+        return to_dict(existing)
+
+    g = Grocery(id=new_id(), user_id=user_id, name=name, name_lower=name_lower,
+                quantity=round(float(quantity), 2), unit=unit or "unit", category=category or "Other",
+                price=price, store=store, low_threshold=0, notes="",
+                is_favorite=False, purchase_count=1,
+                created_at=now_iso(), updated_at=now_iso())
+    db.add(g)
+    await db.flush()
+    return to_dict(g)
+
+
+@api_router.post("/shopping/lists/{lid}/submit")
+async def submit_purchase(lid: str, body: SubmitPurchaseBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Submit selected shopping items as a purchase. Only selected items update inventory."""
+    item_ids = [p.item_id for p in body.items]
+    if not item_ids:
+        raise HTTPException(400, "No items selected")
+
+    items = (await db.execute(
+        select(ShoppingItem).where(
+            ShoppingItem.id.in_(item_ids),
+            ShoppingItem.user_id == user["_id"],
+            ShoppingItem.list_id == lid,
+            ShoppingItem.bought == False,
+        )
+    )).scalars().all()
+
+    if len(items) != len(item_ids):
+        raise HTTPException(400, "Some items were not found or already purchased")
+
+    item_map = {p.item_id: p for p in body.items}
+    now = now_iso()
+    purchased = []
+    total_cost = 0.0
+
+    try:
+        for it in items:
+            p = item_map[it.id]
+            qty = p.quantity if p.quantity is not None else float(it.quantity)
+            price = p.actual_price if p.actual_price is not None else (float(it.actual_price) if it.actual_price else None)
+            store = p.store or body.store or it.store
+
+            await _upsert_grocery_from_purchase(db, user["_id"], it.name, qty, it.unit or "unit",
+                                                it.category, price, store)
+
+            it.bought = True
+            it.selected = False
+            it.completed_at = now
+            it.actual_price = price
+            purchased.append({"id": it.id, "name": it.name, "quantity": qty, "price": price, "store": store})
+            if price:
+                total_cost = round(total_cost + (price * qty), 2)
+
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("submit_purchase failed")
+        raise HTTPException(500, f"Failed to update inventory: {exc}")
+
+    # Optionally record as expense
+    expense = None
+    if body.record_expense and total_cost > 0:
+        try:
+            acc = await resolve_account(db, body.payment_account or "revolut", user["_id"])
+            account_id = acc.id if acc else (body.payment_account or "revolut")
+            expense_body = ExpenseBody(
+                amount=total_cost, merchant=body.store or "Grocery purchase",
+                description=f"Shopping list purchase ({len(purchased)} items)",
+                category="Groceries", account=account_id,
+                date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                participants=["Me"],
+            )
+            expense = await create_expense_record(db, expense_body, user["_id"])
+        except Exception:
+            logger.exception("submit_purchase expense recording failed")
+
+    return {"purchased": purchased, "total_cost": total_cost, "expense": expense}
+
+
+@api_router.post("/shopping/generate")
+async def gen_shopping(days: int = 7, list_id: Optional[str] = None, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await generate_shopping_doc(db, days, user_id=user["_id"], list_id=list_id)
 
 
 @api_router.get("/prices/{name}")
@@ -2082,7 +2699,7 @@ AI_TOOLS = [
             "merchant": {"type": "string"},
             "description": {"type": "string"},
             "category": {"type": "string", "description": "One of the finance categories e.g. Groceries, Eating Out, Transport"},
-            "account": {"type": "string", "enum": ["cash", "revolut"]},
+            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
             "date": {"type": "string", "description": "yyyy-mm-dd, default today"},
             "participants": {"type": "array", "items": {"type": "string"}, "description": "All people sharing this expense including 'Me'"},
             "split_mode": {"type": "string", "enum": ["equal", "items", "exact"]},
@@ -2099,7 +2716,7 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "person": {"type": "string"}, "amount": {"type": "number"},
             "method": {"type": "string", "enum": ["MB WAY", "Revolut", "Cash"]},
-            "account": {"type": "string", "enum": ["cash", "revolut"]},
+            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
             "direction": {"type": "string", "enum": ["in", "out"]},
         }, "required": ["person", "amount"]},
     }},
@@ -2109,12 +2726,79 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }},
     {"type": "function", "function": {
+        "name": "get_groceries",
+        "description": "Get all grocery inventory items with current stock, categories, prices and low-stock status.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
         "name": "add_grocery",
         "description": "Add a grocery item to inventory with optional price and store.",
         "parameters": {"type": "object", "properties": {
             "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"},
-            "category": {"type": "string"}, "price": {"type": "number"}, "store": {"type": "string"}},
+            "category": {"type": "string"}, "price": {"type": "number"}, "store": {"type": "string"},
+            "low_threshold": {"type": "number", "description": "Warn when stock falls at or below this quantity"}},
             "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_shopping_lists",
+        "description": "Get all shopping lists and their outstanding items. Includes selection state for cart workflow.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "create_shopping_list",
+        "description": "Create a new empty shopping list.",
+        "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "add_shopping_item",
+        "description": "Add an item to a shopping list. Does NOT change inventory.",
+        "parameters": {"type": "object", "properties": {
+            "list_id": {"type": "string"}, "name": {"type": "string"}, "quantity": {"type": "number"},
+            "unit": {"type": "string"}, "category": {"type": "string"}, "estimated_price": {"type": "number"},
+            "store": {"type": "string"}, "note": {"type": "string"}},
+            "required": ["list_id", "name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_shopping_item",
+        "description": "Update a shopping list item by id: quantity, unit, category, estimated_price, store, note, selected state, etc.",
+        "parameters": {"type": "object", "properties": {
+            "item_id": {"type": "string"}, "name": {"type": "string"}, "quantity": {"type": "number"},
+            "unit": {"type": "string"}, "category": {"type": "string"}, "estimated_price": {"type": "number"},
+            "actual_price": {"type": "number"}, "store": {"type": "string"}, "note": {"type": "string"},
+            "selected": {"type": "boolean"}},
+            "required": ["item_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_shopping_item",
+        "description": "Remove an item from a shopping list. Destructive: confirm first.",
+        "parameters": {"type": "object", "properties": {
+            "item_id": {"type": "string"}, "confirm": {"type": "boolean"}}, "required": ["item_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "submit_purchase",
+        "description": "Submit selected shopping-list items as a purchase. This updates inventory and optionally records an expense. Only selected items are purchased; unselected items remain on the list. Destructive/Financial: call first WITHOUT confirm to preview, then only call again with confirm=true after the user explicitly agrees.",
+        "parameters": {"type": "object", "properties": {
+            "list_id": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "properties": {
+                "item_id": {"type": "string"}, "quantity": {"type": "number"}, "actual_price": {"type": "number"}, "store": {"type": "string"}}}},
+            "store": {"type": "string"}, "record_expense": {"type": "boolean"}, "payment_account": {"type": "string"}, "confirm": {"type": "boolean"}},
+            "required": ["list_id", "items"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_grocery_summary",
+        "description": "Get a summary of grocery inventory, low/out-of-stock items, active shopping lists, pending items and budgets.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "set_shopping_list_budget",
+        "description": "Set or clear the budget for a shopping list.",
+        "parameters": {"type": "object", "properties": {
+            "list_id": {"type": "string"}, "budget": {"type": "number", "description": "Set to null/omit to clear budget"}},
+            "required": ["list_id"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_price_history",
+        "description": "Get historical prices for a grocery item across stores.",
+        "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }},
     {"type": "function", "function": {
         "name": "log_meal",
@@ -2153,7 +2837,7 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "match": {"type": "string", "description": "Text to find the expense, e.g. 'restaurant' or 'Lidl'"},
             "amount": {"type": "number"}, "personal_amount": {"type": "number"},
-            "category": {"type": "string"}, "payment_method": {"type": "string", "enum": ["cash", "card"]},
+            "category": {"type": "string"}, "payment_method": {"type": "string", "description": "Account id, name or 'cash'/'card'/'revolut'"},
             "date": {"type": "string"}, "notes": {"type": "string"}, "description": {"type": "string"}},
             "required": ["match"]},
     }},
@@ -2170,7 +2854,7 @@ AI_TOOLS = [
             "match": {"type": "string", "description": "Text to find the expense being refunded"},
             "person": {"type": "string"}, "amount": {"type": "number"},
             "method": {"type": "string", "enum": ["MB WAY", "Revolut", "Cash"]},
-            "account": {"type": "string", "enum": ["cash", "revolut"]}}, "required": ["person", "amount"]},
+            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"}}, "required": ["person", "amount"]},
     }},
     {"type": "function", "function": {
         "name": "update_grocery",
@@ -2182,8 +2866,8 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "generate_shopping_list",
-        "description": "Build a shopping list from current inventory (low/out of stock) and the owner's usual buys, then return price intelligence and the cheaper store recommendation.",
-        "parameters": {"type": "object", "properties": {"days": {"type": "number"}}},
+        "description": "Build a shopping list from current inventory (low/out of stock) and the owner's usual buys, then return price intelligence and the cheaper store recommendation. Optionally target a specific list_id.",
+        "parameters": {"type": "object", "properties": {"days": {"type": "number"}, "list_id": {"type": "string"}}},
     }},
     {"type": "function", "function": {
         "name": "create_recipe",
@@ -2212,6 +2896,29 @@ AI_TOOLS = [
                     "reps": {"type": "number"}, "weight": {"type": "number"}}}}}}},
             "notes": {"type": "string"}}, "required": ["type"]},
     }},
+    {"type": "function", "function": {
+        "name": "transfer_money",
+        "description": "Move money between the user's own accounts/places, e.g. withdrawing cash from the bank or moving money from Revolut to cash.",
+        "parameters": {"type": "object", "properties": {
+            "from_account": {"type": "string", "description": "Source account id, name or 'bank'/'cash'/'revolut'"},
+            "to_account": {"type": "string", "description": "Destination account id, name or 'bank'/'cash'/'revolut'"},
+            "amount": {"type": "number"}, "date": {"type": "string"}, "note": {"type": "string"}},
+            "required": ["from_account", "to_account", "amount"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_account_balance",
+        "description": "Update the balance of a money place/account. Use this when the user says they received cash, spent cash, or want to correct a balance. For the bank account you can also set the initial balance used to calculate money that left the bank.",
+        "parameters": {"type": "object", "properties": {
+            "account": {"type": "string", "description": "Account id, name or 'bank'/'cash'/'revolut'"},
+            "balance": {"type": "number", "description": "New current balance"},
+            "initial_balance": {"type": "number", "description": "For bank only: the starting bank balance"}},
+            "required": ["account", "balance"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_accounts",
+        "description": "Get all money accounts and their current balances.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
 ]
 
 AI_SYSTEM = """You are Life Record's personal assistant, a friendly multi-user life-management helper.
@@ -2219,9 +2926,12 @@ You turn natural language into structured, connected data by calling tools. You 
 
 Rules:
 - When the user refers to themselves, use the participant name "Me".
-- Payment methods are "cash" and "card" (card = Revolut). When creating expenses, map card->account "revolut", cash->account "cash".
+- Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut. When the user mentions an account, pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record a refund use mark_refunded (or record_payment for a general person payment).
+- To move money between the user's own places (e.g. "I withdrew 50€ from the bank") use transfer_money. To correct a balance or set the bank's initial balance use update_account_balance.
+- Actual spending is calculated as: money that left the bank (initial bank balance - current bank balance) minus money still in hand (cash + Revolut). Do not double-count transfers between the user's own accounts as spending.
+- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases.
 - NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
 - If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
 - For destructive actions (delete, large bulk changes) always confirm with the user first.
@@ -2547,10 +3257,13 @@ async def find_expense(db: AsyncSession, match: str, user_id: str) -> Optional[d
 async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
     try:
         if name == "create_expense":
+            acc_ref = args.get("account", "cash")
+            acc = await resolve_account(db, acc_ref, user["_id"])
+            account_id = acc.id if acc else acc_ref
             body = ExpenseBody(
                 amount=args.get("amount"), merchant=args.get("merchant", ""),
                 description=args.get("description", "") or args.get("merchant", ""),
-                category=args.get("category", "Other"), account=args.get("account", "cash"),
+                category=args.get("category", "Other"), account=account_id,
                 date=args.get("date"), participants=args.get("participants", ["Me"]),
                 split_mode=args.get("split_mode", "equal"),
                 items=[ItemBody(**i) for i in args.get("items", [])],
@@ -2561,11 +3274,14 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             created.append({"collection": "transactions", "id": res["transaction"]["id"]})
             return res
         if name == "record_payment":
+            acc_ref = args.get("account", "revolut")
+            acc = await resolve_account(db, acc_ref, user["_id"])
+            account_id = acc.id if acc else acc_ref
             s = Settlement(
                 id=new_id(), user_id=user["_id"],
                 person_id=(await resolve_person(db, args["person"], user["_id"]))["id"],
                 person_name=args["person"], amount=round(args["amount"], 2),
-                method=args.get("method", "Revolut"), account=args.get("account", "revolut"),
+                method=args.get("method", "Revolut"), account=account_id,
                 direction=args.get("direction", "in"),
                 date=args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 transaction_id=args.get("transaction_id"), created_at=now_iso())
@@ -2601,8 +3317,12 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             t = await find_expense(db, args.get("match", ""), user["_id"])
             if not t:
                 return {"error": f"No expense found matching '{args.get('match')}'"}
+            payment = args.get("payment_method")
+            if payment:
+                acc = await resolve_account(db, payment, user["_id"])
+                payment = acc.id if acc else payment
             upd = TxnUpdate(amount=args.get("amount"), personal_amount=args.get("personal_amount"),
-                            category=args.get("category"), payment_method=args.get("payment_method"),
+                            category=args.get("category"), payment_method=payment,
                             date=args.get("date"), notes=args.get("notes"), description=args.get("description"))
             res = await update_transaction(t["id"], upd, user, db)
             return {"updated": res}
@@ -2641,11 +3361,14 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             if args.get("match"):
                 t = await find_expense(db, args["match"], user["_id"])
                 tid = t["id"] if t else None
+            acc_ref = args.get("account", "revolut")
+            acc = await resolve_account(db, acc_ref, user["_id"])
+            account_id = acc.id if acc else acc_ref
             s = Settlement(
                 id=new_id(), user_id=user["_id"],
                 person_id=(await resolve_person(db, args["person"], user["_id"]))["id"],
                 person_name=args["person"], amount=round(args["amount"], 2),
-                method=args.get("method", "Revolut"), account=args.get("account", "revolut"),
+                method=args.get("method", "Revolut"), account=account_id,
                 direction="in", date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 transaction_id=tid, created_at=now_iso())
             db.add(s)
@@ -2663,7 +3386,71 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             res = await update_grocery(g.id, upd, user, db)
             return {"updated": res}
         if name == "generate_shopping_list":
-            return await generate_shopping_doc(db, int(args.get("days", 7)), user_id=user["_id"])
+            return await generate_shopping_doc(db, int(args.get("days", 7)), user_id=user["_id"], list_id=args.get("list_id"))
+        if name == "get_groceries":
+            gs = (await db.execute(
+                select(Grocery).where(Grocery.user_id == user["_id"]).order_by(Grocery.name)
+            )).scalars().all()
+            return {"groceries": [to_dict(g) for g in gs]}
+        if name == "get_shopping_lists":
+            lists = await get_shopping_lists(user, db)
+            payload = await shopping_payload(db, user["_id"])
+            return {"lists": lists, "active": payload}
+        if name == "create_shopping_list":
+            lst = await create_shopping_list(ShoppingListBody(name=args["name"]), user, db)
+            created.append({"collection": "shopping_lists", "id": lst["id"]})
+            return lst
+        if name == "add_shopping_item":
+            item = await post_shopping(ShoppingBody(**{k: v for k, v in args.items() if k in ShoppingBody.model_fields}), user, db)
+            created.append({"collection": "shopping_items", "id": item["id"]})
+            return item
+        if name == "update_shopping_item":
+            item_id = args.get("item_id")
+            if not item_id:
+                return {"error": "item_id is required"}
+            upd = ShoppingItemUpdate(**{k: v for k, v in args.items() if k in ShoppingItemUpdate.model_fields and k != "item_id"})
+            return await update_shopping_item(item_id, upd, user, db)
+        if name == "delete_shopping_item":
+            item_id = args.get("item_id")
+            if not item_id:
+                return {"error": "item_id is required"}
+            if not args.get("confirm"):
+                it = (await db.execute(
+                    select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user["_id"])
+                )).scalar_one_or_none()
+                if not it:
+                    return {"error": "Item not found"}
+                return {"needs_confirmation": True, "message": f"This will remove '{it.name}' from the shopping list. Ask the user to confirm."}
+            await del_shopping(item_id, user, db)
+            return {"deleted": item_id}
+        if name == "submit_purchase":
+            list_id = args.get("list_id")
+            items = args.get("items", [])
+            if not list_id or not items:
+                return {"error": "list_id and items are required"}
+            if not args.get("confirm"):
+                return {"needs_confirmation": True, "message": f"This will purchase {len(items)} selected item(s) and update inventory. Ask the user to confirm."}
+            body = SubmitPurchaseBody(
+                items=[PurchaseItem(**i) for i in items],
+                store=args.get("store"),
+                record_expense=args.get("record_expense", False),
+                payment_account=args.get("payment_account"),
+            )
+            res = await submit_purchase(list_id, body, user, db)
+            if res.get("expense"):
+                created.append({"collection": "transactions", "id": res["expense"]["transaction"]["id"]})
+            return res
+        if name == "get_grocery_summary":
+            summary = await analytics_summary(user=user, db=db)
+            low = await get_low_stock(user, db)
+            return {"summary": summary.get("grocery"), "low_stock": low}
+        if name == "set_shopping_list_budget":
+            lid = args.get("list_id")
+            budget = args.get("budget")
+            upd = ShoppingListUpdate(budget=budget)
+            return await update_shopping_list(lid, upd, user, db)
+        if name == "get_price_history":
+            return await get_prices(args.get("name", ""), user, db)
         if name == "create_recipe":
             body = RecipeBody(name=args["name"], servings=int(args.get("servings", 1)),
                               ingredients=[RecipeIngredient(**i) for i in args.get("ingredients", [])],
@@ -2688,6 +3475,29 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             w = await create_workout(db, body, user["_id"])
             created.append({"collection": "workouts", "id": w["id"]})
             return w
+        if name == "get_accounts":
+            return await get_accounts(user, db)
+        if name == "transfer_money":
+            from_acc = await resolve_account(db, args.get("from_account", ""), user["_id"])
+            to_acc = await resolve_account(db, args.get("to_account", ""), user["_id"])
+            if not from_acc or not to_acc:
+                return {"error": "Could not resolve source or destination account"}
+            body = AccountTransferBody(
+                from_account_id=from_acc.id, to_account_id=to_acc.id,
+                amount=args.get("amount", 0), date=args.get("date"), note=args.get("note"),
+            )
+            res = await transfer_money(body, user, db)
+            created.append({"collection": "transactions", "id": res["transaction"]["id"]})
+            return res
+        if name == "update_account_balance":
+            acc = await resolve_account(db, args.get("account", ""), user["_id"])
+            if not acc:
+                return {"error": "Account not found"}
+            upd = AccountUpdate(opening_balance=args.get("balance"))
+            if args.get("initial_balance") is not None:
+                upd.initial_balance = args["initial_balance"]
+            res = await update_account(acc.id, upd, user, db)
+            return {"updated": res}
     except HTTPException:
         raise
     except Exception:

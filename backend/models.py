@@ -29,7 +29,13 @@ class Account(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     type = Column(String(50), nullable=False)
+    parent_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True)
+    currency = Column(String(10), nullable=False, default="EUR")
     opening_balance = Column(DECIMAL(12, 2), nullable=False, default=0.00)
+    initial_balance = Column(DECIMAL(12, 2), nullable=True)
+    is_locked = Column(Boolean, nullable=False, default=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(String(32), nullable=False)
 
 
@@ -160,6 +166,10 @@ class Grocery(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     name_lower = Column(String(255), nullable=False, index=True)
+    is_favorite = Column(Boolean, nullable=False, default=False)
+    default_quantity = Column(DECIMAL(12, 2), nullable=True)
+    default_store = Column(String(255), nullable=True)
+    purchase_count = Column(Integer, nullable=False, default=0)
     quantity = Column(DECIMAL(12, 2), nullable=False, default=0.00)
     unit = Column(String(50), nullable=False, default="unit")
     category = Column(String(255), nullable=True)
@@ -185,16 +195,35 @@ class PriceRecord(Base):
     created_at = Column(String(32), nullable=False)
 
 
+class ShoppingList(Base):
+    __tablename__ = "shopping_lists"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    budget = Column(DECIMAL(12, 2), nullable=True)
+    archived = Column(Boolean, nullable=False, default=False)
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=False)
+
+
 class ShoppingItem(Base):
     __tablename__ = "shopping_items"
     id = Column(String(36), primary_key=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    list_id = Column(String(36), ForeignKey("shopping_lists.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     name_lower = Column(String(255), nullable=False, index=True)
+    category = Column(String(255), nullable=True)
     quantity = Column(DECIMAL(12, 2), nullable=False, default=1.00)
     unit = Column(String(50), nullable=False, default="unit")
+    estimated_price = Column(DECIMAL(12, 2), nullable=True)
+    actual_price = Column(DECIMAL(12, 2), nullable=True)
+    store = Column(String(255), nullable=True)
     note = Column(Text, nullable=True)
     bought = Column(Boolean, nullable=False, default=False)
+    selected = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(String(32), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(String(32), nullable=False)
 
 

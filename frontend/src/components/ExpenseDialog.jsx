@@ -20,7 +20,7 @@ export function ExpenseDialog({ open, setOpen }) {
   const [amount, setAmount] = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("Groceries");
-  const [account, setAccount] = useState("cash");
+  const [account, setAccount] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [participants, setParticipants] = useState(["Me"]);
@@ -31,7 +31,16 @@ export function ExpenseDialog({ open, setOpen }) {
     if (!open) return;
     api.get("/categories").then((r) => setCats(r.data));
     api.get("/people").then((r) => setPeople(r.data));
-    api.get("/accounts").then((r) => setAccounts(r.data));
+    api.get("/accounts").then((r) => {
+      setAccounts(r.data);
+      if (!account) {
+        const cash = r.data.find((a) => a.type === "cash");
+        const first = r.data.find((a) => a.type !== "owed" && a.type !== "owed_person");
+        setAccount(cash?.id || first?.id || "");
+      }
+    });
+    // Only run when dialog opens; account state should not reset on edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const toggleParticipant = (name) => {
@@ -57,7 +66,7 @@ export function ExpenseDialog({ open, setOpen }) {
 
   const reset = () => {
     setAmount(""); setMerchant(""); setNotes(""); setParticipants(["Me"]);
-    setSplitMode("equal"); setItems([]); setCategory("Groceries"); setAccount("cash");
+    setSplitMode("equal"); setItems([]); setCategory("Groceries"); setAccount(accounts[0]?.id || "");
   };
 
   const save = async () => {
@@ -117,8 +126,9 @@ export function ExpenseDialog({ open, setOpen }) {
               <Select value={account} onValueChange={setAccount}>
                 <SelectTrigger data-testid="expense-account" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="revolut">Card (Revolut)</SelectItem>
+                  {accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person").map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

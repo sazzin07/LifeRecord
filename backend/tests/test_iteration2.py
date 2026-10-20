@@ -154,6 +154,41 @@ class TestGroceriesCRUD:
         client.delete(f"{BASE_URL}/api/groceries/{gid}")
 
 
+# --- Transaction grocery rollback ---
+class TestTransactionGroceryRollback:
+    def test_multi_item_expense_rollback(self, client):
+        # Create expense with add_to_inventory and multiple items
+        r = client.post(f"{BASE_URL}/api/transactions/expense", json={
+            "amount": 10.0, "merchant": f"{TAG}_store", "category": "Groceries",
+            "account": "cash", "participants": ["Me"], "add_to_inventory": True,
+            "items": [
+                {"name": f"{TAG}_milk", "price": 2.0, "assigned": ["Me"]},
+                {"name": f"{TAG}_eggs", "price": 3.0, "assigned": ["Me"]},
+                {"name": f"{TAG}_milk", "price": 2.0, "assigned": ["Me"]}
+            ]
+        })
+        assert r.status_code == 200
+        t = r.json()["transaction"]
+
+        # Verify merged grocery quantities
+        gs = client.get(f"{BASE_URL}/api/groceries").json()
+        milk = next((x for x in gs if x["name"] == f"{TAG}_milk"), None)
+        eggs = next((x for x in gs if x["name"] == f"{TAG}_eggs"), None)
+        assert milk is not None
+        assert milk["quantity"] == 2
+        assert eggs is not None
+        assert eggs["quantity"] == 1
+
+        # Delete the transaction
+        d = client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
+        assert d.status_code == 200
+
+        # Verify groceries removed
+        gs2 = client.get(f"{BASE_URL}/api/groceries").json()
+        assert not any(x["name"] == f"{TAG}_milk" for x in gs2)
+        assert not any(x["name"] == f"{TAG}_eggs" for x in gs2)
+
+
 # --- Shopping list ---
 class TestShopping:
     def test_shopping_flow(self, client):
@@ -171,6 +206,106 @@ class TestShopping:
                         json={"price": 2.5, "store": "Continente"})
         assert b.status_code == 200
         client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
+    def test_cart_partial_purchase(self, client):
+        # Create a new list
+        lst = client.post(f"{BASE_URL}/api/shopping/lists", json={"name": f"{TAG}_cart"}).json()
+        # Seed inventory so generate won't touch it
+        client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_apples", "quantity": 5, "price": 1.0})
+
+        # Add three items to the list
+        a = client.post(f"{BASE_URL}/api/shopping", json={"name": f"{TAG}_milk", "quantity": 2, "list_id": lst["id"]}).json()
+        b = client.post(f"{BASE_URL}/api/shopping", json={"name": f"{TAG}_eggs", "quantity": 12, "list_id": lst["id"]}).json()
+        c = client.post(f"{BASE_URL}/api/shopping", json={"name": f"{TAG}_butter", "quantity": 1, "list_id": lst["id"]}).json()
+
+        # Select only milk and eggs
+        client.post(f"{BASE_URL}/api/shopping/{a['id']}/toggle")
+        client.post(f"{BASE_URL}/api/shopping/{b['id']}/toggle")
+
+        # Submit purchase
+        r = client.post(f"{BASE_URL}/api/shopping/lists/{lst['id']}/submit", json={
+            "items": [
+                {"item_id": a["id"], "quantity": 2, "actual_price": 1.2},
+                {"item_id": b["id"], "quantity": 12, "actual_price": 3.5},
+            ]
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data["purchased"]) == 2
+        assert data["total_cost"] == 2 * 1.2 + 12 * 3.5
+
+        # Inventory updated for selected items only
+        inv = client.get(f"{BASE_URL}/api/groceries").json()
+        assert any(x["name"] == f"{TAG}_milk" and float(x["quantity"]) == 2 for x in inv)
+        assert any(x["name"] == f"{TAG}_eggs" and float(x["quantity"]) == 12 for x in inv)
+        assert not any(x["name"] == f"{TAG}_butter" for x in inv)
+
+        # Unselected item remains on list
+        payload = client.get(f"{BASE_URL}/api/shopping", params={"list_id": lst["id"]}).json()
+        remaining = [x["name"] for x in payload["items"]]
+        assert f"{TAG}_butter" in remaining
+        assert f"{TAG}_milk" not in remaining
+        assert f"{TAG}_eggs" not in remaining
+
+        # Cleanup
+        client.delete(f"{BASE_URL}/api/shopping/lists/{lst['id']}")
+        for x in inv:
+            if x["name"].startswith(f"{TAG}_"):
+                client.delete(f"{BASE_URL}/api/groceries/{x['id']}")
+
+    def test_generate_list_does_not_affect_inventory(self, client):
+        lst = client.post(f"{BASE_URL}/api/shopping/lists", json={"name": f"{TAG}_gen"}).json()
+        # Seed low-stock item
+        g = client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_low", "quantity": 0, "low_threshold": 1}).json()
+        before = client.get(f"{BASE_URL}/api/groceries").json()
+        before_qty = next(x for x in before if x["id"] == g["id"])["quantity"]
+
+        # Generate list
+        r = client.post(f"{BASE_URL}/api/shopping/generate", params={"list_id": lst["id"]})
+        assert r.status_code == 200
+
+        # Inventory unchanged
+        after = client.get(f"{BASE_URL}/api/groceries").json()
+        after_qty = next(x for x in after if x["id"] == g["id"])["quantity"]
+        assert after_qty == before_qty
+
+        # But list has the item
+        payload = client.get(f"{BASE_URL}/api/shopping", params={"list_id": lst["id"]}).json()
+        assert any(x["name"] == f"{TAG}_low" for x in payload["items"])
+
+        client.delete(f"{BASE_URL}/api/shopping/lists/{lst['id']}")
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
+    def test_list_budget_and_low_stock(self, client):
+        lst = client.post(f"{BASE_URL}/api/shopping/lists", json={"name": f"{TAG}_budget", "budget": 50}).json()
+        assert lst["budget"] == 50.0
+
+        # Add item with estimated price
+        it = client.post(f"{BASE_URL}/api/shopping", json={"name": f"{TAG}_cheese", "quantity": 2, "estimated_price": 10, "list_id": lst["id"]}).json()
+        payload = client.get(f"{BASE_URL}/api/shopping", params={"list_id": lst["id"]}).json()
+        assert payload["budget_summary"]["budget"] == 50.0
+        assert payload["budget_summary"]["estimated_total"] == 20.0
+        assert payload["budget_summary"]["remaining"] == 30.0
+
+        # Update budget
+        client.put(f"{BASE_URL}/api/shopping/lists/{lst['id']}", json={"budget": 15})
+        payload = client.get(f"{BASE_URL}/api/shopping", params={"list_id": lst["id"]}).json()
+        assert payload["budget_summary"]["budget"] == 15.0
+        assert payload["budget_summary"]["remaining"] == -5.0
+
+        # Low-stock endpoint
+        client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_stock", "quantity": 0, "low_threshold": 1})
+        low = client.get(f"{BASE_URL}/api/groceries/low-stock").json()
+        assert any(x["name"] == f"{TAG}_stock" and x["status"] == "out" for x in low)
+
+        # Analytics includes grocery summary
+        summary = client.get(f"{BASE_URL}/api/analytics/summary").json()
+        assert "grocery" in summary
+        assert summary["grocery"]["pending_total"] >= 1
+        assert any(l["id"] == lst["id"] for l in summary["grocery"]["active_lists"])
+
+        client.delete(f"{BASE_URL}/api/shopping/{it['id']}")
+        client.delete(f"{BASE_URL}/api/shopping/lists/{lst['id']}")
 
 
 # --- Recipes cook ---

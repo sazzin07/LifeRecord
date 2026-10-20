@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { openAI } from "@/components/AppShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,8 @@ export default function Fitness() {
   const [logOpen, setLogOpen] = useState(false);
   const [history, setHistory] = useState([]);
   const [prs, setPrs] = useState([]);
+  const [deleteId, setDeleteId] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [h, p] = await Promise.all([api.get("/workouts"), api.get("/workouts/prs")]);
@@ -91,6 +94,7 @@ export default function Fitness() {
   useEffect(() => { load(); const fn = () => load(); window.addEventListener("lm:refresh", fn); return () => window.removeEventListener("lm:refresh", fn); }, [load]);
 
   const del = async (id) => { await api.delete(`/workouts/${id}`); refreshAll(); };
+  const workoutToDelete = history.find((w) => w.id === deleteId);
 
   return (
     <div className="space-y-6">
@@ -147,7 +151,7 @@ export default function Fitness() {
                 <div className="flex items-center gap-3">
                   <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full")} style={{ background: (TEMPLATES[w.type]?.color || "#94A3B8") + "22", color: TEMPLATES[w.type]?.color || "#64748B" }}>{w.type}</span>
                   <span className="text-sm text-slate-500 flex-1">{w.date}</span>
-                  <button onClick={() => del(w.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                  <button onClick={() => { setDeleteId(w.id); setDeleteOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                 </div>
                 <p className="text-xs text-slate-500 mt-1.5">
                   {w.exercises.map((e) => e.is_isometric ? `${e.name} ${e.duration}s` : `${e.name} ${e.sets.length}×${e.sets[0]?.reps || 0}${e.sets[0]?.weight ? `@${e.sets[0].weight}kg` : ""}`).join(" · ")}
@@ -159,6 +163,16 @@ export default function Fitness() {
       </Card>
 
       <LogDialog open={logOpen} setOpen={setLogOpen} />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete workout session?"
+        description={workoutToDelete ? `This will permanently delete the ${workoutToDelete.type.toLowerCase()} session from ${workoutToDelete.date}.` : "This will permanently delete the workout session."}
+        onConfirm={() => { const id = deleteId; if (id) del(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

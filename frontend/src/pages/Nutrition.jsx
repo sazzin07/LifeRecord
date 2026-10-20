@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Trash2, Utensils, Sparkles, ChefHat, Flame } from "lucide-react";
 import { api } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, ConfidenceBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { openAI } from "@/components/AppShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 
 const TARGETS = { cal: 2700, p: 160, c: 300, f: 90 };
@@ -13,6 +14,8 @@ export default function Nutrition() {
   const today = new Date().toISOString().slice(0, 10);
   const { data: meals, loading } = useFetch(`/meals?date=${today}`);
   const { data: recipes } = useFetch("/recipes");
+  const [deleteId, setDeleteId] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const del = async (id) => { await api.delete(`/meals/${id}`); refreshAll(); };
   const cook = async (r) => {
     try {
@@ -22,6 +25,7 @@ export default function Nutrition() {
     } catch { toast.error("Could not cook recipe"); }
   };
   const arr = useMemo(() => meals || [], [meals]);
+  const mealToDelete = arr.find((m) => m.id === deleteId);
 
   const tot = useMemo(() => ({
     cal: arr.reduce((s, x) => s + (x.calories || 0), 0),
@@ -53,7 +57,7 @@ export default function Nutrition() {
                   <p className="text-xs text-slate-500">{Math.round(m.protein || 0)}P · {Math.round(m.carbs || 0)}C · {Math.round(m.fat || 0)}F</p>
                 </div>
                 <div className="text-right"><p className="stat-num font-semibold text-sm">{Math.round(m.calories || 0)} kcal</p><ConfidenceBadge type="estimated">Est.</ConfidenceBadge></div>
-                <button onClick={() => del(m.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                <button onClick={() => { setDeleteId(m.id); setDeleteOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
           </div>
@@ -84,6 +88,16 @@ export default function Nutrition() {
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete meal?"
+        description={mealToDelete ? `This will permanently delete "${mealToDelete.description}".` : "This will permanently delete the meal."}
+        onConfirm={() => { const id = deleteId; if (id) del(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

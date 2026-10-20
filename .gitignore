@@ -43,3 +43,7 @@ Thumbs.db
 
 # MySQL data
 tools/mysql-data/
+tools/mysql-data-backup/
+
+# phpMyAdmin vendor (managed separately)
+tools/phpmyadmin/

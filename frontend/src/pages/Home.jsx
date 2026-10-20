@@ -114,6 +114,19 @@ export default function Home() {
         </Card>
       )}
 
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => nav("/groceries")} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+          <ShoppingCart className="h-3.5 w-3.5" /> Go shopping
+        </button>
+        <button onClick={() => nav("/tasks")} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+          <CheckSquare className="h-3.5 w-3.5" /> Add task
+        </button>
+        <button onClick={() => nav("/money")} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+          <Wallet className="h-3.5 w-3.5" /> Add expense
+        </button>
+      </div>
+
       {/* Stat grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard testid="stat-spent" label="Spent (all)" value={eur(sum?.gross)} hint={`Your share ${eur(sum?.personal)}`} icon={TrendingDown} />
@@ -163,8 +176,19 @@ export default function Home() {
           <div className="flex gap-6">
             <div><div className="stat-num text-2xl font-extrabold">{(groceries || []).length}</div><Label>In inventory</Label></div>
             <div><div className="stat-num text-2xl font-extrabold text-amber-500">{lowStock.length}</div><Label>Low stock</Label></div>
+            <div><div className="stat-num text-2xl font-extrabold text-emerald-600">{sum?.grocery?.pending_total || 0}</div><Label>To buy</Label></div>
           </div>
           {lowStock.length > 0 && <p className="mt-3 text-xs text-slate-500">Low: {lowStock.map((g) => g.name).join(", ")}</p>}
+          {(sum?.grocery?.active_lists || []).length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {(sum.grocery.active_lists || []).slice(0, 3).map((lst) => (
+                <div key={lst.id} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-700 dark:text-slate-300 truncate max-w-[60%]">{lst.name}</span>
+                  <span className="text-xs text-slate-500">{lst.pending_count} pending{lst.budget != null ? ` · ${eur(lst.estimated_total)} / ${eur(lst.budget)}` : ""}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 

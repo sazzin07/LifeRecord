@@ -6,6 +6,7 @@ import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, Label } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,10 @@ export default function Body() {
   const [w, setW] = useState("");
   const [compare, setCompare] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [deleteWeightId, setDeleteWeightId] = useState(null);
+  const [deletePhotoId, setDeletePhotoId] = useState(null);
+  const [deleteWeightOpen, setDeleteWeightOpen] = useState(false);
+  const [deletePhotoOpen, setDeletePhotoOpen] = useState(false);
   const fileRef = useRef(null);
 
   const add = async () => { if (!parseFloat(w)) return; await api.post("/weight", { weight: parseFloat(w) }); setW(""); toast.success("Weight recorded"); refreshAll(); };
@@ -130,7 +135,7 @@ export default function Body() {
                     <SecurePhoto src={photoSrc(p)} alt={p.date} className="w-full aspect-[3/4] object-cover" />
                   </button>
                   <span className="absolute bottom-1 left-1 right-1 text-[10px] text-white bg-black/50 rounded px-1 text-center">{p.date}</span>
-                  <button onClick={() => delPhoto(p.id)} className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100" data-testid={`photo-del-${p.id}`}><X className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => { setDeletePhotoId(p.id); setDeletePhotoOpen(true); }} className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100" data-testid={`photo-del-${p.id}`}><X className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>
@@ -145,12 +150,32 @@ export default function Body() {
               <div key={e.id} className="flex items-center gap-3 px-5 py-3 group">
                 <span className="stat-num font-semibold">{e.weight} kg</span>
                 <span className="text-sm text-slate-500 flex-1">{e.date}</span>
-                <button onClick={() => del(e.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                <button onClick={() => { setDeleteWeightId(e.id); setDeleteWeightOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
           </div>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={deleteWeightOpen}
+        onOpenChange={setDeleteWeightOpen}
+        title="Delete weight entry?"
+        description="This will permanently delete this weight check-in."
+        onConfirm={() => { const id = deleteWeightId; if (id) del(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        open={deletePhotoOpen}
+        onOpenChange={setDeletePhotoOpen}
+        title="Delete progress photo?"
+        description="This will permanently delete this progress photo. This action cannot be undone."
+        onConfirm={() => { const id = deletePhotoId; if (id) delPhoto(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

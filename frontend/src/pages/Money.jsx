@@ -5,8 +5,8 @@ import {
 } from "recharts";
 import {
   Plus, Trash2, Wallet, CreditCard, Pencil, Search, Download, ArrowUpRight,
-  ArrowDownRight, TrendingUp, CalendarDays, SlidersHorizontal, X, ChevronDown,
-  Target, Store, Receipt,
+  ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
+  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, BadgeInfo, Lock,
 } from "lucide-react";
 import { api, eur, CATEGORY_COLORS } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
@@ -15,12 +15,14 @@ import {
 } from "@/components/common";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { EditExpenseDialog } from "@/components/EditExpenseDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -44,7 +46,7 @@ function periodParams(period) {
   if (period === "day") return { start: iso(now), end: iso(now) };
   if (period === "week") { const s = new Date(now); s.setDate(s.getDate() - 6); return { start: iso(s), end: iso(now) }; }
   if (period === "all") return {};
-  return { month: period }; // yyyy-mm
+  return { month: period };
 }
 
 function formatMonthLabel(key) {
@@ -68,6 +70,25 @@ function exportCSV(rows) {
   return [header, ...lines].map((l) => l.join(",")).join("\n");
 }
 
+function buildAccountTree(accounts) {
+  const byId = {};
+  accounts.forEach((a) => { byId[a.id] = { ...a, children: [] }; });
+  const roots = [];
+  accounts.forEach((a) => {
+    if (a.parent_id && byId[a.parent_id]) {
+      byId[a.parent_id].children.push(byId[a.id]);
+    } else {
+      roots.push(byId[a.id]);
+    }
+  });
+  return { roots, byId };
+}
+
+function sumChildren(account) {
+  if (!account) return 0;
+  return account.children.reduce((s, c) => s + (c.balance || 0), 0) + (account.balance || 0);
+}
+
 export default function Money() {
   const now = new Date();
   const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -78,14 +99,23 @@ export default function Money() {
   const [sum, setSum] = useState(null);
   const [txns, setTxns] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editTxn, setEditTxn] = useState(null);
+  const [deleteTxnId, setDeleteTxnId] = useState(null);
+  const [deleteTxnOpen, setDeleteTxnOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [sort, setSort] = useState("date_desc");
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [budgetForm, setBudgetForm] = useState({});
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferDefaults, setTransferDefaults] = useState({ to: "" });
+  const [accountFormOpen, setAccountFormOpen] = useState(false);
+  const [accountForm, setAccountForm] = useState({ name: "", type: "cash_place", parent_id: "", opening_balance: "", initial_balance: "", currency: "EUR" });
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [deleteAccountId, setDeleteAccountId] = useState(null);
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -101,6 +131,7 @@ export default function Money() {
       setSum(s.data);
       setTxns(t.data);
       setCategories(c.data);
+      setAccounts(s.data.accounts || []);
     } finally { setLoading(false); }
   }, [period, pm]);
 
@@ -117,8 +148,19 @@ export default function Money() {
     toast.success("Deleted");
     refreshAll();
   };
+  const txnToDelete = txns.find((t) => t.id === deleteTxnId);
 
   const expenses = useMemo(() => txns.filter((t) => t.type === "expense"), [txns]);
+  const { roots: accountRoots, byId: accountById } = useMemo(() => buildAccountTree(accounts), [accounts]);
+
+  const mainAccounts = useMemo(() => {
+    const find = (type) => accountRoots.find((a) => a.type === type) || null;
+    return {
+      bank: find("bank"),
+      cash: find("cash"),
+      revolut: find("revolut"),
+    };
+  }, [accountRoots]);
 
   const months = useMemo(() => {
     const base = (sum?.months || []).map((k) => ({ key: k, label: formatMonthLabel(k) }));
@@ -189,6 +231,81 @@ export default function Money() {
     refreshAll();
   };
 
+  const saveAccount = async () => {
+    const payload = {
+      name: accountForm.name,
+      type: accountForm.type,
+      parent_id: accountForm.parent_id || null,
+      currency: accountForm.currency || "EUR",
+      opening_balance: parseFloat(accountForm.opening_balance || "0"),
+      initial_balance: accountForm.initial_balance === "" ? null : parseFloat(accountForm.initial_balance || "0"),
+      is_locked: !!accountForm.is_locked,
+      sort_order: 0,
+      is_active: true,
+    };
+    try {
+      if (editingAccount) {
+        await api.put(`/accounts/${editingAccount.id}`, payload);
+        toast.success("Updated");
+      } else {
+        await api.post("/accounts", payload);
+        toast.success("Created");
+      }
+      setAccountFormOpen(false);
+      refreshAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not save account");
+    }
+  };
+
+  const deleteAccount = async (id) => {
+    try {
+      await api.delete(`/accounts/${id}`);
+      toast.success("Deleted");
+      setDeleteAccountId(null);
+      refreshAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not delete account");
+    }
+  };
+
+  const doTransfer = async (fromId, toId, amount) => {
+    try {
+      await api.post("/accounts/transfer", { from_account_id: fromId, to_account_id: toId, amount: parseFloat(amount) });
+      toast.success("Transfer done");
+      setTransferOpen(false);
+      refreshAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Transfer failed");
+    }
+  };
+
+  const openNewSubAccount = (parent) => {
+    const childType = parent.type === "cash" ? "cash_place" : "cash_place";
+    setEditingAccount(null);
+    setAccountForm({ name: "", type: childType, parent_id: parent.id, opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR" });
+    setAccountFormOpen(true);
+  };
+
+  const openEditAccount = (acc) => {
+    setEditingAccount(acc);
+    setAccountForm({
+      name: acc.name,
+      type: acc.type,
+      parent_id: acc.parent_id || "",
+      opening_balance: acc.opening_balance ?? "",
+      initial_balance: acc.initial_balance ?? "",
+      is_locked: !!acc.is_locked,
+      currency: acc.currency || "EUR",
+    });
+    setAccountFormOpen(true);
+  };
+
+  const openTransferTo = (toId) => {
+    setTransferDefaults({ to: toId });
+    setTransferOpen(true);
+  };
+
   const insightCards = useMemo(() => {
     if (!sum) return [];
     const top = sum.by_category?.[0];
@@ -200,11 +317,92 @@ export default function Money() {
     ];
   }, [sum, trendPct]);
 
+  const BalanceSection = ({ icon: Icon, label, amount, color, children, onEdit, onAddSub, onTransferIn, testid }) => (
+    <Card className={cn("p-4 flex flex-col gap-3 h-full", color && "border-l-4")} style={color ? { borderLeftColor: color } : {}} data-testid={testid}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center">
+            <Icon className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="text-xl font-bold">{eur(amount || 0)}</p>
+          </div>
+        </div>
+        <div className="flex gap-1">
+          {onAddSub && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onAddSub} title="Add sub-place">
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+          {onEdit && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} title="Edit">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          {onTransferIn && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onTransferIn} title="Transfer in">
+              <ArrowRightLeft className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+      {children}
+    </Card>
+  );
+
+  const SubPlaces = ({ account }) => {
+    const [open, setOpen] = useState(false);
+    if (!account || account.children.length === 0) return null;
+    return (
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            {open ? "Hide details" : `Show ${account.children.length} places`}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-2 space-y-1.5">
+            {account.children.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)).map((child) => (
+              <div key={child.id} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
+                <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                  {child.name}
+                  {child.is_locked && <Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" title="Locked / not available" />}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className={cn("font-medium", child.is_locked && "text-amber-700 dark:text-amber-300")}>{eur(child.balance || 0)}</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAccount(child)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
+
+  const accountOptions = useMemo(() => {
+    return accounts
+      .filter((a) => a.type !== "owed" && a.type !== "owed_person")
+      .map((a) => ({ value: a.id, label: a.name }));
+  }, [accounts]);
+
+  const cashTotal = sumChildren(mainAccounts.cash);
+
   return (
     <div className="space-y-6">
-      <SectionHeading title="Money" sub="Cash, card, shared expenses and refunds"
+      <SectionHeading title="Money" sub="Bank, cash, Revolut and actual spending"
         action={
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }} className="h-9 hidden sm:flex">
+              <ArrowRightLeft className="h-4 w-4 mr-1" /> Transfer
+            </Button>
             <Button variant="outline" size="sm" onClick={() => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); }} className="h-9 hidden sm:flex">
               <Target className="h-4 w-4 mr-1" /> Budgets
             </Button>
@@ -217,7 +415,7 @@ export default function Money() {
           </div>
         } />
 
-      {/* Period filter — horizontally scrollable on mobile */}
+      {/* Period filter */}
       <div className="relative">
         <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
           {PERIODS.map((p) => (
@@ -251,19 +449,95 @@ export default function Money() {
       ) : (
         <>
           {/* Primary balances */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-            <StatCard testid="money-cash" label="Cash balance" value={eur(sum?.cash)} icon={Wallet} hint="Wallet" />
-            <StatCard testid="money-revolut" label="Card balance" value={eur(sum?.revolut)} accent="text-[#1964FF]" icon={CreditCard} hint="Revolut" />
-            <StatCard testid="money-total" label="Total available" value={eur(sum?.total_available)} accent="text-emerald-600 dark:text-emerald-400" hint="Cash + card" />
-            <StatCard testid="money-pending" label="Pending refunds" value={eur(sum?.pending)} accent="text-amber-600 dark:text-amber-400" hint={`Refunded ${eur(sum?.refunded)}`} />
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+            <BalanceSection
+              icon={Building2}
+              label="Bank account"
+              amount={mainAccounts.bank?.balance}
+              color="#3B82F6"
+              testid="money-bank"
+              onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
+              onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
+            >
+              {sum?.bank_initial ? (
+                <div className="text-xs text-slate-500">
+                  Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}
+                </div>
+              ) : null}
+            </BalanceSection>
+            <BalanceSection
+              icon={Wallet}
+              label="Money in hand"
+              amount={sum?.cash_available}
+              color="#10B981"
+              testid="money-cash"
+              onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
+              onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
+              onTransferIn={() => mainAccounts.cash && openTransferTo(mainAccounts.cash.id)}
+            >
+              {(sum?.cash_locked || 0) > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {eur(sum.cash_locked)} locked
+                </p>
+              )}
+              <SubPlaces account={mainAccounts.cash} />
+            </BalanceSection>
+            <BalanceSection
+              icon={Smartphone}
+              label="Revolut"
+              amount={mainAccounts.revolut?.balance}
+              color="#1964FF"
+              testid="money-revolut"
+              onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
+              onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}
+            />
           </div>
+
+          {/* Spending summary */}
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+            <Card className="p-4 bg-slate-50 dark:bg-slate-800/30">
+              <p className="text-xs text-slate-500">Money that left the bank</p>
+              <p className="text-2xl font-bold">{eur(sum?.money_left_bank)}</p>
+              <p className="text-xs text-slate-400">Bank started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p>
+            </Card>
+            <Card className="p-4 bg-slate-50 dark:bg-slate-800/30">
+              <p className="text-xs text-slate-500">Still in hand (cash + Revolut)</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{eur(sum?.in_hand)}</p>
+              <p className="text-xs text-slate-400">Not counted as spending</p>
+            </Card>
+            <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">Actual spending</p>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-200">{eur(sum?.actual_spent)}</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">Money left bank − still in hand</p>
+            </Card>
+          </div>
+
+          {/* Total available */}
+          <Card className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-slate-500">Total available now</p>
+                <p className="text-2xl font-bold">{eur(sum?.total_available)}</p>
+                {(sum?.cash_locked || 0) > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    + {eur(sum.cash_locked)} locked until hotel checkout
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-4 text-sm">
+                <span className="text-slate-500">Bank <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.bank)}</span></span>
+                <span className="text-slate-500">Hand <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.cash_available)}</span></span>
+                <span className="text-slate-500">Revolut <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.revolut)}</span></span>
+              </div>
+            </div>
+          </Card>
 
           {/* Period spending */}
           <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             <StatCard testid="money-gross" label="Spent (period)" value={eur(sum?.gross)} hint={`Your share ${eur(sum?.personal)}`} />
             <StatCard testid="money-card-spent" label="Card spending" value={eur(sum?.card_spent)} icon={CreditCard} />
             <StatCard testid="money-cash-spent" label="Cash spending" value={eur(sum?.cash_spent)} icon={Wallet} />
-            <StatCard testid="money-reimbursable" label="Owed by others" value={eur(sum?.reimbursable)} />
+            <StatCard testid="money-pending" label="Pending refunds" value={eur(sum?.pending)} accent="text-amber-600 dark:text-amber-400" hint={`Refunded ${eur(sum?.refunded)}`} />
           </div>
 
           {/* Insights */}
@@ -440,7 +714,7 @@ export default function Money() {
                           </div>
                           <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                             <button data-testid={`edit-txn-${t.id}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>
-                            <button data-testid={`del-txn-${t.id}`} onClick={() => del(t.id)} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
+                            <button data-testid={`del-txn-${t.id}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
                           </div>
                         </div>
                       );
@@ -455,6 +729,64 @@ export default function Money() {
 
       <ExpenseDialog open={expenseOpen} setOpen={setExpenseOpen} />
       <EditExpenseDialog txn={editTxn} open={!!editTxn} setOpen={(v) => !v && setEditTxn(null)} />
+
+      {/* Account create/edit dialog */}
+      <Dialog open={accountFormOpen} onOpenChange={setAccountFormOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingAccount ? "Edit place" : "Add place"}</DialogTitle>
+            <DialogDescription>{editingAccount ? "Update the name and balance." : "Create a new money place under the selected location."}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input value={accountForm.name} onChange={(e) => setAccountForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" />
+            </div>
+            <div>
+              <Label className="text-xs">Current balance (€)</Label>
+              <Input type="number" min={0} step="0.01" value={accountForm.opening_balance} onChange={(e) => setAccountForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" />
+            </div>
+            {editingAccount?.type === "bank" && (
+              <div>
+                <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <BadgeInfo className="h-3 w-3" title="Used to calculate money that left the bank" /></Label>
+                <Input type="number" min={0} step="0.01" value={accountForm.initial_balance} onChange={(e) => setAccountForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input id="is-locked" type="checkbox" checked={!!accountForm.is_locked} onChange={(e) => setAccountForm((f) => ({ ...f, is_locked: e.target.checked }))} />
+              <Label htmlFor="is-locked" className="text-xs">Locked / not freely available</Label>
+            </div>
+            {!editingAccount && (
+              <div>
+                <Label className="text-xs">Parent location</Label>
+                <Select value={accountForm.parent_id} onValueChange={(v) => setAccountForm((f) => ({ ...f, parent_id: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select parent" /></SelectTrigger>
+                  <SelectContent>
+                    {accountRoots.filter((a) => a.type === "cash").map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setAccountFormOpen(false)}>Cancel</Button>
+            <Button onClick={saveAccount} className="bg-emerald-600 hover:bg-emerald-700 text-white">Save</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer dialog */}
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Transfer money</DialogTitle>
+            <DialogDescription>Move money from one location to another.</DialogDescription>
+          </DialogHeader>
+          <TransferForm accounts={accountOptions} defaultTo={transferDefaults.to} onSubmit={doTransfer} onCancel={() => setTransferOpen(false)} />
+        </DialogContent>
+      </Dialog>
 
       {/* Budget dialog */}
       <Dialog open={budgetOpen} onOpenChange={setBudgetOpen}>
@@ -481,6 +813,63 @@ export default function Money() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteAccountId}
+        onOpenChange={(v) => !v && setDeleteAccountId(null)}
+        title="Delete money place?"
+        description="This will permanently delete the place. Make sure it has no transactions."
+        onConfirm={() => deleteAccountId && deleteAccount(deleteAccountId)}
+        confirmText="Delete"
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        open={deleteTxnOpen}
+        onOpenChange={setDeleteTxnOpen}
+        title="Delete transaction?"
+        description={txnToDelete ? `This will permanently delete "${txnToDelete.merchant || txnToDelete.description || "this transaction"}" (${eur(txnToDelete.gross_amount)}).` : "This will permanently delete the transaction."}
+        onConfirm={() => { const id = deleteTxnId; if (id) del(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
+    </div>
+  );
+}
+
+function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState(defaultTo || "");
+  const [amount, setAmount] = useState("");
+  useEffect(() => { if (defaultTo) setTo(defaultTo); }, [defaultTo]);
+  return (
+    <div className="space-y-3 mt-2">
+      <div>
+        <Label className="text-xs">From</Label>
+        <Select value={from} onValueChange={setFrom}>
+          <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+          <SelectContent>
+            {accounts.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="text-xs">To</Label>
+        <Select value={to} onValueChange={setTo}>
+          <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+          <SelectContent>
+            {accounts.filter((a) => a.value !== from).map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="text-xs">Amount (€)</Label>
+        <Input type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+      </div>
+      <div className="flex justify-end gap-2 mt-4">
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to} className="bg-emerald-600 hover:bg-emerald-700 text-white">Transfer</Button>
+      </div>
     </div>
   );
 }

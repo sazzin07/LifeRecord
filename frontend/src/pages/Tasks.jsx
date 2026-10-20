@@ -6,15 +6,19 @@ import { Card, SectionHeading, EmptyState } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 
 export default function Tasks() {
   const { data: tasks, loading } = useFetch("/tasks");
   const [title, setTitle] = useState("");
+  const [deleteId, setDeleteId] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const add = async () => { if (!title.trim()) return; await api.post("/tasks", { title, priority: "normal" }); setTitle(""); refreshAll(); };
   const toggle = async (t) => { await api.put(`/tasks/${t.id}`, { ...t, done: !t.done }); refreshAll(); };
   const del = async (id) => { await api.delete(`/tasks/${id}`); refreshAll(); };
+  const taskToDelete = (tasks || []).find((t) => t.id === deleteId);
 
   const open = (tasks || []).filter((t) => !t.done);
   const done = (tasks || []).filter((t) => t.done);
@@ -38,13 +42,23 @@ export default function Tasks() {
                   <div className={cn("h-2 w-2 rounded-full", t.priority === "high" ? "bg-red-500" : t.priority === "low" ? "bg-slate-300" : "bg-emerald-500")} />
                   <span className={cn("flex-1 text-sm", t.done && "line-through text-slate-400")}>{t.title}</span>
                   {t.due && <span className="text-xs text-slate-400">{t.due}</span>}
-                  <button onClick={() => del(t.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                  <button onClick={() => { setDeleteId(t.id); setDeleteOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                 </div>
               ))}
             </div>
           )}
         </Card>
       )}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete task?"
+        description={taskToDelete ? `This will permanently delete "${taskToDelete.title}".` : "This will permanently delete the task."}
+        onConfirm={() => { const id = deleteId; if (id) del(id); }}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

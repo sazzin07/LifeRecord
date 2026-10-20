@@ -149,7 +149,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
                       <HandCoins className="h-4 w-4 mr-1" /> Record payment
                     </Button>
                   )}
-                  <Button variant="outline" onClick={onEdit} data-testid="detail-edit-btn"><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
+                  <Button variant="outline" onClick={() => onEdit && onEdit(data?.person)} data-testid="detail-edit-btn"><Pencil className="h-4 w-4 mr-1" /> Edit</Button>
                   <Button variant="outline" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setDeleteConfirm(true)} data-testid="detail-delete-btn">
                     <Trash2 className="h-4 w-4 mr-1" /> Delete
                   </Button>

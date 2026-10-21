@@ -721,12 +721,29 @@ Use the IDs below to track progress. Update the status column as work is complet
   - Rewrote `Nutrition.jsx` with manual "Add meal" and "Add recipe" dialogs, plus edit/delete for both.
   - Added macro progress rings and improved empty states.
 
+- **People / Money integration (done in this session):
+  - Cleared all existing debt records for the current user (settlements and splits deleted; underlying transactions preserved).
+  - Payments recorded from the People page now create matching income/expense transactions and update the selected account balance automatically.
+  - Added per-person "Clear balance" and "Remove record" actions plus global "Clear all debts" button.
+
+- **AI transaction persistence (done in this session):**
+  - Added `record_income` AI tool so the assistant can record income/money received.
+  - AI-recorded expenses, income, transfers, and person payments now use the same validated backend workflows as manual entry.
+  - `record_payment` AI tool now uses `/settlements`, creating the account-balance transaction automatically.
+  - Added `balance_transaction_id` to `Settlement` model + migration so settlement deletions reverse account effects correctly.
+  - Added backend test verifying AI records income that appears in transactions and survives refresh.
+
+- **Home dashboard (done in this session):**
+  - Added **Today's Transactions** section listing income, expenses, and transfers dated today with type badges and totals.
+  - Section refreshes automatically via `useFetch` when `refreshAll()` is dispatched (e.g. after AI actions).
+
 ### Test results
-- Backend: **55 passed**
+- Backend: **56 passed**
 - Frontend `yarn build`: success, no ESLint warnings
+- Verified AI income recording end-to-end (transaction persisted, listed for today, and cleaned up).
 
 ### Stopping point
-All Groceries roadmap tasks are complete. Nutrition manual meal/recipe forms and edit/delete backends are complete. **Remaining tasks for the next session:**
+Groceries, Nutrition manual forms, People/Money integration, and AI transaction persistence are complete. **Remaining tasks for the next session:**
 1. **TASK-001** — Task edit/priority/due/recurring UI (backend already supports these fields).
 2. **CAL-001** — Calendar grid view (currently task list only).
 3. **AI-007** — Load chat history in AI assistant UI.

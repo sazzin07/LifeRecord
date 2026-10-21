@@ -112,6 +112,7 @@ class Settlement(Base):
     direction = Column(String(10), nullable=False)
     date = Column(String(10), nullable=False, index=True)
     transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, index=True)
+    balance_transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(String(32), nullable=False)
 
 

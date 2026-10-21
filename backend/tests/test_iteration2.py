@@ -2,6 +2,7 @@
 shopping list, recipes cook, AI update/delete/mark_refunded."""
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 import requests
 import pytest
@@ -371,6 +372,23 @@ class TestAnalytics:
 
 # --- AI tools (skips gracefully if key unavailable) ---
 class TestAITools:
+    def test_ai_records_income(self, client):
+        # Ask the AI to record income for today
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        resp = client.post(f"{BASE_URL}/api/ai/chat",
+                           json={"message": f"Record income of 50.25 euros into Revolut today with description {TAG}_ai_income"}, timeout=90)
+        if resp.status_code != 200:
+            pytest.skip(f"AI unavailable: {resp.status_code}")
+        data = resp.json()
+        # Verify a matching income transaction exists and appears in today's list
+        txns = client.get(f"{BASE_URL}/api/transactions?start={today}&end={today}").json()
+        match = [t for t in txns if t["type"] == "income" and t.get("description", "").startswith(f"{TAG}_ai_income")]
+        assert len(match) >= 1, f"AI income not found in transactions: {data}"
+        assert float(match[0]["gross_amount"]) == 50.25
+        # Cleanup
+        for t in match:
+            client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
+
     def test_ai_delete_confirmation(self, client):
         # Create an expense to target
         r = client.post(f"{BASE_URL}/api/transactions/expense", json={

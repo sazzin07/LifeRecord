@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Wallet, TrendingDown, Users, Utensils, Dumbbell, Scale, ShoppingCart,
-  CheckSquare, Sparkles, ArrowUpRight, ArrowRight, Lightbulb,
+  CheckSquare, Sparkles, ArrowUpRight, ArrowRight, Lightbulb, Receipt,
+  ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon, ArrowLeftRight,
 } from "lucide-react";
 import { useFetch } from "@/lib/useFetch";
 import { eur } from "@/lib/api";
@@ -40,6 +41,7 @@ export default function Home() {
   const { data: weight } = useFetch("/weight");
   const { data: meals } = useFetch(`/meals?date=${today}`);
   const { data: groceries } = useFetch("/groceries");
+  const { data: transactions } = useFetch(`/transactions?start=${today}&end=${today}`);
 
   const nutri = useMemo(() => {
     const m = meals || [];
@@ -53,6 +55,17 @@ export default function Home() {
 
   const lowStock = (groceries || []).filter((g) => g.low_threshold && g.quantity <= g.low_threshold);
   const openTasks = (tasks || []).filter((t) => !t.done);
+  const todaysTxns = useMemo(() => {
+    const list = transactions || [];
+    return list.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  }, [transactions]);
+  const todayTotals = useMemo(() => todaysTxns.reduce((acc, t) => {
+    const amt = Math.abs(parseFloat(t.gross_amount || t.amount || 0));
+    if (t.type === "income") acc.income += amt;
+    else if (t.type === "expense") acc.expense += amt;
+    else if (t.type === "transfer") acc.transfer += amt;
+    return acc;
+  }, { income: 0, expense: 0, transfer: 0 }), [todaysTxns]);
   const lastW = weight?.length ? weight[weight.length - 1] : null;
   const prevW = weight?.length > 1 ? weight[weight.length - 2] : null;
   const wDelta = lastW && prevW ? (lastW.weight - prevW.weight).toFixed(1) : null;
@@ -207,6 +220,51 @@ export default function Home() {
           ))}
           {openTasks.length === 0 && <p className="text-sm text-slate-500">All done for today. Nice.</p>}
         </div>
+      </Card>
+
+      {/* Today's transactions */}
+      <Card className="p-5 lm-in">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Today's transactions</h3></div>
+          <button onClick={() => nav("/money")} className="text-sm text-emerald-600 font-medium inline-flex items-center gap-1">Money <ArrowUpRight className="h-3.5 w-3.5" /></button>
+        </div>
+        {todaysTxns.length === 0 ? (
+          <p className="text-sm text-slate-500">No transactions yet today.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-3 mb-4">
+              {todayTotals.income > 0 && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">+{eur(todayTotals.income)} income</span>}
+              {todayTotals.expense > 0 && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300">-{eur(todayTotals.expense)} expense</span>}
+              {todayTotals.transfer > 0 && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{eur(todayTotals.transfer)} transfer</span>}
+            </div>
+            <div className="space-y-2">
+              {todaysTxns.slice(0, 8).map((t) => {
+                const isIncome = t.type === "income";
+                const isExpense = t.type === "expense";
+                const isTransfer = t.type === "transfer";
+                const amount = parseFloat(t.gross_amount || t.amount || 0);
+                return (
+                  <div key={t.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <div className={cn("h-9 w-9 rounded-lg grid place-items-center shrink-0",
+                      isIncome ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10" :
+                      isExpense ? "bg-red-50 text-red-500 dark:bg-red-500/10" :
+                      "bg-slate-100 text-slate-600 dark:bg-slate-800")}>
+                      {isIncome ? <ArrowDownLeft className="h-4 w-4" /> : isExpense ? <ArrowUpRightIcon className="h-4 w-4" /> : <ArrowLeftRight className="h-4 w-4" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{t.merchant || t.description || t.category || (isTransfer ? "Transfer" : "Transaction")}</p>
+                      <p className="text-xs text-slate-500">{t.category}{t.account_name ? ` · ${t.account_name}` : ""}</p>
+                    </div>
+                    <div className={cn("text-sm font-semibold shrink-0",
+                      isIncome ? "text-emerald-600" : isExpense ? "text-red-500" : "text-slate-700 dark:text-slate-200")}>
+                      {isIncome ? "+" : isExpense ? "-" : ""}{eur(amount)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

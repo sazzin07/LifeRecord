@@ -335,6 +335,7 @@ class TransferBody(BaseModel):
 
 class IncomeBody(BaseModel):
     account: str = Field(..., max_length=50)
+    account_id: Optional[str] = Field(default=None, max_length=36)
     amount: float
     description: str = Field(default="", max_length=500)
     date: Optional[str] = None
@@ -1420,7 +1421,7 @@ async def clear_all_debts(user: dict = Depends(get_current_user), db: AsyncSessi
     settlements = (await db.execute(
         select(Settlement).where(Settlement.user_id == user["_id"])
     )).scalars().all()
-    txn_ids = [s.transaction_id for s in settlements if s.transaction_id]
+    txn_ids = {x for s in settlements for x in [s.transaction_id, s.balance_transaction_id] if x}
     if txn_ids:
         await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
     await db.execute(delete(Settlement).where(Settlement.user_id == user["_id"]))
@@ -1441,8 +1442,9 @@ async def delete_settlement(sid: str, user: dict = Depends(get_current_user), db
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(404, "Settlement not found")
-    if s.transaction_id:
-        await db.execute(delete(Transaction).where(Transaction.id == s.transaction_id, Transaction.user_id == user["_id"]))
+    txn_ids = {x for x in [s.transaction_id, s.balance_transaction_id] if x}
+    if txn_ids:
+        await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
     await db.execute(delete(Settlement).where(Settlement.id == sid, Settlement.user_id == user["_id"]))
     await db.commit()
     return {"ok": True}
@@ -1862,7 +1864,10 @@ async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user
 @api_router.post("/transactions/income")
 async def add_income(body: IncomeBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    t = Transaction(id=new_id(), user_id=user["_id"], type="income", account=body.account,
+    account_id = body.account_id or body.account
+    acc = await resolve_account(db, account_id, user["_id"])
+    account_id = acc.id if acc else body.account
+    t = Transaction(id=new_id(), user_id=user["_id"], type="income", account=account_id,
                     gross_amount=round(body.amount, 2), description=body.description or "Income",
                     date=date, month=month_of(date), created_at=now_iso())
     db.add(t)
@@ -1918,7 +1923,7 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
             created_at=now_iso())
         db.add(txn)
         await db.flush()
-        s.transaction_id = txn.id
+        s.balance_transaction_id = txn.id
 
     await db.commit()
     await db.refresh(s)
@@ -2977,6 +2982,15 @@ AI_TOOLS = [
         }, "required": ["amount"]},
     }},
     {"type": "function", "function": {
+        "name": "record_income",
+        "description": "Record income or money received (e.g. salary, refund, gift).",
+        "parameters": {"type": "object", "properties": {
+            "amount": {"type": "number"}, "description": {"type": "string"},
+            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
+            "date": {"type": "string", "description": "yyyy-mm-dd, default today"},
+        }, "required": ["amount"]},
+    }},
+    {"type": "function", "function": {
         "name": "record_payment",
         "description": "Record a reimbursement/settlement. direction 'in' = a person paid Sá back; 'out' = Sá paid someone.",
         "parameters": {"type": "object", "properties": {
@@ -3218,7 +3232,7 @@ Rules:
 - When the user refers to themselves, use the participant name "Me".
 - Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut. When the user mentions an account, pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
-- To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record a refund use mark_refunded (or record_payment for a general person payment).
+- To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record income/money received use record_income. To record a refund use mark_refunded (or record_payment for a general person payment).
 - To move money between the user's own places (e.g. "I withdrew 50€ from the bank") use transfer_money. To correct a balance or set the bank's initial balance use update_account_balance.
 - Actual spending is calculated as: money that left the bank (initial bank balance - current bank balance) minus money still in hand (cash + Revolut). Do not double-count transfers between the user's own accounts as spending.
 - Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists.
@@ -3563,23 +3577,35 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             res = await create_expense_record(db, body, user["_id"])
             created.append({"collection": "transactions", "id": res["transaction"]["id"]})
             return res
+        if name == "record_income":
+            acc_ref = args.get("account", "revolut")
+            acc = await resolve_account(db, acc_ref, user["_id"])
+            account_id = acc.id if acc else acc_ref
+            body = IncomeBody(
+                account=acc_ref, account_id=account_id,
+                amount=args.get("amount"), description=args.get("description", "Income"),
+                date=args.get("date"))
+            res = await add_income(body, user, db)
+            created.append({"collection": "transactions", "id": res["id"]})
+            return res
         if name == "record_payment":
             acc_ref = args.get("account", "revolut")
             acc = await resolve_account(db, acc_ref, user["_id"])
             account_id = acc.id if acc else acc_ref
-            s = Settlement(
-                id=new_id(), user_id=user["_id"],
-                person_id=(await resolve_person(db, args["person"], user["_id"]))["id"],
-                person_name=args["person"], amount=round(args["amount"], 2),
-                method=args.get("method", "Revolut"), account=account_id,
+            body = SettlementBody(
+                person=args["person"], amount=args.get("amount"),
+                method=args.get("method", "Revolut"),
+                account=acc_ref, account_id=account_id,
                 direction=args.get("direction", "in"),
-                date=args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                transaction_id=args.get("transaction_id"), created_at=now_iso())
-            db.add(s)
-            await db.commit()
-            await db.refresh(s)
-            created.append({"collection": "settlements", "id": s.id})
-            return to_dict(s)
+                date=args.get("date"))
+            res = await add_settlement(body, user, db)
+            if res.get("id"):
+                created.append({"collection": "settlements", "id": res["id"]})
+                if res.get("transaction_id"):
+                    created.append({"collection": "transactions", "id": res["transaction_id"]})
+                if res.get("balance_transaction_id"):
+                    created.append({"collection": "transactions", "id": res["balance_transaction_id"]})
+            return res
         if name == "create_person":
             return await resolve_person(db, args["name"], user["_id"])
         if name == "add_grocery":

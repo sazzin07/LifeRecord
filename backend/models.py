@@ -174,6 +174,7 @@ class Grocery(Base):
     quantity = Column(DECIMAL(12, 2), nullable=False, default=0.00)
     unit = Column(String(50), nullable=False, default="unit")
     category = Column(String(255), nullable=True)
+    storage_location = Column(String(50), nullable=False, default="pantry")
     price = Column(DECIMAL(12, 2), nullable=True)
     store = Column(String(255), nullable=True)
     low_threshold = Column(DECIMAL(12, 2), nullable=False, default=0.00)
@@ -181,6 +182,44 @@ class Grocery(Base):
     expiration = Column(String(10), nullable=True)
     created_at = Column(String(32), nullable=False)
     updated_at = Column(String(32), nullable=False)
+
+
+class Product(Base):
+    """Reusable food catalog shared by user (or global seed per user)."""
+    __tablename__ = "products"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    name_lower = Column(String(255), nullable=False, index=True)
+    category = Column(String(255), nullable=True)
+    default_unit = Column(String(50), nullable=False, default="unit")
+    typical_quantity = Column(DECIMAL(12, 2), nullable=True)
+    synonyms = Column(JSON, nullable=True)
+    nutrition = Column(JSON, nullable=True)
+    is_favorite = Column(Boolean, nullable=False, default=False)
+    created_at = Column(String(32), nullable=False)
+
+
+class StorageLocation(Base):
+    __tablename__ = "storage_locations"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    kind = Column(String(50), nullable=False, default="custom")  # fridge, pantry, freezer, custom
+    icon = Column(String(50), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(String(32), nullable=False)
+
+
+class Appliance(Base):
+    __tablename__ = "appliances"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    kind = Column(String(50), nullable=False, default="other")  # oven, microwave, air_fryer, blender, etc.
+    icon = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(String(32), nullable=False)
 
 
 class PriceRecord(Base):
@@ -238,6 +277,8 @@ class ShoppingItem(Base):
     selected = Column(Boolean, nullable=False, default=False)
     completed_at = Column(String(32), nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
+    storage_location = Column(String(50), nullable=True)
+    product_id = Column(String(36), nullable=True, index=True)
     created_at = Column(String(32), nullable=False)
     list = relationship("ShoppingList", back_populates="items")
 

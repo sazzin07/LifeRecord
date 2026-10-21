@@ -19,13 +19,15 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, update, func, desc, asc
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import engine, AsyncSessionLocal, get_db
 from models import (
     Base, User, Account, Category, Person, Transaction, Split, Settlement,
-    Task, WeightEntry, Workout, Photo, Grocery, PriceRecord, ShoppingItem,
-    ShoppingList, RecurringList, Meal, Recipe, AIAction, AIMessage,
+    Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
+    Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
+    Meal, Recipe, AIAction, AIMessage,
 )
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
@@ -360,6 +362,7 @@ class GroceryBody(BaseModel):
     quantity: float = Field(default=1, ge=0)
     unit: str = Field(default="unit", max_length=50)
     category: str = Field(default="Other", max_length=255)
+    storage_location: Optional[str] = Field(default=None, max_length=50)
     price: Optional[float] = None
     store: Optional[str] = Field(default=None, max_length=255)
     low_threshold: float = Field(default=0, ge=0)
@@ -375,6 +378,7 @@ class GroceryUpdate(BaseModel):
     quantity: Optional[float] = Field(default=None, ge=0)
     unit: Optional[str] = Field(default=None, max_length=50)
     category: Optional[str] = Field(default=None, max_length=255)
+    storage_location: Optional[str] = Field(default=None, max_length=50)
     price: Optional[float] = None
     store: Optional[str] = Field(default=None, max_length=255)
     low_threshold: Optional[float] = Field(default=None, ge=0)
@@ -394,6 +398,66 @@ class TxnUpdate(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=2000)
     amount: Optional[float] = None
     personal_amount: Optional[float] = None
+
+
+class ProductBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=255)
+    default_unit: str = Field(default="unit", max_length=50)
+    typical_quantity: Optional[float] = Field(default=None, ge=0)
+    synonyms: List[str] = Field(default=[])
+    nutrition: Optional[Dict[str, Any]] = Field(default=None)
+    is_favorite: bool = Field(default=False)
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=255)
+    default_unit: Optional[str] = Field(default=None, max_length=50)
+    typical_quantity: Optional[float] = Field(default=None, ge=0)
+    synonyms: Optional[List[str]] = Field(default=None)
+    nutrition: Optional[Dict[str, Any]] = Field(default=None)
+    is_favorite: Optional[bool] = Field(default=None)
+
+
+class StorageLocationBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    kind: str = Field(default="custom", max_length=50)
+    icon: Optional[str] = Field(default=None, max_length=50)
+    sort_order: int = Field(default=0)
+
+
+class StorageLocationUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    kind: Optional[str] = Field(default=None, max_length=50)
+    icon: Optional[str] = Field(default=None, max_length=50)
+    sort_order: Optional[int] = Field(default=None)
+
+
+class ApplianceBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    kind: str = Field(default="other", max_length=50)
+    icon: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ApplianceUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=255)
+    kind: Optional[str] = Field(default=None, max_length=50)
+    icon: Optional[str] = Field(default=None, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class MoveInventoryBody(BaseModel):
+    storage_location: str = Field(..., min_length=1, max_length=50)
+
+
+class ConsumeBody(BaseModel):
+    quantity: float = Field(..., gt=0)
+
+
+class DiscardBody(BaseModel):
+    quantity: Optional[float] = Field(default=None, gt=0)
 
 
 class AccountBody(BaseModel):
@@ -447,6 +511,8 @@ class ShoppingBody(BaseModel):
     note: str = Field(default="", max_length=1000)
     list_id: Optional[str] = Field(default=None, max_length=36)
     sort_order: int = Field(default=0)
+    storage_location: Optional[str] = Field(default=None, max_length=50)
+    product_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class BuyBody(BaseModel):
@@ -465,11 +531,14 @@ class ShoppingItemUpdate(BaseModel):
     note: Optional[str] = Field(default=None, max_length=1000)
     sort_order: Optional[int] = Field(default=None)
     selected: Optional[bool] = Field(default=None)
+    storage_location: Optional[str] = Field(default=None, max_length=50)
+    product_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class ShoppingListBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     budget: Optional[float] = Field(default=None, ge=0)
+    duplicate_of: Optional[str] = Field(default=None, max_length=36)
 
 
 class ShoppingListUpdate(BaseModel):
@@ -928,7 +997,9 @@ async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1
                                      unit: str = "unit", note: str = "", user_id: str = None,
                                      list_id: str = None, category: Optional[str] = None,
                                      estimated_price: Optional[float] = None,
-                                     store: Optional[str] = None, sort_order: int = 0) -> dict:
+                                     store: Optional[str] = None, sort_order: int = 0,
+                                     storage_location: Optional[str] = None,
+                                     product_id: Optional[str] = None) -> dict:
     if not list_id:
         default_list = await get_or_create_default_list(db, user_id)
         list_id = default_list.id
@@ -945,6 +1016,7 @@ async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1
     doc = ShoppingItem(id=new_id(), user_id=user_id, list_id=list_id, name=name, name_lower=name.lower(),
                        category=category, quantity=quantity, unit=unit,
                        estimated_price=estimated_price, store=store,
+                       storage_location=storage_location, product_id=product_id,
                        note=note, bought=False, sort_order=sort_order, created_at=now_iso())
     db.add(doc)
     await db.commit()
@@ -2383,6 +2455,8 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
             existing.price = body.price
         if body.store:
             existing.store = body.store
+        if body.storage_location:
+            existing.storage_location = body.storage_location
         if body.is_favorite:
             existing.is_favorite = True
         if body.default_quantity is not None:
@@ -2395,6 +2469,7 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
         return to_dict(existing)
     g = Grocery(id=new_id(), user_id=user["_id"], name=body.name, name_lower=body.name.lower(),
                 quantity=body.quantity, unit=body.unit, category=body.category,
+                storage_location=body.storage_location or "pantry",
                 price=body.price, store=body.store, low_threshold=body.low_threshold,
                 notes=body.notes or "", expiration=body.expiration,
                 is_favorite=body.is_favorite,
@@ -2491,6 +2566,234 @@ async def get_grocery_suggestions(limit: int = 10, user: dict = Depends(get_curr
     return out
 
 
+@api_router.post("/groceries/{gid}/move")
+async def move_grocery(gid: str, body: MoveInventoryBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    g = (await db.execute(
+        select(Grocery).where(Grocery.id == gid, Grocery.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not g:
+        raise HTTPException(404, "Item not found")
+    g.storage_location = body.storage_location
+    g.updated_at = now_iso()
+    await db.commit()
+    await db.refresh(g)
+    return to_dict(g)
+
+
+@api_router.post("/groceries/{gid}/consume")
+async def consume_grocery(gid: str, body: ConsumeBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    g = (await db.execute(
+        select(Grocery).where(Grocery.id == gid, Grocery.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not g:
+        raise HTTPException(404, "Item not found")
+    current = float(g.quantity) if g.quantity else 0
+    if body.quantity > current + 0.0001:
+        raise HTTPException(400, "Cannot consume more than available")
+    g.quantity = round(current - body.quantity, 2)
+    g.updated_at = now_iso()
+    await db.commit()
+    await db.refresh(g)
+    return to_dict(g)
+
+
+@api_router.post("/groceries/{gid}/discard")
+async def discard_grocery(gid: str, body: DiscardBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    g = (await db.execute(
+        select(Grocery).where(Grocery.id == gid, Grocery.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not g:
+        raise HTTPException(404, "Item not found")
+    current = float(g.quantity) if g.quantity else 0
+    qty = body.quantity if body.quantity is not None else current
+    if qty > current + 0.0001:
+        raise HTTPException(400, "Cannot discard more than available")
+    if qty >= current - 0.0001:
+        await db.execute(delete(Grocery).where(Grocery.id == gid, Grocery.user_id == user["_id"]))
+        await db.commit()
+        return {"ok": True, "deleted": True, "quantity": current}
+    g.quantity = round(current - qty, 2)
+    g.updated_at = now_iso()
+    await db.commit()
+    await db.refresh(g)
+    return to_dict(g)
+
+
+@api_router.get("/groceries/expiring")
+async def get_expiring_groceries(days: int = 7, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from datetime import date as _date
+    cutoff = (_date.today() + timedelta(days=days)).isoformat()
+    groceries = (await db.execute(
+        _user_owned_query(Grocery, user).where(
+            Grocery.expiration != None,
+            Grocery.expiration <= cutoff,
+            Grocery.quantity > 0,
+        ).order_by(Grocery.expiration)
+    )).scalars().all()
+    return [to_dict(g) for g in groceries]
+
+
+# ---------------------------------------------------------------------------
+# Product catalog
+# ---------------------------------------------------------------------------
+@api_router.get("/products")
+async def get_products(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return [to_dict(p) for p in (await db.execute(
+        _user_owned_query(Product, user).order_by(Product.name)
+    )).scalars().all()]
+
+
+@api_router.get("/products/search")
+async def search_products(q: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    term = (q or "").strip().lower()
+    if not term:
+        return []
+    rows = (await db.execute(
+        _user_owned_query(Product, user).where(
+            (Product.name_lower.ilike(f"%{term}%")) |
+            (Product.category.ilike(f"%{term}%"))
+        ).order_by(Product.name)
+    )).scalars().all()
+    # Also match synonyms if stored as JSON list.
+    out = []
+    for p in rows:
+        d = to_dict(p)
+        out.append(d)
+    return out
+
+
+@api_router.post("/products")
+async def create_product(body: ProductBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    p = Product(
+        id=new_id(), user_id=user["_id"], name=body.name, name_lower=body.name.lower(),
+        category=body.category, default_unit=body.default_unit,
+        typical_quantity=round(body.typical_quantity, 2) if body.typical_quantity is not None else None,
+        synonyms=body.synonyms or [], nutrition=body.nutrition,
+        is_favorite=body.is_favorite, created_at=now_iso())
+    db.add(p)
+    await db.commit()
+    await db.refresh(p)
+    return to_dict(p)
+
+
+@api_router.put("/products/{pid}")
+async def update_product(pid: str, body: ProductUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(
+        select(Product).where(Product.id == pid, Product.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Product not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "name" in updates:
+        updates["name_lower"] = updates["name"].lower()
+    if "typical_quantity" in updates and updates["typical_quantity"] is not None:
+        updates["typical_quantity"] = round(updates["typical_quantity"], 2)
+    if updates:
+        await db.execute(update(Product).where(Product.id == pid, Product.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(p)
+    return to_dict(p)
+
+
+@api_router.delete("/products/{pid}")
+async def delete_product(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(Product).where(Product.id == pid, Product.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Product not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Storage locations
+# ---------------------------------------------------------------------------
+@api_router.get("/storage-locations")
+async def get_storage_locations(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return [to_dict(s) for s in (await db.execute(
+        _user_owned_query(StorageLocation, user).order_by(StorageLocation.sort_order, StorageLocation.name)
+    )).scalars().all()]
+
+
+@api_router.post("/storage-locations")
+async def create_storage_location(body: StorageLocationBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    s = StorageLocation(
+        id=new_id(), user_id=user["_id"], name=body.name, kind=body.kind,
+        icon=body.icon, sort_order=body.sort_order, created_at=now_iso())
+    db.add(s)
+    await db.commit()
+    await db.refresh(s)
+    return to_dict(s)
+
+
+@api_router.put("/storage-locations/{sid}")
+async def update_storage_location(sid: str, body: StorageLocationUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    s = (await db.execute(
+        select(StorageLocation).where(StorageLocation.id == sid, StorageLocation.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(404, "Storage location not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if updates:
+        await db.execute(update(StorageLocation).where(StorageLocation.id == sid, StorageLocation.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(s)
+    return to_dict(s)
+
+
+@api_router.delete("/storage-locations/{sid}")
+async def delete_storage_location(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(StorageLocation).where(StorageLocation.id == sid, StorageLocation.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Storage location not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Appliances
+# ---------------------------------------------------------------------------
+@api_router.get("/appliances")
+async def get_appliances(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return [to_dict(a) for a in (await db.execute(
+        _user_owned_query(Appliance, user).order_by(Appliance.name)
+    )).scalars().all()]
+
+
+@api_router.post("/appliances")
+async def create_appliance(body: ApplianceBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    a = Appliance(
+        id=new_id(), user_id=user["_id"], name=body.name, kind=body.kind,
+        icon=body.icon, notes=body.notes, created_at=now_iso())
+    db.add(a)
+    await db.commit()
+    await db.refresh(a)
+    return to_dict(a)
+
+
+@api_router.put("/appliances/{aid}")
+async def update_appliance(aid: str, body: ApplianceUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    a = (await db.execute(
+        select(Appliance).where(Appliance.id == aid, Appliance.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not a:
+        raise HTTPException(404, "Appliance not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if updates:
+        await db.execute(update(Appliance).where(Appliance.id == aid, Appliance.user_id == user["_id"]).values(**updates))
+        await db.commit()
+        await db.refresh(a)
+    return to_dict(a)
+
+
+@api_router.delete("/appliances/{aid}")
+async def delete_appliance(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(Appliance).where(Appliance.id == aid, Appliance.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Appliance not found")
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Meals / Nutrition
 # ---------------------------------------------------------------------------
@@ -2560,6 +2863,33 @@ async def create_shopping_list(body: ShoppingListBody, user: dict = Depends(get_
                        budget=round(body.budget, 2) if body.budget is not None else None,
                        archived=False, created_at=now, updated_at=now)
     db.add(lst)
+    await db.flush()
+
+    if body.duplicate_of:
+        source = (await db.execute(
+            select(ShoppingList).where(
+                ShoppingList.id == body.duplicate_of,
+                ShoppingList.user_id == user["_id"],
+            )
+        )).scalar_one_or_none()
+        if source:
+            items = (await db.execute(
+                select(ShoppingItem).where(
+                    ShoppingItem.list_id == source.id,
+                    ShoppingItem.user_id == user["_id"],
+                    ShoppingItem.bought == False,
+                )
+            )).scalars().all()
+            for it in items:
+                db.add(ShoppingItem(
+                    id=new_id(), user_id=user["_id"], list_id=lst.id,
+                    name=it.name, name_lower=it.name_lower, category=it.category,
+                    quantity=it.quantity, unit=it.unit,
+                    estimated_price=it.estimated_price, store=it.store,
+                    storage_location=it.storage_location, product_id=it.product_id,
+                    note=it.note or "", bought=False, selected=False,
+                    sort_order=it.sort_order, created_at=now))
+
     await db.commit()
     await db.refresh(lst)
     return to_dict(lst)
@@ -2602,13 +2932,15 @@ async def post_shopping(body: ShoppingBody, user: dict = Depends(get_current_use
         db, body.name, body.quantity, body.unit, body.note, user_id=user["_id"],
         list_id=body.list_id, category=body.category, estimated_price=body.estimated_price,
         store=body.store, sort_order=body.sort_order,
+        storage_location=body.storage_location, product_id=body.product_id,
     )
 
 
 @api_router.put("/shopping/{sid}")
 async def update_shopping_item(sid: str, body: ShoppingItemUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     it = (await db.execute(
-        select(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
+        select(ShoppingItem).options(selectinload(ShoppingItem.list))
+        .where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
     )).scalar_one_or_none()
     if not it:
         raise HTTPException(404, "Item not found")
@@ -2625,7 +2957,8 @@ async def update_shopping_item(sid: str, body: ShoppingItemUpdate, user: dict = 
 @api_router.post("/shopping/{sid}/toggle")
 async def toggle_shopping_item(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     it = (await db.execute(
-        select(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
+        select(ShoppingItem).options(selectinload(ShoppingItem.list))
+        .where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"])
     )).scalar_one_or_none()
     if not it:
         raise HTTPException(404, "Item not found")
@@ -2667,7 +3000,7 @@ async def bulk_update_shopping(body: dict, user: dict = Depends(get_current_user
     updates = body.get("updates", {})
     if not ids:
         return {"updated": 0}
-    allowed = {"selected", "list_id", "category", "store"}
+    allowed = {"selected", "list_id", "category", "store", "storage_location"}
     safe = {k: v for k, v in updates.items() if k in allowed}
     if not safe:
         return {"updated": 0}
@@ -2680,7 +3013,8 @@ async def bulk_update_shopping(body: dict, user: dict = Depends(get_current_user
 
 async def _upsert_grocery_from_purchase(db: AsyncSession, user_id: str, name: str, quantity: float,
                                         unit: str, category: Optional[str], price: Optional[float],
-                                        store: Optional[str]) -> dict:
+                                        store: Optional[str],
+                                        storage_location: Optional[str] = None) -> dict:
     """Add or update grocery inventory inside an existing transaction."""
     name_lower = name.lower()
     existing = (await db.execute(
@@ -2702,12 +3036,15 @@ async def _upsert_grocery_from_purchase(db: AsyncSession, user_id: str, name: st
             existing.store = store
         if category:
             existing.category = category
+        if storage_location:
+            existing.storage_location = storage_location
         existing.updated_at = now_iso()
         await db.flush()
         return to_dict(existing)
 
     g = Grocery(id=new_id(), user_id=user_id, name=name, name_lower=name_lower,
                 quantity=round(float(quantity), 2), unit=unit or "unit", category=category or "Other",
+                storage_location=storage_location or "pantry",
                 price=price, store=store, low_threshold=0, notes="",
                 is_favorite=False, purchase_count=1,
                 created_at=now_iso(), updated_at=now_iso())
@@ -2746,15 +3083,17 @@ async def submit_purchase(lid: str, body: SubmitPurchaseBody, user: dict = Depen
             qty = p.quantity if p.quantity is not None else float(it.quantity)
             price = p.actual_price if p.actual_price is not None else (float(it.actual_price) if it.actual_price else None)
             store = p.store or body.store or it.store
+            storage_location = it.storage_location
 
             await _upsert_grocery_from_purchase(db, user["_id"], it.name, qty, it.unit or "unit",
-                                                it.category, price, store)
+                                                it.category, price, store, storage_location)
 
             it.bought = True
             it.selected = False
             it.completed_at = now
             it.actual_price = price
-            purchased.append({"id": it.id, "name": it.name, "quantity": qty, "price": price, "store": store})
+            purchased.append({"id": it.id, "name": it.name, "quantity": qty, "price": price, "store": store,
+                              "storage_location": storage_location})
             if price:
                 total_cost = round(total_cost + (price * qty), 2)
 
@@ -3223,6 +3562,79 @@ AI_TOOLS = [
         "description": "Get all money accounts and their current balances.",
         "parameters": {"type": "object", "properties": {}},
     }},
+    {"type": "function", "function": {
+        "name": "get_products",
+        "description": "Search the product catalog by keyword. Returns matching products with category, default unit and nutrition info.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"}}, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "add_product",
+        "description": "Add a new reusable product to the catalog.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "category": {"type": "string"},
+            "default_unit": {"type": "string"}, "typical_quantity": {"type": "number"},
+            "synonyms": {"type": "array", "items": {"type": "string"}},
+            "nutrition": {"type": "object"}, "is_favorite": {"type": "boolean"}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_grocery_storage",
+        "description": "Move a grocery inventory item to a different storage location (e.g. fridge, pantry, freezer).",
+        "parameters": {"type": "object", "properties": {
+            "grocery_id": {"type": "string"}, "storage_location": {"type": "string"}},
+            "required": ["grocery_id", "storage_location"]},
+    }},
+    {"type": "function", "function": {
+        "name": "consume_grocery",
+        "description": "Reduce grocery quantity because it was used/consumed.",
+        "parameters": {"type": "object", "properties": {
+            "grocery_id": {"type": "string"}, "quantity": {"type": "number"}},
+            "required": ["grocery_id", "quantity"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_expiring_items",
+        "description": "List grocery items expiring within a number of days (default 7).",
+        "parameters": {"type": "object", "properties": {"days": {"type": "number"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_storage_locations",
+        "description": "List the user's storage locations (fridge, pantry, freezer, custom).",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "add_storage_location",
+        "description": "Create a custom storage location.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "kind": {"type": "string", "enum": ["fridge", "pantry", "freezer", "custom"]},
+            "icon": {"type": "string"}, "sort_order": {"type": "number"}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_appliances",
+        "description": "List the user's kitchen appliances.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "add_appliance",
+        "description": "Add a kitchen appliance.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"}, "kind": {"type": "string", "enum": ["oven", "microwave", "air_fryer", "blender", "other"]},
+            "icon": {"type": "string"}, "notes": {"type": "string"}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "suggest_recipes_from_inventory",
+        "description": "Suggest recipes that can be made mostly from current grocery inventory. Read-only.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "add_missing_ingredients",
+        "description": "For a recipe id, add missing ingredients to a shopping list.",
+        "parameters": {"type": "object", "properties": {
+            "recipe_id": {"type": "string"}, "list_id": {"type": "string"}},
+            "required": ["recipe_id"]},
+    }},
 ]
 
 AI_SYSTEM = """You are Life Record's personal assistant, a friendly multi-user life-management helper.
@@ -3235,7 +3647,7 @@ Rules:
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record income/money received use record_income. To record a refund use mark_refunded (or record_payment for a general person payment).
 - To move money between the user's own places (e.g. "I withdrew 50€ from the bank") use transfer_money. To correct a balance or set the bank's initial balance use update_account_balance.
 - Actual spending is calculated as: money that left the bank (initial bank balance - current bank balance) minus money still in hand (cash + Revolut). Do not double-count transfers between the user's own accounts as spending.
-- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists.
+- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists. Use get_products/add_product for the reusable product catalog, get_storage_locations/add_storage_location for storage places, and update_grocery_storage/consume_grocery/get_expiring_items to manage inventory location and usage. Use suggest_recipes_from_inventory and add_missing_ingredients for recipe planning.
 - NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
 - If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
 - For destructive actions (delete, large bulk changes) always confirm with the user first.
@@ -3826,6 +4238,89 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                 upd.initial_balance = args["initial_balance"]
             res = await update_account(acc.id, upd, user, db)
             return {"updated": res}
+        if name == "get_products":
+            return {"products": await search_products(args.get("query", ""), user, db)}
+        if name == "add_product":
+            p = await create_product(ProductBody(**{k: v for k, v in args.items() if k in ProductBody.model_fields}), user, db)
+            created.append({"collection": "products", "id": p["id"]})
+            return p
+        if name == "update_grocery_storage":
+            return await move_grocery(args["grocery_id"], MoveInventoryBody(storage_location=args["storage_location"]), user, db)
+        if name == "consume_grocery":
+            return await consume_grocery(args["grocery_id"], ConsumeBody(quantity=args["quantity"]), user, db)
+        if name == "get_expiring_items":
+            return {"items": await get_expiring_groceries(int(args.get("days", 7)), user, db)}
+        if name == "get_storage_locations":
+            return {"storage_locations": await get_storage_locations(user, db)}
+        if name == "add_storage_location":
+            s = await create_storage_location(StorageLocationBody(
+                name=args["name"], kind=args.get("kind", "custom"),
+                icon=args.get("icon"), sort_order=int(args.get("sort_order", 0))), user, db)
+            created.append({"collection": "storage_locations", "id": s["id"]})
+            return s
+        if name == "get_appliances":
+            return {"appliances": await get_appliances(user, db)}
+        if name == "add_appliance":
+            a = await create_appliance(ApplianceBody(
+                name=args["name"], kind=args.get("kind", "other"),
+                icon=args.get("icon"), notes=args.get("notes")), user, db)
+            created.append({"collection": "appliances", "id": a["id"]})
+            return a
+        if name == "suggest_recipes_from_inventory":
+            recipes = (await db.execute(
+                _user_owned_query(Recipe, user).order_by(Recipe.name)
+            )).scalars().all()
+            groceries = (await db.execute(
+                select(Grocery).where(Grocery.user_id == user["_id"], Grocery.quantity > 0)
+            )).scalars().all()
+            stock = {g.name_lower: float(g.quantity) for g in groceries}
+            suggestions = []
+            for r in recipes:
+                ings = r.ingredients or []
+                if not ings:
+                    continue
+                missing = []
+                have = 0
+                for ing in ings:
+                    q = ing.get("quantity") or 0
+                    available = stock.get(ing["name"].lower(), 0)
+                    if available >= q:
+                        have += 1
+                    else:
+                        missing.append({"name": ing["name"], "quantity_needed": q, "quantity_have": available})
+                total = len(ings)
+                pct = round(have / total * 100, 1) if total else 0
+                suggestions.append({
+                    "recipe": to_dict(r),
+                    "match_percent": pct,
+                    "missing_ingredients": missing,
+                })
+            suggestions.sort(key=lambda x: (-x["match_percent"], len(x["missing_ingredients"])))
+            return {"suggestions": suggestions[:10]}
+        if name == "add_missing_ingredients":
+            rid = args.get("recipe_id")
+            list_id = args.get("list_id")
+            if not rid:
+                return {"error": "recipe_id is required"}
+            r = (await db.execute(
+                select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"])
+            )).scalar_one_or_none()
+            if not r:
+                return {"error": "Recipe not found"}
+            groceries = (await db.execute(
+                select(Grocery).where(Grocery.user_id == user["_id"], Grocery.quantity > 0)
+            )).scalars().all()
+            stock = {g.name_lower: float(g.quantity) for g in groceries}
+            added = []
+            for ing in (r.ingredients or []):
+                name = ing["name"]
+                q = ing.get("quantity") or 1
+                if stock.get(name.lower(), 0) < q:
+                    item = await add_shopping_item_doc(
+                        db, name, q, ing.get("unit", "unit"),
+                        user_id=user["_id"], list_id=list_id)
+                    added.append(item)
+            return {"added": added}
     except HTTPException:
         raise
     except Exception:

@@ -2,7 +2,7 @@
 shopping list, recipes cook, AI update/delete/mark_refunded."""
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
 import pytest
@@ -407,3 +407,105 @@ class TestAITools:
         # According to spec: must ask first
         assert still, "AI deleted without confirmation!"
         client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
+
+
+# --- Product catalog CRUD ---
+class TestProductsCRUD:
+    def test_product_lifecycle(self, client):
+        name = f"{TAG}_product_tomato"
+        r = client.post(f"{BASE_URL}/api/products", json={
+            "name": name, "category": "Produce", "default_unit": "kg",
+            "typical_quantity": 1.0, "synonyms": ["tomatoe"],
+            "nutrition": {"calories_per_100g": 18}, "is_favorite": True,
+        })
+        assert r.status_code == 200
+        p = r.json()
+        assert p["name"] == name
+        assert p["category"] == "Produce"
+        assert p["is_favorite"] is True
+
+        # Search finds it
+        search = client.get(f"{BASE_URL}/api/products/search", params={"q": name.split('_')[-1]}).json()
+        assert any(x["id"] == p["id"] for x in search)
+
+        # Update
+        r2 = client.put(f"{BASE_URL}/api/products/{p['id']}", json={"category": "Vegetables", "is_favorite": False})
+        assert r2.status_code == 200
+        assert r2.json()["category"] == "Vegetables"
+        assert r2.json()["is_favorite"] is False
+
+        # Delete
+        assert client.delete(f"{BASE_URL}/api/products/{p['id']}").status_code == 200
+
+
+# --- Storage locations CRUD ---
+class TestStorageLocationsCRUD:
+    def test_storage_location_lifecycle(self, client):
+        name = f"{TAG}_cellar"
+        r = client.post(f"{BASE_URL}/api/storage-locations", json={
+            "name": name, "kind": "custom", "icon": "box", "sort_order": 5})
+        assert r.status_code == 200
+        s = r.json()
+        assert s["name"] == name
+        assert s["kind"] == "custom"
+
+        # List includes it
+        lst = client.get(f"{BASE_URL}/api/storage-locations").json()
+        assert any(x["id"] == s["id"] for x in lst)
+
+        # Update
+        r2 = client.put(f"{BASE_URL}/api/storage-locations/{s['id']}", json={"sort_order": 10})
+        assert r2.status_code == 200
+        assert r2.json()["sort_order"] == 10
+
+        # Delete
+        assert client.delete(f"{BASE_URL}/api/storage-locations/{s['id']}").status_code == 200
+
+
+# --- Grocery inventory movement and expiry ---
+class TestGroceryInventoryOps:
+    def test_move_inventory_between_storage(self, client):
+        # Ensure locations exist
+        locs = {l["name"]: l for l in client.get(f"{BASE_URL}/api/storage-locations").json()}
+        for name, kind in [("Fridge", "fridge"), ("Pantry", "pantry")]:
+            if name not in locs:
+                client.post(f"{BASE_URL}/api/storage-locations", json={"name": name, "kind": kind})
+
+        g = client.post(f"{BASE_URL}/api/groceries", json={
+            "name": f"{TAG}_moveitem", "quantity": 2, "storage_location": "Pantry"}).json()
+        assert g["storage_location"] == "Pantry"
+
+        r = client.post(f"{BASE_URL}/api/groceries/{g['id']}/move", json={"storage_location": "Fridge"})
+        assert r.status_code == 200
+        assert r.json()["storage_location"] == "Fridge"
+
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
+    def test_consume_and_discard(self, client):
+        g = client.post(f"{BASE_URL}/api/groceries", json={
+            "name": f"{TAG}_consumeitem", "quantity": 5}).json()
+
+        # Consume 2
+        r1 = client.post(f"{BASE_URL}/api/groceries/{g['id']}/consume", json={"quantity": 2})
+        assert r1.status_code == 200
+        assert r1.json()["quantity"] == 3
+
+        # Discard remaining
+        r2 = client.post(f"{BASE_URL}/api/groceries/{g['id']}/discard", json={})
+        assert r2.status_code == 200
+        assert r2.json()["deleted"] is True
+
+    def test_expiring_endpoint(self, client):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        future = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
+        g = client.post(f"{BASE_URL}/api/groceries", json={
+            "name": f"{TAG}_expiringitem", "quantity": 1, "expiration": future}).json()
+
+        exp = client.get(f"{BASE_URL}/api/groceries/expiring", params={"days": 7}).json()
+        assert any(x["id"] == g["id"] for x in exp)
+
+        # Not in 1-day window
+        exp_short = client.get(f"{BASE_URL}/api/groceries/expiring", params={"days": 1}).json()
+        assert not any(x["id"] == g["id"] for x in exp_short)
+
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")

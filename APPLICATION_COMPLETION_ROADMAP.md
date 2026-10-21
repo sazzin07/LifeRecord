@@ -20,6 +20,8 @@
 10. [Bugs, Technical Debt & Risks](#10-bugs-technical-debt--risks)
 11. [Implementation Roadmap](#11-implementation-roadmap)
 12. [Master Checklist](#12-master-checklist)
+13. [Previous Work Log](#13-work-log--stopping-point)
+14. [Current Work Log](#14-work-log--stopping-point)
 
 ---
 
@@ -27,7 +29,7 @@
 
 LifeRecord is a multi-user personal-life management application built with a FastAPI backend and a React frontend. It currently provides working modules for finances, people/debts, tasks, fitness, body/weight, nutrition, groceries, progress photos, and an AI assistant powered by Google Gemini. Authentication includes email verification, password reset, refresh tokens, and per-user data isolation.
 
-**Overall maturity:** The backend is broadly functional and data isolation is enforced. Money and Groceries core workflows are now polished and dynamic. The biggest remaining functional gaps are in Groceries polish (budget tracking, recurring lists, suggestions, dashboard widgets), Calendar (no grid view), Nutrition (no manual meal/recipe forms), Tasks (no edit/due/priority UI), and Settings account management.
+**Overall maturity:** The backend is broadly functional and data isolation is enforced. Money, People, and Groceries backend workflows are polished and dynamic. Groceries received a major backend redesign (food catalog, storage locations, appliances, inventory workflows, AI tools). The biggest remaining functional gap is the **Groceries frontend visual redesign** (storage-area UI, catalog browser, kitchen appliances panel). Other remaining gaps: Calendar grid, Nutrition manual forms, Tasks edit/due/priority UI, and Settings account management.
 
 **Critical priorities:**
 1. Finish Groceries polish: budget tracking, recurring lists, frequently bought suggestions, dashboard widgets.
@@ -90,14 +92,15 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 - Money: transactions, splits, refunds, category budgets, charts, CSV export; dynamic account hierarchy with bank/cash/Revolut, transfers, actual-spending calculation, locked funds.
 - Body: weight tracking, progress photos (secure upload/serve), photo comparison.
 - Fitness: workout logging, PRs, session history.
-- Groceries (basic): inventory CRUD, low-stock alerts, shopping list, AI-generated list, price intelligence, mark-as-bought.
+- Groceries (backend): inventory CRUD with storage locations, low-stock/expiring alerts, product catalog, shopping lists with budgets/progress, recurring lists, price intelligence, partial-purchase submit, inventory move/consume/discard, AI tools for catalog/storage/recipes.
 - Nutrition (basic): macro rings, meal list, recipe list, cook recipe.
 - AI assistant: chat, receipt scan, voice transcription, action history/undo, tool calling for many domains.
 - Dashboard: summary stats, widgets for nutrition, people, groceries, tasks.
 
 ### 3.2 Partially Implemented / Placeholder
 
-- **Groceries:** core multi-list + cart workflow complete; budget tracking, recurring lists, frequently bought suggestions, and dashboard widgets still missing.
+- **Groceries:** backend redesign complete (catalog, storage locations, appliances, inventory workflows, AI tools). Frontend visual redesign (storage-area cards, catalog browser, kitchen appliances panel) still pending.
+- **Groceries data:** realistic inventory and one shopping list seeded; old random test records removed.
 - **Calendar:** task list only, no calendar grid.
 - **Tasks:** no edit, due date, priority, or recurring UI.
 - **Nutrition:** no manual add-meal or add-recipe forms.
@@ -108,7 +111,8 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 ### 3.3 Runtime Status at Audit Time
 
 - MySQL, backend and frontend are running locally via `start-all.ps1`.
-- Latest run: 55 backend tests pass; frontend `yarn build` succeeds with no ESLint warnings.
+- Latest run: 61 backend tests pass; frontend `yarn build` succeeds with no ESLint warnings.
+- Groceries realistic seed data created: 3 storage locations, 4 appliances, ~148 products, ~37 inventory items, 1 shopping list.
 - No Docker or CI/CD configuration exists; deployment is manual via PowerShell scripts.
 
 ---
@@ -146,10 +150,10 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 
 | Aspect | State | Notes |
 |--------|-------|-------|
-| Current state | Functional multi-list inventory + shopping cart | `frontend/src/pages/Groceries.jsx`, backend `Grocery`, `ShoppingList`, `ShoppingItem`, `PriceRecord`, `Recipe` |
-| Existing functionality | Inventory CRUD with low-stock badges; multiple shopping lists; shopping cart with item selection; partial-purchase submit; price intelligence; generate from low stock/usual buys; AI tools for list/item management. | |
-| Remaining work | Budget tracking, recurring lists, frequently bought suggestions, dedicated low-stock reminders endpoint, dashboard grocery widgets, price history chart, chat history in AI assistant. | GROC-006–GROC-010, GROC-014–GROC-018, AI-003–AI-007, DASH-001–DASH-003 |
-| Acceptance criteria | See Section 11 (Groceries tasks). | |
+| Current state | Backend redesign complete; frontend uses existing multi-list cart UI | `frontend/src/pages/Groceries.jsx`, backend `Grocery`, `Product`, `StorageLocation`, `Appliance`, `ShoppingList`, `ShoppingItem`, `PriceRecord`, `Recipe` |
+| Existing functionality | Inventory CRUD with storage locations, low-stock/expiring badges; product catalog CRUD/search; storage-location and appliance CRUD; inventory move/consume/discard; multiple shopping lists with budgets/progress; recurring lists; partial-purchase submit; price intelligence; generate from low stock/usual buys; AI tools for catalog, storage, inventory, recipes, and lists. | |
+| Remaining work | Frontend visual redesign: storage-area cards, catalog browser, kitchen appliances panel, responsive shopping-mode UI. | GROC-UI-001 |
+| Acceptance criteria | Distinctive, responsive Groceries UI with Overview, Storage, Shopping, Catalog, and Kitchen tabs; seamless AI integration; all CRUD operations tested. | |
 
 ### 4.5 Nutrition
 
@@ -498,6 +502,13 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 | GROC-016 | Add suggestions UI | `frontend/src/pages/Groceries.jsx` | "Frequently bought" section with one-click add. | GROC-008 | Suggestions add items to current list. | Medium |
 | GROC-017 | Add low-stock reminders UI | `frontend/src/pages/Groceries.jsx`, Dashboard | Badge/alert for low/out-of-stock items. | GROC-009 | Alerts match inventory. | High |
 | GROC-018 | Add price history chart UI | `frontend/src/pages/Groceries.jsx` | Use existing `/prices/{name}` endpoint. | None | Chart renders per item. | Low |
+| GROC-BE-001 | Add Product/StorageLocation/Appliance models & migrations | `backend/models.py`, Alembic | Create models/migration for catalog, storage, appliances; add `storage_location` to groceries/items. | P1-004 | Schema valid; migration applies. | High |
+| GROC-BE-002 | Product catalog CRUD/search endpoints | `backend/server.py` | GET/POST/PUT/DELETE `/products`; `/products/search?q=`. | GROC-BE-001 | Tests pass. | High |
+| GROC-BE-003 | Storage location & appliance CRUD endpoints | `backend/server.py` | GET/POST/PUT/DELETE `/storage-locations` and `/appliances`. | GROC-BE-001 | Tests pass. | High |
+| GROC-BE-004 | Inventory move/consume/discard/expiring endpoints | `backend/server.py` | POST `/groceries/{id}/move`, `/consume`, `/discard`; GET `/groceries/expiring`. | GROC-BE-001 | Tests pass. | High |
+| GROC-BE-005 | Realistic grocery seed data | `backend/seed_groceries.py` | Seed storage locations, appliances, ~100 products, ~30 inventory items, 1 shopping list. | GROC-BE-001–004 | Realistic data present; no random test records. | High |
+| GROC-BE-006 | AI tools for catalog/storage/recipes | `backend/server.py` AI_TOOLS | `get_products`, `add_product`, `update_grocery_storage`, `consume_grocery`, `get_expiring_items`, `get_storage_locations`, `add_storage_location`, `get_appliances`, `suggest_recipes_from_inventory`, `add_missing_ingredients`. | GROC-BE-002–004 | AI can query/manage catalog, storage, inventory, recipes. | High |
+| GROC-UI-001 | Distinctive Groceries frontend redesign | `frontend/src/pages/Groceries.jsx` | Overview, Storage, Shopping, Catalog, Kitchen tabs; visual storage cards; product browser; appliance panel. | GROC-BE-001–006 | Responsive, no build warnings, CRUD operations tested. | Critical |
 
 ### Phase 3 — AI Integration for Groceries (High)
 
@@ -596,6 +607,13 @@ Use the IDs below to track progress. Update the status column as work is complet
 | GROC-016 | Add suggestions UI | Medium | Completed |
 | GROC-017 | Add low-stock reminders UI | High | Completed |
 | GROC-018 | Add price history chart UI | Low | Completed |
+| GROC-BE-001 | Add Product/StorageLocation/Appliance models & migrations | High | Completed |
+| GROC-BE-002 | Product catalog CRUD/search endpoints | High | Completed |
+| GROC-BE-003 | Storage location & appliance CRUD endpoints | High | Completed |
+| GROC-BE-004 | Inventory move/consume/discard/expiring endpoints | High | Completed |
+| GROC-BE-005 | Realistic grocery seed data | High | Completed |
+| GROC-BE-006 | AI tools for catalog/storage/recipes | High | Completed |
+| GROC-UI-001 | Distinctive Groceries frontend redesign (Overview/Storage/Shopping/Catalog/Kitchen) | Critical | Not started |
 
 ### AI Integration
 
@@ -642,8 +660,8 @@ Use the IDs below to track progress. Update the status column as work is complet
 | TEST-003 | Playwright tests for Nutrition manual forms | Medium | Not started |
 | TEST-004 | Backend unit tests for helpers | Medium | Not started |
 | TEST-005 | Externalize test credentials | Low | Not started |
-| DOC-001 | Update README.md with Groceries features | High | Not started |
-| DOC-002 | Update README.md with testing instructions | Medium | Not started |
+| DOC-001 | Update README.md with Groceries features | High | Completed |
+| DOC-002 | Update README.md with testing instructions | Medium | Completed |
 
 ### Production Hardening
 
@@ -677,10 +695,10 @@ Use the IDs below to track progress. Update the status column as work is complet
 
 ## Audit Summary
 
-- **Total tasks identified:** 78
-- **By priority:** Critical 9, High 26, Medium 31, Low 12
-- **Main blockers:** None technical; services run via `start-all.ps1`. The largest remaining blocks are Calendar grid, Nutrition manual forms, Tasks edit UI, and Settings account management. Groceries only has recurring lists, suggestions, and price-history chart remaining.
-- **Pre-existing uncommitted changes:** Custom confirmation dialogs were recently added in `frontend/src/pages/*.jsx` and `frontend/src/components/ConfirmDialog.jsx`; these are preserved and noted.
+- **Total tasks identified:** 85
+- **By priority:** Critical 10, High 30, Medium 31, Low 14
+- **Main blockers:** None technical; services run via `start-all.ps1`. The largest remaining block is the Groceries frontend visual redesign (GROC-UI-001). Other remaining blocks: Calendar grid, Tasks edit UI, and Settings account management.
+- **Pre-existing uncommitted changes:** None. Latest commit is `be41f11` (groceries redesign backend).
 - **File location:** `C:\Projects\LifeRecord\APPLICATION_COMPLETION_ROADMAP.md`
 
 ---
@@ -749,3 +767,34 @@ Groceries, Nutrition manual forms, People/Money integration, and AI transaction 
 3. **AI-007** — Load chat history in AI assistant UI.
 4. **TEST-002 / TEST-003** — Playwright e2e tests for Groceries and Nutrition.
 5. **DOC-001 / DOC-002** — Update README with Groceries features and testing instructions.
+
+---
+
+## 14. Work Log / Stopping Point
+
+**Last session:** 2026-10-21
+
+### Completed in this session
+- **Groceries redesign — backend & data:**
+  - Added `Product`, `StorageLocation`, and `Appliance` models with Alembic migration.
+  - Added `storage_location` to `Grocery` and `ShoppingItem`; `product_id` to `ShoppingItem`.
+  - New endpoints: `/products` CRUD + search, `/storage-locations` CRUD, `/appliances` CRUD.
+  - New inventory workflows: `/groceries/{id}/move`, `/consume`, `/discard`; `/groceries/expiring`.
+  - Extended shopping-list endpoints with duplicate, archive, and storage-location support.
+  - New AI tools: `get_products`, `add_product`, `update_grocery_storage`, `consume_grocery`, `get_expiring_items`, `get_storage_locations`, `add_storage_location`, `get_appliances`, `add_appliance`, `suggest_recipes_from_inventory`, `add_missing_ingredients`.
+  - Created `backend/seed_groceries.py` and seeded realistic data: 3 storage locations, 4 appliances, ~148 products, ~37 inventory items, 1 shopping list with 10 items.
+  - Removed all old random test grocery/shopping records; account balances reverted to opening balances because prior transactions were test-only.
+  - Added backend tests for product CRUD, storage locations, inventory move/consume/discard, and expiring items.
+
+- **Documentation:**
+  - Updated `README.md` with a Features section (Money, People, Groceries, Nutrition, Home) and a Testing section (backend tests + frontend build).
+  - Updated `APPLICATION_COMPLETION_ROADMAP.md`: revised executive summary, current state, page audits, implementation roadmap, master checklist, and added this work log.
+
+### Test results
+- Backend: **61 passed**
+- Frontend `yarn build`: success, no ESLint warnings
+- Realistic grocery data verified via API: 3 storage locations, 4 appliances, ~148 products, ~37 inventory items, 1 shopping list.
+
+### Stopping point
+The Groceries backend redesign, data seeding, AI tools, and tests are complete. **The remaining critical item is:**
+1. **GROC-UI-001** — Distinctive Groceries frontend redesign with Overview, Storage, Shopping, Catalog, and Kitchen tabs. The current frontend still uses the previous multi-list cart UI; all new backend endpoints and realistic data are ready for the redesigned page.

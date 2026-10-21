@@ -299,6 +299,33 @@ cd frontend
 yarn build
 ```
 
+## Features
+
+### Money
+- Dynamic account hierarchy: bank, cash places, Revolut, locked funds, owed accounts.
+- Transfers between accounts, actual-spending calculation, and locked-funds support.
+- Expenses, income, and transfers all update account balances automatically.
+
+### People / shared expenses
+- People ledger, split expenses, repayments.
+- Recording a person payment now updates the selected account balance.
+- Clear all debts or per-person balances.
+
+### Groceries
+- Multiple shopping lists with budgets, progress, and bulk actions.
+- Food catalog (products) with categories, synonyms, and optional nutrition.
+- Inventory organized by storage locations: Fridge, Pantry, Freezer, and custom locations.
+- Move, consume, discard, and expiry tracking for inventory items.
+- Recurring shopping list templates and frequently bought suggestions.
+- AI can manage lists, inventory, storage locations, and suggest recipes from available ingredients.
+
+### Nutrition
+- Meal logging with macro tracking.
+- Recipe catalog with ingredients; cook a recipe to update grocery inventory.
+
+### Home dashboard
+- Summary stats, tasks, people balances, nutrition rings, and today's transactions.
+
 ## AI features
 
 The AI assistant is accessed through the floating sparkle button in the app. It supports:
@@ -309,9 +336,31 @@ The AI assistant is accessed through the floating sparkle button in the app. It 
 - Tool/function calling for create/read/update/delete operations on Life Record data
 - Action history with undo
 
+AI-recorded financial transactions (expenses, income, transfers, person payments) use the same validated backend endpoints as manual entry, are saved to the database, and appear immediately in the Transactions table and Home dashboard.
+
 All AI requests are made server-side. The Gemini API key must be set in `backend/.env` as `GEMINI_API_KEY`. The key is never sent to the browser. AI requests time out after `GEMINI_TIMEOUT_SECONDS` to prevent the UI from hanging when Gemini is overloaded.
 
 The default model is `gemini-3.5-flash-lite` because it has the highest free-tier quota. If the primary model returns a quota, rate-limit, or capacity error, the backend automatically tries the models listed in `GEMINI_MODEL_FALLBACKS` in order.
+
+## Testing
+
+### Backend tests
+
+```powershell
+cd backend
+.venv\Scripts\python.exe -m pytest tests -q
+```
+
+The test suite covers auth, accounts, transactions, people, groceries, shopping lists, nutrition, fitness, and AI-recorded transactions. It expects a fresh MySQL database named `liferecord_test` (see `backend/tests/conftest.py`).
+
+### Frontend build
+
+```powershell
+cd frontend
+yarn build
+```
+
+The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `yarn test:e2e` after starting the backend and frontend.
 
 ## Production deployment checklist
 

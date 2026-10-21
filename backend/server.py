@@ -319,6 +319,7 @@ class SettlementBody(BaseModel):
     amount: float
     method: str = Field(default="Revolut", max_length=50)
     account: str = Field(default="revolut", max_length=50)
+    account_id: Optional[str] = Field(default=None, max_length=36)
     direction: str = Field(default="in", max_length=10)
     date: Optional[str] = None
     transaction_id: Optional[str] = None
@@ -1312,6 +1313,7 @@ async def bulk_delete_people(body: BulkDeleteBody, user: dict = Depends(get_curr
     return {"deleted": count}
 
 
+
 @api_router.get("/people/{pid}")
 async def person_detail(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     people = await people_balances(db, user["_id"])
@@ -1335,7 +1337,7 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
         if txn.paid_by == "me":
             total_original_debt += amount
             ledger.append({
-                "id": txn.id, "type": "debt", "date": txn.date,
+                "id": sp.id, "transaction_id": txn.id, "type": "debt", "date": txn.date,
                 "merchant": txn.merchant or txn.description or txn.category,
                 "description": f"Paid by you · {txn.account}",
                 "amount": amount, "balance_effect": +amount,
@@ -1345,7 +1347,7 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
         elif txn.paid_by == pid and sp.is_me:
             total_original_debt -= amount  # they paid, I owe them this share
             ledger.append({
-                "id": txn.id, "type": "credit", "date": txn.date,
+                "id": sp.id, "transaction_id": txn.id, "type": "credit", "date": txn.date,
                 "merchant": txn.merchant or txn.description or txn.category,
                 "description": f"Paid by {person['name']} · {txn.account}",
                 "amount": amount, "balance_effect": -amount,
@@ -1368,6 +1370,7 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
                 "merchant": f"Payment via {s.method}", "description": f"Received into {s.account}",
                 "amount": amount, "balance_effect": -amount,
                 "method": s.method, "account": s.account,
+                "transaction_id": s.transaction_id,
             })
         else:
             ledger.append({
@@ -1375,6 +1378,7 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
                 "merchant": f"Payment via {s.method}", "description": f"Sent from {s.account}",
                 "amount": amount, "balance_effect": +amount,
                 "method": s.method, "account": s.account,
+                "transaction_id": s.transaction_id,
             })
 
     ledger.sort(key=lambda x: x["date"], reverse=True)
@@ -1392,9 +1396,75 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
     }
 
 
-# ---------------------------------------------------------------------------
-# Categories & Accounts
-# ---------------------------------------------------------------------------
+@api_router.post("/people/{pid}/clear-balance")
+async def clear_person_balance(pid: str, body: SettlementBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Create a settlement that zeros the balance with this person."""
+    people = await people_balances(db, user["_id"])
+    person = next((p for p in people if p["id"] == pid), None)
+    if not person:
+        raise HTTPException(404, "Person not found")
+    net = person["net"]
+    if abs(net) < 0.005:
+        return {"ok": True, "message": "Already settled"}
+    direction = "in" if net > 0 else "out"
+    return await add_settlement(SettlementBody(
+        person=person["name"], amount=abs(net), method=body.method,
+        account=body.account, account_id=body.account_id, direction=direction,
+    ), user, db)
+
+
+@api_router.post("/people/clear-debts")
+async def clear_all_debts(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Remove all debt records (splits and settlements) for the current user. Transactions remain."""
+    # Delete settlements and any auto-created transactions they produced
+    settlements = (await db.execute(
+        select(Settlement).where(Settlement.user_id == user["_id"])
+    )).scalars().all()
+    txn_ids = [s.transaction_id for s in settlements if s.transaction_id]
+    if txn_ids:
+        await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
+    await db.execute(delete(Settlement).where(Settlement.user_id == user["_id"]))
+
+    # Delete all splits
+    await db.execute(delete(Split).where(Split.person_id.in_(
+        select(Person.id).where(Person.user_id == user["_id"])
+    )))
+
+    await db.commit()
+    return {"ok": True, "deleted_settlements": len(settlements), "deleted_splits": "all"}
+
+
+@api_router.delete("/settlements/{sid}")
+async def delete_settlement(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    s = (await db.execute(
+        select(Settlement).where(Settlement.id == sid, Settlement.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not s:
+        raise HTTPException(404, "Settlement not found")
+    if s.transaction_id:
+        await db.execute(delete(Transaction).where(Transaction.id == s.transaction_id, Transaction.user_id == user["_id"]))
+    await db.execute(delete(Settlement).where(Settlement.id == sid, Settlement.user_id == user["_id"]))
+    await db.commit()
+    return {"ok": True}
+
+
+@api_router.delete("/splits/{sid}")
+async def delete_split(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    sp = (await db.execute(
+        select(Split).where(Split.id == sid)
+    )).scalar_one_or_none()
+    if not sp:
+        raise HTTPException(404, "Split not found")
+    txn = (await db.execute(
+        select(Transaction).where(Transaction.id == sp.transaction_id, Transaction.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+    await db.execute(delete(Split).where(Split.id == sid))
+    await db.commit()
+    return {"ok": True}
+
+
 @api_router.get("/categories")
 async def get_categories(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return [to_dict(c) for c in (await db.execute(
@@ -1808,11 +1878,48 @@ async def add_income(body: IncomeBody, user: dict = Depends(get_current_user), d
 async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     person = await resolve_person(db, body.person, user["_id"])
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Resolve account by id, then by name/type fallback for backwards compatibility
+    account_id = body.account_id
+    if not account_id:
+        acc = (await db.execute(
+            select(Account).where(
+                Account.user_id == user["_id"],
+                Account.is_active == True,
+            ).where(
+                (Account.name.ilike(body.account)) | (Account.type.ilike(body.account))
+            )
+        )).scalars().first()
+        if acc:
+            account_id = acc.id
+
     s = Settlement(id=new_id(), user_id=user["_id"], person_id=person["id"], person_name=person["name"],
                    amount=round(body.amount, 2), method=body.method, account=body.account,
                    direction=body.direction, date=date, transaction_id=body.transaction_id,
                    created_at=now_iso())
     db.add(s)
+    await db.flush()
+
+    # Record a matching money transaction so the selected account balance changes automatically.
+    if account_id:
+        txn_type = "income" if body.direction == "in" else "expense"
+        txn = Transaction(
+            id=new_id(), user_id=user["_id"], type=txn_type,
+            gross_amount=round(body.amount, 2),
+            personal_amount=round(body.amount, 2),
+            reimbursable_amount=0,
+            description=f"{'Payment from' if body.direction == 'in' else 'Payment to'} {person['name']}",
+            category="People",
+            account=account_id,
+            merchant=person["name"],
+            date=date,
+            month=date[:7],
+            notes=f"Settlement via {body.method}",
+            created_at=now_iso())
+        db.add(txn)
+        await db.flush()
+        s.transaction_id = txn.id
+
     await db.commit()
     await db.refresh(s)
     return to_dict(s)

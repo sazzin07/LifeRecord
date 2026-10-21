@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Users, Plus, Search, Trash2, Pencil, HandCoins, TrendingDown,
-  TrendingUp, X,
+  TrendingUp, X, Receipt,
 } from "lucide-react";
 import { api, eur } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
@@ -46,6 +46,7 @@ export default function People() {
   const [singleDeleteId, setSingleDeleteId] = useState(null);
   const [singleDeleteName, setSingleDeleteName] = useState("");
   const [form, setForm] = useState({ name: "", notes: "", payment_preference: "" });
+  const [clearAllOpen, setClearAllOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -160,15 +161,29 @@ export default function People() {
     refreshAll();
   };
 
+  const clearAllDebts = async () => {
+    try {
+      await api.post("/people/clear-debts");
+      toast.success("All debt records cleared");
+      setClearAllOpen(false);
+      refreshAll();
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not clear debts"); }
+  };
+
   return (
     <div className="space-y-6">
       <SectionHeading
         title="People"
         sub="Shared expenses, balances and reimbursements"
         action={
-          <Button onClick={startAdd} data-testid="add-person-btn" className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
-            <Plus className="h-4 w-4 mr-1" /> Add person
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setClearAllOpen(true)} className="h-9" data-testid="clear-all-debts-btn">
+              <Receipt className="h-4 w-4 mr-1" /> Clear all debts
+            </Button>
+            <Button onClick={startAdd} data-testid="add-person-btn" className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Plus className="h-4 w-4 mr-1" /> Add person
+            </Button>
+          </div>
         }
       />
 
@@ -341,6 +356,22 @@ export default function People() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setBulkDeleteOpen(false)} data-testid="bulk-delete-cancel">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { const ids = Array.from(selectedIds); if (ids.length === 1) { deletePerson(ids[0]); } else { bulkDelete(); } }} className="bg-red-500 hover:bg-red-600 text-white" data-testid="bulk-delete-confirm">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear all debts confirmation */}
+      <AlertDialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all debts?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes every split and settlement record for all people. The underlying transactions stay in your Money tab, but no one will owe anything anymore. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setClearAllOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={clearAllDebts} className="bg-red-500 hover:bg-red-600 text-white">Clear all debts</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

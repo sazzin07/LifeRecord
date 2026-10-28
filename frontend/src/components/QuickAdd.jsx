@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { WorkoutDialog } from "@/components/WorkoutDialog";
 import { swr } from "@/lib/query";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Receipt, Utensils, ShoppingCart, Dumbbell, Scale, CheckSquare, HandCoins, UserPlus, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -56,7 +56,7 @@ export function QuickAdd({ open, setOpen }) {
       toast.success("Saved");
       refreshAll();
       setOpen(false);
-    } catch { toast.error("Could not save"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not save")); }
   };
 
   const num = (v) => (v === "" || v == null ? null : parseFloat(v));

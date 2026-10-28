@@ -79,6 +79,13 @@ api.interceptors.response.use(
   }
 );
 
+/** The server's reason when it sent a readable one (e.g. "Cannot delete account with transactions"), else `fallback`.
+ *  Validation lists (422) are too technical to show, so they fall back too. */
+export function errorMessage(err, fallback) {
+  const detail = err?.response?.data?.detail;
+  return typeof detail === "string" && detail.trim() ? detail : fallback;
+}
+
 export const eur = (n) =>
   new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(Number(n || 0));
 

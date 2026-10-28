@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api, eur } from "@/lib/api";
+import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { HandCoins, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -63,13 +63,13 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
       toast.success("Expense updated");
       refreshAll();
       setOpen(false);
-    } catch { toast.error("Could not update expense"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not update expense")); }
     finally { setSaving(false); }
   };
 
   const del = async () => {
     try { await api.delete(`/transactions/${txn.id}`); toast.success("Expense deleted"); refreshAll(); setConfirmDelete(false); setOpen(false); }
-    catch { toast.error("Could not delete"); }
+    catch (err) { toast.error(errorMessage(err, "Could not delete")); }
   };
 
   const recordRefund = async () => {

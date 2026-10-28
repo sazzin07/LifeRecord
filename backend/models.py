@@ -326,6 +326,18 @@ class AIAction(Base):
     created_at = Column(String(32), nullable=False)
 
 
+class AIPendingConfirmation(Base):
+    """A destructive AI action previewed in one chat turn and awaiting the user's confirmation on a later one.
+    One per user and chat; stored so it survives restarts and is shared by every server process."""
+    __tablename__ = "ai_pending_confirmations"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    session_id = Column(String(100), primary_key=True)
+    tool = Column(String(64), nullable=False)
+    target_id = Column(String(255), nullable=False)
+    expires_at = Column(String(32), nullable=False)
+    created_at = Column(String(32), nullable=False)
+
+
 class AIMessage(Base):
     __tablename__ = "ai_messages"
     id = Column(String(36), primary_key=True)

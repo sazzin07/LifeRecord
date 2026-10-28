@@ -11,6 +11,7 @@ import logging
 import re
 import asyncio
 import calendar
+from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
@@ -23,13 +24,14 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, delete, update, func, desc, asc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from database import engine, AsyncSessionLocal, get_db
 from models import (
     Base, User, Account, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
-    Meal, Recipe, AIAction, AIMessage,
+    Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage,
 )
 import kitchen_logic
 import ai_tools_extra
@@ -53,7 +55,6 @@ from email_service import send_verification_code, send_password_reset
 _background_tasks: set = set()  # keeps fire-and-forget tasks alive until they finish
 # Session-scoped pending confirmations for destructive tool calls.
 # Maps session_id -> {tool, target_id, match, expires_at}.
-_pending_confirmations: Dict[str, Dict[str, Any]] = {}
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALG = "HS256"
 OWNER_NAME = os.environ.get('OWNER_NAME', 'Sá')
@@ -2345,13 +2346,18 @@ async def update_task(tid: str, body: TaskBody, user: dict = Depends(get_current
         raise HTTPException(404, "Task not found")
     completing = body.done and not task.done
     await db.execute(update(Task).where(Task.id == tid, Task.user_id == user["_id"]).values(**body.model_dump()))
+    next_id = None
     if completing and body.recurring in TASK_REPEATS and body.due:
         # Completing a repeating task schedules the next one; only on the not-done -> done transition.
-        db.add(Task(id=new_id(), user_id=user["_id"], title=body.title, priority=body.priority,
+        next_id = new_id()
+        db.add(Task(id=next_id, user_id=user["_id"], title=body.title, priority=body.priority,
                     due=next_due(body.due, body.recurring), recurring=body.recurring, done=False, created_at=now_iso()))
     await db.commit()
     await db.refresh(task)
-    return to_dict(task)
+    out = to_dict(task)
+    if next_id:
+        out["next_task_id"] = next_id
+    return out
 
 
 @api_router.delete("/tasks/{tid}")
@@ -3567,6 +3573,27 @@ async def ai_actions(user: dict = Depends(get_current_user), db: AsyncSession = 
     )).scalars().all()]
 
 
+def undo_models() -> dict:
+    """Collections an AI action can create, change or delete, and that undo knows how to restore."""
+    return {
+        "transactions": Transaction, "settlements": Settlement, "groceries": Grocery, "meals": Meal, "tasks": Task,
+        "weight": WeightEntry, "recipes": Recipe, "workouts": Workout, "accounts": Account, "shopping_items": ShoppingItem,
+        "shopping_lists": ShoppingList, "storage_locations": StorageLocation, "people": Person, "categories": Category,
+    }
+
+
+def remember_before(created: list, collection: str, obj) -> None:
+    """Record a row's values before an AI tool changes or deletes it, so the action can be undone.
+    The first snapshot in a turn wins, and rows the same turn created are simply removed on undo."""
+    if obj is None or any(r.get("collection") == collection and r.get("id") == obj.id for r in created):
+        return
+    before = {}
+    for c in obj.__table__.columns:
+        v = getattr(obj, c.name)
+        before[c.name] = float(v) if isinstance(v, Decimal) else v
+    created.append({"collection": collection, "id": obj.id, "before": before})
+
+
 @api_router.post("/ai/actions/{aid}/undo")
 async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     action = (await db.execute(
@@ -3574,14 +3601,25 @@ async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSes
     )).scalar_one_or_none()
     if not action or action.undone:
         raise HTTPException(404, "Nothing to undo")
-    for ref in (action.created or []):
-        model = {
-            "transactions": Transaction, "settlements": Settlement, "groceries": Grocery,
-            "meals": Meal, "tasks": Task, "weight": WeightEntry, "recipes": Recipe,
-            "workouts": Workout,
-        }.get(ref["collection"])
-        if model:
-            await db.execute(delete(model).where(model.id == ref["id"]))
+    models = undo_models()
+    # Newest change first. A ref with "before" was changed or deleted by the action: put its values back (or the
+    # whole row if it is gone). A ref without it was created by the action: remove it.
+    for ref in reversed(action.created or []):
+        model = models.get(ref["collection"])
+        if not model:
+            continue
+        before = ref.get("before")
+        if before is not None:
+            if before.get("user_id") != user["_id"]:
+                continue
+            exists = (await db.execute(select(model.id).where(model.id == ref["id"], model.user_id == user["_id"]))).scalar_one_or_none()
+            if exists:
+                await db.execute(update(model).where(model.id == ref["id"], model.user_id == user["_id"])
+                                 .values(**{k: v for k, v in before.items() if k not in ("id", "user_id")}))
+            else:
+                db.add(model(**before))
+        else:
+            await db.execute(delete(model).where(model.id == ref["id"], model.user_id == user["_id"]))
     action.undone = True
     await db.commit()
     return {"ok": True}
@@ -3681,9 +3719,9 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "delete_shopping_item",
-        "description": "Remove an item from a shopping list. Destructive: confirm first.",
+        "description": "Remove an item from a shopping list (preview first, then confirm).",
         "parameters": {"type": "object", "properties": {
-            "item_id": {"type": "string"}, "confirm": {"type": "boolean"}}, "required": ["item_id"]},
+            "item_id": {"type": "string"}, "confirm": ai_tools_extra._CONFIRM}, "required": ["item_id"]},
     }},
     {"type": "function", "function": {
         "name": "submit_purchase",
@@ -3691,7 +3729,7 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {
             "list_id": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "properties": {
                 "item_id": {"type": "string"}, "quantity": {"type": "number"}, "actual_price": {"type": "number"}, "store": {"type": "string"}}}},
-            "store": {"type": "string"}, "record_expense": {"type": "boolean"}, "payment_account": {"type": "string"}, "confirm": {"type": "boolean"}},
+            "store": {"type": "string"}, "record_expense": {"type": "boolean"}, "payment_account": {"type": "string"}, "confirm": ai_tools_extra._CONFIRM},
             "required": ["list_id", "items"]},
     }},
     {"type": "function", "function": {
@@ -3875,9 +3913,10 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "delete_money_space",
-        "description": "Delete a space/place. Only works when it has no transactions; otherwise suggest transferring its money elsewhere and hiding it. Ask the user to confirm first.",
+        "description": "Delete a space/place (preview first, then confirm). Only works when it has no transactions; otherwise suggest transferring its money elsewhere and hiding it.",
         "parameters": {"type": "object", "properties": {
-            "account": {"type": "string", "description": "Account id or name of the space"}},
+            "account": {"type": "string", "description": "Account id or name of the space"},
+            "confirm": ai_tools_extra._CONFIRM},
             "required": ["account"]},
     }},
     {"type": "function", "function": {
@@ -4537,25 +4576,36 @@ async def find_expense(db: AsyncSession, match: str, user_id: str) -> Optional[d
     return txn_to_dict(t) if t else None
 
 
-def _confirmation_gate(session_id: Optional[str], previewed_this_turn: Optional[set], tool: str, target_id: str, confirm, message: str):
+async def _confirmation_gate(db: AsyncSession, user_id: str, session_id: Optional[str], previewed_this_turn: Optional[set],
+                             tool: str, target_id: str, confirm, message: str):
     """Two-step guard for destructive AI tools.
 
-    The first call records a pending confirmation and returns a preview; the action only proceeds when a
-    *later* call (a later user turn, not the same model turn) passes confirm=true for the same target.
+    The first call stores a pending confirmation (per user and chat, in the database so it survives restarts and
+    is shared by every server process) and returns a preview. The action only proceeds when a *later* call (a later
+    user turn, not the same model turn) passes confirm=true for the same tool and target before it expires.
     Returns None when the action is confirmed, otherwise the needs_confirmation payload.
     """
-    pending = _pending_confirmations.get(session_id or "")
-    has_pending = bool(
-        pending and pending.get("tool") == tool and pending.get("target_id") == target_id
-        and datetime.now(timezone.utc) < pending.get("expires_at", datetime.min.replace(tzinfo=timezone.utc))
-    )
+    sid = (session_id or "")[:100]
+    now = datetime.now(timezone.utc)
+    stamp = now.isoformat(timespec="microseconds")
+    # Previews nobody confirmed just expire; drop this user's expired ones as we go.
+    await db.execute(delete(AIPendingConfirmation).where(AIPendingConfirmation.user_id == user_id,
+                                                         AIPendingConfirmation.expires_at <= stamp))
     self_confirming = previewed_this_turn is not None and target_id in previewed_this_turn
-    if confirm is True and has_pending and not self_confirming:
-        _pending_confirmations.pop(session_id or "", None)
-        return None
-    _pending_confirmations[session_id or ""] = {
-        "tool": tool, "target_id": target_id, "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-    }
+    if confirm is True and not self_confirming:
+        # Compare-and-delete: only one request can consume a pending confirmation.
+        res = await db.execute(delete(AIPendingConfirmation).where(
+            AIPendingConfirmation.user_id == user_id, AIPendingConfirmation.session_id == sid,
+            AIPendingConfirmation.tool == tool, AIPendingConfirmation.target_id == target_id,
+            AIPendingConfirmation.expires_at > stamp))
+        await db.commit()
+        if res.rowcount == 1:
+            return None
+    values = {"tool": tool, "target_id": target_id,
+              "expires_at": (now + timedelta(minutes=5)).isoformat(timespec="microseconds"), "created_at": now_iso()}
+    await db.execute(mysql_insert(AIPendingConfirmation).values(user_id=user_id, session_id=sid, **values)
+                     .on_duplicate_key_update(**values))
+    await db.commit()
     if previewed_this_turn is not None:
         previewed_this_turn.add(target_id)
     return {"needs_confirmation": True, "message": message}
@@ -4696,28 +4746,12 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             t = await find_expense(db, match, user["_id"])
             if not t:
                 return {"error": f"No expense found matching '{match}'"}
-            pending = _pending_confirmations.get(session_id or "")
-            has_pending = (
-                pending
-                and pending.get("tool") == "delete_expense"
-                and pending.get("target_id") == t["id"]
-                and datetime.now(timezone.utc) < pending.get("expires_at", datetime.min.replace(tzinfo=timezone.utc))
-            )
-            self_confirming = previewed_this_turn is not None and t["id"] in previewed_this_turn
-            confirmed = args.get("confirm") is True and has_pending and not self_confirming
-            if not confirmed:
-                _pending_confirmations[session_id or ""] = {
-                    "tool": "delete_expense",
-                    "target_id": t["id"],
-                    "match": match,
-                    "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-                }
-                if previewed_this_turn is not None:
-                    previewed_this_turn.add(t["id"])
-                return {"needs_confirmation": True,
-                        "message": f"This will permanently delete '{t.get('merchant') or t.get('description')}' (€{t.get('gross_amount')}) from {t.get('date')}. Ask the user to confirm before deleting."}
+            gate = await _confirmation_gate(
+                db, user["_id"], session_id, previewed_this_turn, "delete_expense", t["id"], args.get("confirm"),
+                f"This will permanently delete '{t.get('merchant') or t.get('description')}' (€{t.get('gross_amount')}) from {t.get('date')}. Ask the user to confirm before deleting.")
+            if gate:
+                return gate
             await delete_transaction(t["id"], user, db)
-            _pending_confirmations.pop(session_id or "", None)
             return {"deleted": t.get("merchant") or t.get('description'), "amount": t.get("gross_amount")}
         if name == "mark_refunded":
             tid = None
@@ -4748,6 +4782,7 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             fields = {k: v for k, v in args.items() if k in GroceryUpdate.model_fields and k != "name"}
             if fields.get("storage_location"):
                 fields["storage_location"] = await resolve_storage_name(db, user["_id"], fields["storage_location"], strict=True)
+            remember_before(created, "groceries", g)
             res = await update_grocery(g.id, GroceryUpdate(**fields), user, db)
             return {"updated": res}
         if name == "generate_shopping_list":
@@ -4775,27 +4810,36 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             if not item_id:
                 return {"error": "item_id is required"}
             upd = ShoppingItemUpdate(**{k: v for k, v in args.items() if k in ShoppingItemUpdate.model_fields and k != "item_id"})
+            remember_before(created, "shopping_items", (await db.execute(
+                select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user["_id"]))).scalar_one_or_none())
             return await update_shopping_item(item_id, upd, user, db)
         if name == "delete_shopping_item":
             item_id = args.get("item_id")
             if not item_id:
                 return {"error": "item_id is required"}
-            if not args.get("confirm"):
-                it = (await db.execute(
-                    select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user["_id"])
-                )).scalar_one_or_none()
-                if not it:
-                    return {"error": "Item not found"}
-                return {"needs_confirmation": True, "message": f"This will remove '{it.name}' from the shopping list. Ask the user to confirm."}
-            await del_shopping(item_id, user, db)
-            return {"deleted": item_id}
+            it = (await db.execute(
+                select(ShoppingItem).where(ShoppingItem.id == item_id, ShoppingItem.user_id == user["_id"])
+            )).scalar_one_or_none()
+            if not it:
+                return {"error": "Item not found"}
+            name_ = it.name
+            gate = await _confirmation_gate(db, user["_id"], session_id, previewed_this_turn, "delete_shopping_item", item_id,
+                                            args.get("confirm"), f"This will remove '{name_}' from the shopping list. Ask the user to confirm.")
+            if gate:
+                return gate
+            remember_before(created, "shopping_items", it)
+            await delete_shopping_item(item_id, user, db)
+            return {"deleted": name_}
         if name == "submit_purchase":
             list_id = args.get("list_id")
             items = args.get("items", [])
             if not list_id or not items:
                 return {"error": "list_id and items are required"}
-            if not args.get("confirm"):
-                return {"needs_confirmation": True, "message": f"This will purchase {len(items)} selected item(s) and update inventory. Ask the user to confirm."}
+            target = list_id + ":" + ",".join(sorted(str(i.get("item_id")) for i in items))
+            gate = await _confirmation_gate(db, user["_id"], session_id, previewed_this_turn, "submit_purchase", target[:255],
+                                            args.get("confirm"), f"This will purchase {len(items)} selected item(s) and update inventory. Ask the user to confirm.")
+            if gate:
+                return gate
             body = SubmitPurchaseBody(
                 items=[PurchaseItem(**i) for i in items],
                 store=args.get("store"),
@@ -4814,6 +4858,8 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             lid = args.get("list_id")
             budget = args.get("budget")
             upd = ShoppingListUpdate(budget=budget)
+            remember_before(created, "shopping_lists", (await db.execute(
+                select(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"]))).scalar_one_or_none())
             return await update_shopping_list(lid, upd, user, db)
         if name == "get_price_history":
             return await get_prices(args.get("name", ""), user, db)
@@ -4874,6 +4920,7 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             upd = AccountUpdate(balance=args.get("balance"))
             if args.get("initial_balance") is not None:
                 upd.initial_balance = args["initial_balance"]
+            remember_before(created, "accounts", acc)
             res = await update_account(acc.id, upd, user, db)
             res["balance"] = await compute_account_balance(db, acc.id, user["_id"])
             return {"updated": res}
@@ -4903,7 +4950,13 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                     return {"error": "Account not found"}
                 if name == "update_money_space":
                     upd = AccountUpdate(name=args.get("name"), is_locked=args.get("is_locked"), is_active=args.get("is_active"))
+                    remember_before(created, "accounts", acc)
                     return {"updated": await update_account(acc.id, upd, user, db)}
+                gate = await _confirmation_gate(db, user["_id"], session_id, previewed_this_turn, "delete_money_space", acc.id,
+                                                args.get("confirm"), f"This will delete the place '{acc.name}'. Ask the user to confirm.")
+                if gate:
+                    return gate
+                remember_before(created, "accounts", acc)
                 return await delete_account(acc.id, user, db)
             except HTTPException as e:
                 return {"error": e.detail}
@@ -4918,11 +4971,13 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             if err:
                 return {"error": err}
             dest = await resolve_storage_name(db, user["_id"], args["storage_location"], strict=True)
+            remember_before(created, "groceries", g)
             return await move_grocery(g.id, MoveInventoryBody(storage_location=dest), user, db)
         if name == "consume_grocery":
             g, err = await find_grocery(db, user["_id"], args.get("grocery_id"), args.get("name"))
             if err:
                 return {"error": err}
+            remember_before(created, "groceries", g)
             return await consume_grocery(g.id, ConsumeBody(quantity=args["quantity"]), user, db)
         if name == "discard_grocery":
             g, err = await find_grocery(db, user["_id"], args.get("grocery_id"), args.get("name"))
@@ -4930,10 +4985,11 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                 return {"error": err}
             qty = args.get("quantity")
             what = f"{qty:g} {g.unit} of {g.name}" if qty else f"all of {g.name} ({float(g.quantity):g} {g.unit})"
-            gate = _confirmation_gate(session_id, previewed_this_turn, "discard_grocery", f"{g.id}:{qty}", args.get("confirm"),
+            gate = await _confirmation_gate(db, user["_id"], session_id, previewed_this_turn, "discard_grocery", f"{g.id}:{qty}", args.get("confirm"),
                                       f"This will remove {what} from the inventory. Ask the user to confirm before discarding.")
             if gate:
                 return gate
+            remember_before(created, "groceries", g)
             res = await discard_grocery(g.id, DiscardBody(quantity=qty), user, db)
             return {"discarded": what, "result": res}
         if name == "update_storage_location":

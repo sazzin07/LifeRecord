@@ -49,14 +49,17 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
     }
   }, [activeAccounts, accountId]);
 
-  const load = useCallback(async () => {
+  // One loader for opening the modal and for refreshing after a change; a closed or switched modal ignores late replies.
+  const load = useCallback(async (isCancelled = () => false) => {
     if (!personId) return;
     setLoading(true);
     try {
       const r = await api.get(`/people/${personId}`);
-      setData(r.data);
+      if (!isCancelled()) setData(r.data);
+    } catch (err) {
+      if (!isCancelled()) toast.error(err.response?.data?.detail || "Could not load this person");
     } finally {
-      setLoading(false);
+      if (!isCancelled()) setLoading(false);
     }
   }, [personId]);
 
@@ -66,17 +69,9 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
       return;
     }
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const r = await api.get(`/people/${personId}`);
-        if (!cancelled) setData(r.data);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    load(() => cancelled);
     return () => { cancelled = true; };
-  }, [open, personId]);
+  }, [open, personId, load]);
 
   const recordPayment = async () => {
     const val = parseFloat(amount);

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { addMonths, addWeeks, eachDayOfInterval, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, CheckSquare, Apple, ShoppingCart, Dumbbell, Scale, Utensils, Repeat } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { calendarPath, iso, monthGridRange, weekRange } from "@/lib/calendarRange";
 import { Card, SectionHeading } from "@/components/common";
@@ -102,8 +102,8 @@ export default function CalendarPage() {
       await api.put(`/tasks/${e.id}`, { title: e.title, priority: e.meta.priority, due: e.date, recurring: e.meta.recurring, done: !e.meta.done });
       if (!e.meta.done && e.meta.recurring) toast.success("Done — the next one is on your calendar");
       refreshAll();
-    } catch {
-      toast.error("Could not update task");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not update task"));
     }
   };
 

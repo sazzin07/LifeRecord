@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, CalendarClock, History, MoreHorizontal, Pencil, Search, SquarePen, Trash2, WifiOff, X } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ function ChatRow({ c, active, onOpen, onRename, onArchive, onDelete, busy }) {
     const title = draft.trim();
     setEditing(false);
     if (!title || title === c.title) return;
-    try { await onRename(c.id, title); } catch { toast.error("Could not rename that chat"); }
+    try { await onRename(c.id, title); } catch (err) { toast.error(errorMessage(err, "Could not rename that chat")); }
   };
 
   if (editing) {
@@ -74,13 +75,13 @@ export function ChatSidebar({ view, onView, activeId, busy, onNew, onOpen, onDel
 
   const archive = async (c) => {
     try { await list.archive(c.id, !c.archived); toast.success(c.archived ? "Chat restored" : "Chat archived"); }
-    catch { toast.error("Could not update that chat"); }
+    catch (err) { toast.error(errorMessage(err, "Could not update that chat")); }
   };
   const confirmDelete = async () => {
     const c = pendingDelete;
     setPendingDelete(null);
     try { await list.remove(c.id); toast.success("Chat deleted"); if (c.id === activeId) onDeleted(); }
-    catch { toast.error("Could not delete that chat"); }
+    catch (err) { toast.error(errorMessage(err, "Could not delete that chat")); }
   };
   const nav = (id, label, Icon, badge) => (
     <button type="button" onClick={() => onView(id)} data-testid={`ai-nav-${id}`} aria-current={view === id ? "page" : undefined}

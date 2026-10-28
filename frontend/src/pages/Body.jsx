@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { Plus, Trash2, Scale, Camera, GitCompare, X, Pencil } from "lucide-react";
-import { api, API } from "@/lib/api";
+import { api, API, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, Label } from "@/components/common";
 import { Input } from "@/components/ui/input";
@@ -55,8 +55,8 @@ function EditEntryDialog({ entry, kind, onClose }) {
       toast.success(kind === "weight" ? "Check-in updated" : "Photo updated");
       refreshAll();
       onClose();
-    } catch {
-      toast.error("Could not save changes");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not save changes"));
     } finally {
       setSaving(false);
     }
@@ -106,7 +106,7 @@ export default function Body() {
     const fd = new FormData();
     fd.append("file", f);
     try { await api.post("/photos", fd); toast.success("Photo added"); refreshAll(); }
-    catch { toast.error("Could not upload photo"); }
+    catch (err) { toast.error(errorMessage(err, "Could not upload photo")); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 

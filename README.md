@@ -288,21 +288,7 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 
 ## Testing
 
-### Backend
-
-With the backend running on `http://localhost:8000`:
-
-```bash
-cd backend
-.venv\Scripts\python.exe -m pytest tests -v
-```
-
-### Frontend build
-
-```bash
-cd frontend
-yarn build
-```
+See [Testing](#testing-1) below.
 
 ## Features
 
@@ -382,7 +368,12 @@ cd backend
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-The test suite covers auth, accounts, transactions, people, groceries, shopping lists, nutrition, fitness, and AI-recorded transactions. It expects a fresh MySQL database named `liferecord_test` (see `backend/tests/conftest.py`).
+Most tests call the running backend (start it first with `start-all.ps1`) and work in the owner account; every record they create is tagged (`TEST_…`, `E2E-…`) and removed again. Some tests (AI tools, confirmations, undo, scheduling) run in-process against the same MySQL database. There is no separate test database.
+
+- Credentials: `TEST_EMAIL` / `TEST_PASSWORD` (default: the local dev owner account). `REACT_APP_BACKEND_URL` overrides the API address (default from `frontend/.env`, with `localhost` replaced by `127.0.0.1` — on Windows `localhost` costs ~2 s per request).
+- `tests/support_auth.py` logs in once per account per run (the login rate limit is 10/minute); `tests/conftest.py` removes the login cache and the accounts the auth tests register when the run ends.
+- Email is never sent to reserved test domains (`example.com`, `*.test`, …), so the auth tests do not use the SendGrid quota.
+- New tables come from `alembic upgrade head` (the server also creates missing tables at startup; in-process tests need the migration).
 
 ### Frontend build
 
@@ -391,7 +382,11 @@ cd frontend
 yarn build
 ```
 
-The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `yarn test:e2e` after starting the backend and frontend.
+The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `yarn test:e2e` after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
+
+```powershell
+npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
+```
 
 ## Production deployment checklist
 

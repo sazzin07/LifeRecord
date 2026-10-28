@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api, eur } from "@/lib/api";
+import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Plus, Trash2, ScanLine } from "lucide-react";
 import { toast } from "sonner";
@@ -53,7 +53,7 @@ export function ReceiptReview({ data, open, setOpen }) {
       toast.success("Expense saved from receipt");
       refreshAll();
       setOpen(false);
-    } catch { toast.error("Could not save"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not save")); }
     finally { setSaving(false); }
   };
 

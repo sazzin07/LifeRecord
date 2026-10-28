@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import server  # noqa: E402  (loads backend/.env)
 from database import AsyncSessionLocal  # noqa: E402
-from models import AIAction, AIMessage, Category, Meal, Person, Task, User, WeightEntry  # noqa: E402
+from models import AIAction, AIMessage, AIPendingConfirmation, Category, Meal, Person, Task, User, WeightEntry  # noqa: E402
 
 TAG = f"AIX_{uuid.uuid4().hex[:6]}"
 OWNER_EMAIL = "tiagosa743@gmail.com"
@@ -50,12 +50,13 @@ async def _cleanup():
         await db.execute(delete(Meal).where(Meal.user_id == u["_id"], Meal.description.like(f"{TAG}%")))
         await db.execute(delete(WeightEntry).where(WeightEntry.user_id == u["_id"], WeightEntry.note.like(f"{TAG}%")))
         await db.execute(delete(AIMessage).where(AIMessage.user_id == u["_id"], AIMessage.session_id.like(f"{SESSION}%")))
+        await db.execute(delete(AIPendingConfirmation).where(AIPendingConfirmation.session_id.like(f"{SESSION}%")))
         await db.commit()
 
 
 @pytest.fixture(autouse=True)
 def tidy():
-    server._pending_confirmations.clear()
+    run(_cleanup())  # no confirmation left over from an earlier test
     yield
     run(_cleanup())
 

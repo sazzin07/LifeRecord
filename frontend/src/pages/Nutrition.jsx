@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { Trash2, Utensils, Sparkles, ChefHat, Flame, Plus, Pencil, X } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, ConfidenceBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -204,12 +204,12 @@ export default function Nutrition() {
 
   const delMeal = async (id) => {
     try { await api.delete(`/meals/${id}`); toast.success("Meal deleted"); setDeleteMealId(null); refreshAll(); }
-    catch { toast.error("Could not delete meal"); }
+    catch (err) { toast.error(errorMessage(err, "Could not delete meal")); }
   };
 
   const delRecipe = async (id) => {
     try { await api.delete(`/recipes/${id}`); toast.success("Recipe deleted"); setDeleteRecipeId(null); refreshAll(); }
-    catch { toast.error("Could not delete recipe"); }
+    catch (err) { toast.error(errorMessage(err, "Could not delete recipe")); }
   };
 
   const cook = async (r) => {
@@ -217,7 +217,7 @@ export default function Nutrition() {
       const { data } = await api.post(`/recipes/${r.id}/cook`);
       toast.success(`Cooked ${r.name}`, { description: data.inventory_changes?.join(", ") });
       refreshAll();
-    } catch { toast.error("Could not cook recipe"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not cook recipe")); }
   };
 
   return (

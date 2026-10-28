@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowDown, Check, Loader2, Maximize2, Minimize2, PanelLeft, SquarePen, Sparkles, TriangleAlert, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { refreshAll, useFetch } from "@/lib/useFetch";
 import { Hint } from "@/components/ui/hint";
 import { ReceiptReview } from "@/components/ReceiptReview";
@@ -178,7 +178,7 @@ export function AIAssistant() {
   useEffect(() => { if (open && view === "activity") loadActions(); }, [open, view, loadActions]);
   const undo = async (id) => {
     try { await api.post(`/ai/actions/${id}/undo`); toast.success("Change undone"); refreshAll(); loadActions(); }
-    catch { toast.error("Could not undo that change"); }
+    catch (err) { toast.error(errorMessage(err, "Could not undo that change")); }
   };
 
   // Keep the newest text in view unless the reader has scrolled up to read.
@@ -239,7 +239,7 @@ export function AIAssistant() {
       const { data } = await api.post("/ai/receipt", { image_base64: image });
       if (!data.items?.length && !data.merchant) { toast.error("No receipt found in that image"); return; }
       setReceipt({ data, open: true, scanning: false }); setImage(null);
-    } catch { toast.error("Could not read that receipt"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not read that receipt")); }
     finally { setReceipt((r) => ({ ...r, scanning: false })); }
   };
 
@@ -258,7 +258,7 @@ export function AIAssistant() {
         try {
           const { data } = await api.post("/ai/transcribe", fd);
           if (data.text) submit(data.text);
-        } catch { toast.error("Could not turn that audio into text"); }
+        } catch (err) { toast.error(errorMessage(err, "Could not turn that audio into text")); }
       };
       recorder.current = rec;
       rec.start();

@@ -75,7 +75,7 @@ def register(router, srv):
         stmt = select(AIConversation).where(AIConversation.user_id == user["_id"], AIConversation.archived == archived)
         term = (q or "").strip()
         if term:
-            escaped = term.replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+            escaped = term.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
             like = f"%{escaped}%"
             in_messages = select(AIMessage.session_id).where(AIMessage.user_id == user["_id"], AIMessage.text.ilike(like, escape="\\"))
             stmt = stmt.where(or_(AIConversation.title.ilike(like, escape="\\"), AIConversation.id.in_(in_messages)))

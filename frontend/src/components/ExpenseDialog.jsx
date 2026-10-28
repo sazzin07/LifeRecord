@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api, eur } from "@/lib/api";
+import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Avatar } from "@/components/common";
 import { Plus, Trash2, Users, Loader2 } from "lucide-react";
@@ -86,7 +86,7 @@ export function ExpenseDialog({ open, setOpen }) {
       refreshAll();
       reset();
       setOpen(false);
-    } catch { toast.error("Could not save expense"); }
+    } catch (err) { toast.error(errorMessage(err, "Could not save expense")); }
     finally { setSaving(false); }
   };
 

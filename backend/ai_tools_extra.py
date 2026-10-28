@@ -107,9 +107,9 @@ async def _find_category(db, user, name) -> Optional[Category]:
     return next((c for c in rows if c.name.lower() == name), None) or next((c for c in rows if name in c.name.lower()), None)
 
 
-def _confirm(srv, session_id, previewed, tool, target_id, args, message):
+async def _confirm(srv, db, user, session_id, previewed, tool, target_id, args, message):
     """None when the user already confirmed on an earlier turn, otherwise the needs_confirmation payload."""
-    return srv._confirmation_gate(session_id, previewed, tool, target_id, args.get("confirm"), message)
+    return await srv._confirmation_gate(db, user["_id"], session_id, previewed, tool, target_id, args.get("confirm"), message)
 
 
 async def _overview(srv, db, user):
@@ -171,15 +171,17 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
             return {"error": f"No category matching '{args.get('category')}'"}
         body = srv.CategoryBody(name=args.get("new_name") or c.name, icon=args.get("icon") or c.icon, color=args.get("color") or c.color,
                                 monthly_budget=args["monthly_budget"] if "monthly_budget" in args else c.monthly_budget)
+        srv.remember_before(created, "categories", c)
         return {"updated": await srv.update_category(c.id, body, user, db)}
     if name == "delete_category":
         c = await _find_category(db, user, args.get("category"))
         if not c:
             return {"error": f"No category matching '{args.get('category')}'"}
-        gate = _confirm(srv, session_id, previewed, name, c.id, args,
+        gate = await _confirm(srv, db, user, session_id, previewed, name, c.id, args,
                         f"This will delete the category '{c.name}'. Existing transactions keep their category text. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "categories", c)
         await srv.delete_category(c.id, user, db)
         return {"deleted": c.name}
 
@@ -211,14 +213,19 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
                             due=(args["due"] or None) if "due" in args else t.due,
                             recurring=(args["recurring"] or None) if "recurring" in args else t.recurring,
                             done=args["done"] if "done" in args else t.done)
-        return {"updated": await srv.update_task(t.id, body, user, db)}
+        srv.remember_before(created, "tasks", t)
+        res = await srv.update_task(t.id, body, user, db)
+        if res.get("next_task_id"):  # completing a repeating task created the next one
+            created.append({"collection": "tasks", "id": res["next_task_id"]})
+        return {"updated": res}
     if name == "delete_task":
         t = await _find_task(srv, db, user, args)
         if not t:
             return {"error": "No task found. Use get_tasks to find the task id."}
-        gate = _confirm(srv, session_id, previewed, name, t.id, args, f"This will delete the task '{t.title}'. Ask the user to confirm.")
+        gate = await _confirm(srv, db, user, session_id, previewed, name, t.id, args, f"This will delete the task '{t.title}'. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "tasks", t)
         await srv.delete_task(t.id, user, db)
         return {"deleted": t.title}
 
@@ -233,12 +240,13 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         body = srv.PersonBody(name=args.get("new_name") or p.name, photo=p.photo,
                               notes=args["notes"] if "notes" in args else p.notes,
                               payment_preference=args["payment_preference"] if "payment_preference" in args else p.payment_preference)
+        srv.remember_before(created, "people", p)
         return {"updated": await srv.update_person(p.id, body, user, db)}
     if name == "delete_person":
         p = await _find_person(db, user, args.get("person"))
         if not p:
             return {"error": f"No person matching '{args.get('person')}'"}
-        gate = _confirm(srv, session_id, previewed, name, p.id, args,
+        gate = await _confirm(srv, db, user, session_id, previewed, name, p.id, args,
                         f"This will delete {p.name} and every split and settlement with them, which changes balances. Ask the user to confirm.")
         if gate:
             return gate
@@ -257,14 +265,16 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         body = srv.MealBody(description=args.get("description") or m.description,
                             calories=args.get("calories", m.calories), protein=args.get("protein", m.protein),
                             carbs=args.get("carbs", m.carbs), fat=args.get("fat", m.fat), date=args.get("date") or m.date)
+        srv.remember_before(created, "meals", m)
         return {"updated": await srv.update_meal(m.id, body, user, db)}
     if name == "delete_meal":
         m = (await db.execute(select(Meal).where(Meal.id == args.get("meal_id"), Meal.user_id == uid))).scalar_one_or_none()
         if not m:
             return {"error": "Meal not found"}
-        gate = _confirm(srv, session_id, previewed, name, m.id, args, f"This will delete the logged meal '{m.description}'. Ask the user to confirm.")
+        gate = await _confirm(srv, db, user, session_id, previewed, name, m.id, args, f"This will delete the logged meal '{m.description}'. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "meals", m)
         await srv.delete_meal(m.id, user, db)
         return {"deleted": m.description}
 
@@ -276,9 +286,10 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         r = (await db.execute(select(Recipe).where(Recipe.user_id == uid, (Recipe.id == key) | Recipe.name.ilike(key)))).scalars().first()
         if not r:
             return {"error": f"No recipe matching '{key}'"}
-        gate = _confirm(srv, session_id, previewed, name, r.id, args, f"This will delete the recipe '{r.name}'. Ask the user to confirm.")
+        gate = await _confirm(srv, db, user, session_id, previewed, name, r.id, args, f"This will delete the recipe '{r.name}'. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "recipes", r)
         await srv.delete_recipe(r.id, user, db)
         return {"deleted": r.name}
 
@@ -291,9 +302,10 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         w = (await db.execute(select(Workout).where(Workout.id == args.get("workout_id"), Workout.user_id == uid))).scalar_one_or_none()
         if not w:
             return {"error": "Workout not found"}
-        gate = _confirm(srv, session_id, previewed, name, w.id, args, f"This will delete the {w.type} workout from {w.date}. Ask the user to confirm.")
+        gate = await _confirm(srv, db, user, session_id, previewed, name, w.id, args, f"This will delete the {w.type} workout from {w.date}. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "workouts", w)
         await srv.delete_workout(w.id, user, db)
         return {"deleted": f"{w.type} on {w.date}"}
 
@@ -307,9 +319,10 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         w = (await db.execute(select(WeightEntry).where(WeightEntry.id == args.get("weight_id"), WeightEntry.user_id == uid))).scalar_one_or_none()
         if not w:
             return {"error": "Weight entry not found"}
-        gate = _confirm(srv, session_id, previewed, name, w.id, args, f"This will delete the {w.weight} kg entry from {w.date}. Ask the user to confirm.")
+        gate = await _confirm(srv, db, user, session_id, previewed, name, w.id, args, f"This will delete the {w.weight} kg entry from {w.date}. Ask the user to confirm.")
         if gate:
             return gate
+        srv.remember_before(created, "weight", w)
         await srv.delete_weight(w.id, user, db)
         return {"deleted": f"{w.weight} kg on {w.date}"}
 

@@ -623,8 +623,8 @@ Use the IDs below to track progress. Update the status column as work is complet
 | AI-002 | AI tools for shopping items | High | Completed |
 | AI-003 | AI tools for grocery budget/summary | High | Completed |
 | AI-004 | AI tool for price query | Medium | Completed |
-| AI-005 | Confirmation for destructive AI grocery actions | High | Partial (submit_purchase & delete_shopping_item confirm) |
-| AI-006 | Improve AI action undo | Medium | Not started |
+| AI-005 | Confirmation for destructive AI grocery actions | High | Completed (2026-10-28, Batch 4: every destructive AI tool uses the two-step gate) |
+| AI-006 | Improve AI action undo | Medium | Completed (2026-10-28, Batch 4: edits and deletes restored; see limits in §15) |
 | AI-007 | Load chat history in UI | Medium | Completed (verified 2026-10-28: done in the 2026-10-23 assistant overhaul; checklist was stale) |
 
 ### Dashboard & Cross-Module
@@ -657,8 +657,8 @@ Use the IDs below to track progress. Update the status column as work is complet
 |----|------|----------|--------|
 | TEST-001 | Backend tests for Groceries lists/budget | High | Completed (list/item CRUD, partial purchase, generate list, budget fields covered) |
 | TEST-002 | Playwright tests for Groceries | High | Completed (verified 2026-10-28: `e2e/groceries.spec.js` exists, 9 tests per the 2026-10-22 log; checklist was stale) |
-| TEST-003 | Playwright tests for Nutrition manual forms | Medium | Not started |
-| TEST-004 | Backend unit tests for helpers | Medium | Not started |
+| TEST-003 | Playwright tests for Nutrition manual forms | Medium | Not Started (session ended at the owner's request) |
+| TEST-004 | Backend unit tests for helpers | Medium | Not Started (`compute_shares`, `serialize_txn`, `cheapest_store` still have no unit tests) |
 | TEST-005 | Externalize test credentials | Low | In Progress (e2e fixtures read `TEST_EMAIL`/`TEST_PASSWORD`; backend `tests/support_auth.py` added in Batch 1, older modules still define their own constants) |
 | DOC-001 | Update README.md with Groceries features | High | Completed |
 | DOC-002 | Update README.md with testing instructions | Medium | Completed |
@@ -667,13 +667,13 @@ Use the IDs below to track progress. Update the status column as work is complet
 
 | ID | Task | Priority | Status |
 |----|------|----------|--------|
-| SEC-001 | Rotate JWT secret | High | Not started |
-| SEC-002 | Secure admin password | High | Not started |
-| SEC-003 | Rotate Gemini API key | Medium | Not started |
-| SEC-004 | Use dedicated DB user | High | Not started |
-| SEC-005 | Distributed rate limiting | Medium | Not started |
-| SEC-006 | httpOnly cookie option | Low | Not started |
-| SEC-007 | Content Security Policy | Low | Not started |
+| SEC-001 | Rotate JWT secret | High | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-002 | Secure admin password | High | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-003 | Rotate Gemini API key | Medium | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-004 | Use dedicated DB user | High | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-005 | Distributed rate limiting | Medium | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-006 | httpOnly cookie option | Low | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
+| SEC-007 | Content Security Policy | Low | Not Started (Batch 6 not reached; scope agreed with owner on 2026-10-28, see §15) |
 
 ### Bugs & Debt
 
@@ -682,19 +682,20 @@ Use the IDs below to track progress. Update the status column as work is complet
 | BUG-001 | Fix transaction grocery rollback bug | Critical | Completed |
 | BUG-002 | Fix PersonDetail route edit/delete | Critical | Completed |
 | BUG-003 | Use fetched accounts in ExpenseDialog | Medium | Completed |
-| BUG-004 | Remove dead fetch logic in PersonDetailModal | Low | Not started |
+| BUG-004 | Remove dead fetch logic in PersonDetailModal | Low | Completed (2026-10-28, Batch 4) |
 | BUG-005 | Fix or remove sonner next-themes wrapper | Low | Completed (verified 2026-10-28: `sonner.jsx` uses `useSettings`, no `next-themes` import) |
 | BUG-006 | Deleting a single shopping item failed (no `DELETE /shopping/{id}` route; UI showed "Method Not Allowed") | High | Completed (2026-10-28, Batch 2) |
 | BUG-007 | Deleting a person leaves the "Payment from …" income their settlements added (orphaned; account balance keeps it), while deleting a settlement or "Clear all debts" removes it | Medium | Completed (2026-10-28: owner decided money already received stays; behaviour pinned by a test, delete dialogs now say so) |
 | BUG-008 | Tests left data in the owner account on every run (payments on Revolut, cooked meals, shopping items, registered users, photo files) | High | Completed (2026-10-28, Batch 2) |
 | BUG-009 | Test registrations sent real verification emails through SendGrid to `@example.com` addresses (bounces hurt sender reputation) | High | Completed (2026-10-28, Batch 2) |
 | BUG-010 | A wrong current password on change-password returned 401, which the app treats as an expired session: one typo signed the user out | High | Completed (2026-10-28, Batch 3) |
-| DEBT-001 | Consider splitting monolithic server.py | Medium | Not started |
-| DEBT-002 | Remove unused dependencies | Low | Not started |
+| BUG-011 | AI tool `delete_shopping_item` called an undefined function (`del_shopping`): asking the assistant to remove a list item always failed | High | Completed (2026-10-28, Batch 4) |
+| DEBT-001 | Consider splitting monolithic server.py | Medium | In Progress (new calendar endpoint lives in `calendar_api.py`; existing routes not moved) |
+| DEBT-002 | Remove unused dependencies | Low | Completed (2026-10-28, Batch 4) |
 | DEBT-003 | Adopt Alembic | Medium | Completed |
-| DEBT-004 | Persist AI pending confirmations | High | Not started |
+| DEBT-004 | Persist AI pending confirmations | High | Completed (2026-10-28, Batch 4) |
 | DEBT-005 | Reduce test dependency on running backend | Medium | In Progress (Batch 1: one cached login per account per run, fixing the rate-limit 429 errors; tests still need the live backend) |
-| DEBT-006 | Improve error logging in catch blocks | Low | Not started |
+| DEBT-006 | Improve error logging in catch blocks | Low | Completed (2026-10-28, Batch 4) |
 
 ---
 
@@ -915,3 +916,21 @@ The Groceries backend redesign, data seeding, AI tools, and tests are complete. 
 - **Test speed:** Python resolves `localhost` to IPv6 first on Windows and waited ~2 s per request before reaching uvicorn on IPv4; `tests/conftest.py` now points the API tests at `127.0.0.1` when no URL is configured. Full backend run: ~140 s → **~33 s**.
 - **Tests:** `backend/tests/test_change_password.py` (5: wrong current = 400 and session kept, weak, unchanged, success then login with new only, rate limit incl. refusing the correct password while limited); `frontend/e2e/settings.spec.js` (2: place add/edit/delete via the UI; password validation and wrong-password stays signed in — the success path is not run in the browser because it would change the owner's real password).
 - **Verified:** backend **278 passed**; e2e settings + smoke + pages-smooth **7/7**; `craco build` "Compiled successfully"; console clean on Money (Add sub-place, Edit) and Settings (Add place, Edit); Settings and Money dialog screenshots reviewed.
+
+### Batch 4 — AI safety, undo and cleanup (AI-005, AI-006, DEBT-004, BUG-004, DEBT-002, DEBT-006) — Completed
+- **DEBT-004:** pending confirmations moved from process memory to the new `ai_pending_confirmations` table (model `AIPendingConfirmation`, Alembic `b5e2c8d17a43`, applied with `alembic upgrade head`). Keyed by user **and** chat (before: chat id only, and every chat-less request shared the key `""`); 5-minute expiry; confirming is an atomic compare-and-delete so two concurrent "yes" replies cannot both act; expired rows of the user are pruned on each call. Survives restarts and works across processes.
+- **AI-005:** every destructive AI tool now uses the same gate (preview, then `confirm=true` on a *later* turn): `delete_expense` (its inline copy removed), `delete_shopping_item` and `submit_purchase` (previously accepted `confirm=true` on the very first call, so the model could act without the user seeing a preview), `delete_money_space` (had no confirmation), plus the existing discard/delete tools. Tool schemas share one `confirm` description.
+- **BUG-011:** the AI `delete_shopping_item` tool called a function that does not exist and always failed; it now uses the `DELETE /shopping/{id}` route added in Batch 2.
+- **AI-006:** undo now restores what an action changed or deleted, not only removes what it created. Tool handlers record a row snapshot (`remember_before`) before changing it; undo (newest first, always scoped to the user) puts the values back or re-creates a deleted row with its original id; rows created in the same turn are removed. Covered: grocery edit/move/consume/discard, shopping item edit/delete, list budget, account balance and money places (edit/delete), task edit/delete (including the next occurrence created when a repeating task is completed), person edit, meal edit/delete, recipe/workout/weigh-in delete, category edit/delete. **Not undoable by design:** `update_expense` (rewrites splits and inventory), `delete_person` (cascades splits and settlements), `update_storage_location` (renames the location on every item). Undo also overwrites any later manual edit of the same record.
+- **BUG-004:** `PersonDetailModal` had two copies of the load logic; now one cancellable `load` used on open and after changes, and a failed load shows a message instead of an unhandled promise rejection.
+- **DEBT-002:** removed `@tanstack/react-query` (only an unused provider), `swr`, `next-themes`, `@radix-ui/react-toast` and the unused toast stack (`hooks/use-toast.js`, `ui/toast.jsx`, `ui/toaster.jsx`); `yarn.lock` updated.
+- **DEBT-006:** new `errorMessage(err, fallback)` in `lib/api.js`; 19 save/delete error toasts in 11 files now show the server's reason when it is a readable sentence (e.g. "Cannot delete account with transactions") instead of a generic "Could not save". Remaining silent catches were reviewed: all are intentional and commented (blocked storage/clipboard, background prefetch). Backend: invalid `\%`/`\_` escapes in `conversations_api.py` fixed.
+- **Tests:** `test_ai_confirmations.py` (5: shopping-item preview/confirm incl. same-turn refusal, submit cannot self-confirm, stored + survives restart, per user and per chat, expiry) and `test_ai_undo.py` (6: edited grocery, consumed + moved stock, discarded item back with same id, edited and deleted task, create-then-edit removed, no double undo); existing AI tests updated for the database store.
+- **Verified:** backend **289 passed**; Playwright, every spec except those calling the live AI model (owner's instruction): **44 passed, 0 failed**; `craco build` "Compiled successfully" (no ESLint warnings); `alembic current` = `b5e2c8d17a43 (head)`; leak scan after the run: only the owner and `testuser1@example.com` accounts, no test rows, no pending confirmations from tests.
+
+### Final status (2026-10-28, session ended at the owner's request)
+- **Completed this session:** TASK-001, FIT-001, FIT-002, BODY-001, BODY-002, QUICK-001, CAL-001, CAL-002, ACCT-001, AUTH-001, AI-005, AI-006, DEBT-004, BUG-004, BUG-007 (decision), DEBT-002, DEBT-006, and newly found BUG-006, BUG-008, BUG-009, BUG-010, BUG-011. Stale rows corrected: AI-007, TEST-002, BUG-005.
+- **In Progress:** TEST-005 (backend `support_auth.py` + e2e fixtures read `TEST_EMAIL`/`TEST_PASSWORD`; older backend modules still define their own owner constants), DEBT-005 (shared login, IPv4, cleanup; tests still need the live backend), DEBT-001 (new code in separate modules only).
+- **Not Started:** TEST-003, TEST-004, SEC-001 … SEC-007.
+- **Agreed scope for the security batch (not implemented):** secrets (JWT secret, DB password, Gemini/OpenCode/SendGrid keys) out of `backend/.env` into a DPAPI-encrypted file under `%LOCALAPPDATA%\LifeRecord\` (owner's choice); per-user token revocation (password change / "sign out everywhere"); httpOnly cookie tokens instead of localStorage; hashed refresh/reset tokens; encrypted uploads; DB-backed rate limiter; CSP header; dedicated least-privilege DB user. Key rotation (Gemini, OpenCode, SendGrid — keys were pasted into chats earlier) needs the owner.
+- **Known, not fixed:** the build prints a Node 24 `fs.F_OK` deprecation from build tooling; `testuser1@example.com` (origin unknown) left in the database; the tests and `start-all.ps1` still use MySQL `root` without a password (local dev).

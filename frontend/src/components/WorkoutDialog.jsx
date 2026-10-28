@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Timer, Plus, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Label } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -77,8 +77,8 @@ export function WorkoutDialog({ open, setOpen, workout = null }) {
       toast.success(editing ? "Session updated" : `${type} session logged`);
       refreshAll();
       setOpen(false);
-    } catch {
-      toast.error(editing ? "Could not update session" : "Could not save session");
+    } catch (err) {
+      toast.error(errorMessage(err, editing ? "Could not update session" : "Could not save session"));
     } finally {
       setSaving(false);
     }

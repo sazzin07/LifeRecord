@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, CheckSquare, Pencil, Repeat } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, SectionHeading, EmptyState, Label } from "@/components/common";
 import { Input } from "@/components/ui/input";
@@ -35,8 +35,8 @@ function TaskDialog({ task, onClose }) {
       toast.success("Task updated");
       refreshAll();
       onClose();
-    } catch {
-      toast.error("Could not update task");
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not update task"));
     } finally {
       setSaving(false);
     }

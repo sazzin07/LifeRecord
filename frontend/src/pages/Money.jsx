@@ -6,7 +6,7 @@ import {
 import {
   Plus, Trash2, Wallet, CreditCard, Pencil, Search, Download, ArrowUpRight,
   ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
-  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, BadgeInfo, Lock,
+  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock,
 } from "lucide-react";
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
@@ -18,6 +18,7 @@ import {
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { EditExpenseDialog } from "@/components/EditExpenseDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,7 +28,6 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 
 const REFUND_BADGE = {
@@ -73,20 +73,6 @@ function signedAmount(t) {
   return 0;
 }
 
-function buildAccountTree(accounts) {
-  const byId = {};
-  accounts.forEach((a) => { byId[a.id] = { ...a, children: [] }; });
-  const roots = [];
-  accounts.forEach((a) => {
-    if (a.parent_id && byId[a.parent_id]) {
-      byId[a.parent_id].children.push(byId[a.id]);
-    } else {
-      roots.push(byId[a.id]);
-    }
-  });
-  return { roots, byId };
-}
-
 function sumChildren(account) {
   if (!account) return 0;
   return account.children.reduce((s, c) => s + (c.balance || 0), 0) + (account.balance || 0);
@@ -122,9 +108,7 @@ export default function Money() {
   const [budgetForm, setBudgetForm] = useState({});
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferDefaults, setTransferDefaults] = useState({ to: "" });
-  const [accountFormOpen, setAccountFormOpen] = useState(false);
-  const [accountForm, setAccountForm] = useState({ name: "", type: "cash_place", parent_id: "", opening_balance: "", initial_balance: "", currency: "EUR" });
-  const [editingAccount, setEditingAccount] = useState(null);
+  const [accountDialog, setAccountDialog] = useState({ open: false, account: null, parent: null });
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const scrollRef = useRef(null);
 
@@ -245,36 +229,6 @@ export default function Money() {
     refreshAll();
   };
 
-  const saveAccount = async () => {
-    const payload = {
-      name: accountForm.name,
-      type: accountForm.type,
-      parent_id: accountForm.parent_id || null,
-      currency: accountForm.currency || "EUR",
-      initial_balance: accountForm.initial_balance === "" ? null : parseFloat(accountForm.initial_balance || "0"),
-      is_locked: !!accountForm.is_locked,
-      sort_order: 0,
-      is_active: true,
-    };
-    // The form field is the current balance: when editing, let the server work out the opening balance.
-    const amount = parseFloat(accountForm.opening_balance || "0");
-    if (editingAccount) payload.balance = amount;
-    else payload.opening_balance = amount;
-    try {
-      if (editingAccount) {
-        await api.put(`/accounts/${editingAccount.id}`, payload);
-        toast.success("Updated");
-      } else {
-        await api.post("/accounts", payload);
-        toast.success("Created");
-      }
-      setAccountFormOpen(false);
-      refreshAll();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Could not save account");
-    }
-  };
-
   const deleteAccount = async (id) => {
     try {
       await api.delete(`/accounts/${id}`);
@@ -297,26 +251,8 @@ export default function Money() {
     }
   };
 
-  const openNewSubAccount = (parent) => {
-    const childType = parent.type === "revolut" ? "revolut_space" : "cash_place";
-    setEditingAccount(null);
-    setAccountForm({ name: "", type: childType, parent_id: parent.id, opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR" });
-    setAccountFormOpen(true);
-  };
-
-  const openEditAccount = (acc) => {
-    setEditingAccount(acc);
-    setAccountForm({
-      name: acc.name,
-      type: acc.type,
-      parent_id: acc.parent_id || "",
-      opening_balance: acc.balance ?? acc.opening_balance ?? "",
-      initial_balance: acc.initial_balance ?? "",
-      is_locked: !!acc.is_locked,
-      currency: acc.currency || "EUR",
-    });
-    setAccountFormOpen(true);
-  };
+  const openNewSubAccount = (parent) => setAccountDialog({ open: true, account: null, parent });
+  const openEditAccount = (acc) => setAccountDialog({ open: true, account: acc, parent: null });
 
   const openTransferTo = (toId) => {
     setTransferDefaults({ to: toId });
@@ -389,10 +325,10 @@ export default function Money() {
                 </span>
                 <div className="flex items-center gap-2">
                   <span className={cn("font-medium", child.is_locked && "text-amber-700 dark:text-amber-300")}>{eur(child.balance || 0)}</span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAccount(child)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAccount(child)} aria-label={`Edit ${child.name}`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)} aria-label={`Delete ${child.name}`}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -777,52 +713,8 @@ export default function Money() {
       <ExpenseDialog open={expenseOpen} setOpen={setExpenseOpen} />
       <EditExpenseDialog txn={editTxn} open={!!editTxn} setOpen={(v) => !v && setEditTxn(null)} />
 
-      {/* Account create/edit dialog */}
-      <Dialog open={accountFormOpen} onOpenChange={setAccountFormOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingAccount ? "Edit place" : "Add place"}</DialogTitle>
-            <DialogDescription>{editingAccount ? "Update the name and balance." : "Create a new money place under the selected location."}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 mt-2">
-            <div>
-              <Label className="text-xs">Name</Label>
-              <Input value={accountForm.name} onChange={(e) => setAccountForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" />
-            </div>
-            <div>
-              <Label className="text-xs">Current balance (€)</Label>
-              <Input type="number" min={0} step="0.01" value={accountForm.opening_balance} onChange={(e) => setAccountForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" />
-            </div>
-            {editingAccount?.type === "bank" && (
-              <div>
-                <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
-                <Input type="number" min={0} step="0.01" value={accountForm.initial_balance} onChange={(e) => setAccountForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" />
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Checkbox id="is-locked" checked={!!accountForm.is_locked} onCheckedChange={(c) => setAccountForm((f) => ({ ...f, is_locked: c === true }))} />
-              <Label htmlFor="is-locked" className="text-xs">Locked / not freely available</Label>
-            </div>
-            {!editingAccount && (
-              <div>
-                <Label className="text-xs">Parent location</Label>
-                <Select value={accountForm.parent_id} onValueChange={(v) => setAccountForm((f) => ({ ...f, parent_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select parent" /></SelectTrigger>
-                  <SelectContent>
-                    {accountRoots.filter((a) => a.type === "cash" || a.type === "revolut").map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setAccountFormOpen(false)}>Cancel</Button>
-            <Button onClick={saveAccount} className="bg-emerald-600 hover:bg-emerald-700 text-white">Save</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AccountDialog open={accountDialog.open} setOpen={(o) => setAccountDialog((d) => ({ ...d, open: o }))}
+        account={accountDialog.account} parent={accountDialog.parent} parents={accountRoots.filter(canHaveSubPlaces)} />
 
       {/* Transfer dialog */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>

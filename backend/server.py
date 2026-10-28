@@ -1380,12 +1380,17 @@ async def refresh_token(body: RefreshBody, db: AsyncSession = Depends(get_db)):
 
 
 @api_router.post("/auth/change-password")
-async def change_password(body: ChangePasswordBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def change_password(body: ChangePasswordBody, request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    # Limits guessing the current password with a stolen session.
+    check_rate_limit(request, f"{user['_id']}:change-password")
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
+    # 400, not 401: the session is valid, and a 401 makes the app sign the user out over a typo.
     if not db_user or not verify_password(body.current_password, db_user.password_hash):
-        raise HTTPException(status_code=401, detail="Current password is incorrect")
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
     if not is_strong_password(body.new_password):
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters with a letter and a number")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="Choose a password different from the current one")
     db_user.password_hash = hash_password(body.new_password)
     await db.commit()
     return {"message": "Password updated successfully"}

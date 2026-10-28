@@ -646,10 +646,10 @@ Use the IDs below to track progress. Update the status column as work is complet
 | BODY-001 | Add weight/photo edit UI | Low | Completed (2026-10-28, Batch 1) |
 | BODY-002 | Add weight edit backend | Low | Completed (2026-10-28, Batch 1; also `PUT /photos/{id}`) |
 | QUICK-001 | Replace QuickAdd workout placeholder | Medium | Completed (2026-10-28, Batch 1) |
-| ACCT-001 | Add account management UI | Medium | Partial (Money tab supports add/edit/delete/transfer; Settings still missing) |
+| ACCT-001 | Add account management UI | Medium | Completed (2026-10-28, Batch 3: Settings add/edit/delete via the dialog shared with Money) |
 | ACCT-002 | Add account CRUD backend | Medium | Completed |
 | MONEY-001 | Use fetched accounts in expense dialogs | Medium | Completed |
-| AUTH-001 | Add change password UI | Medium | Not started |
+| AUTH-001 | Add change password UI | Medium | Completed (2026-10-28, Batch 3) |
 
 ### Quality, Tests & Documentation
 
@@ -688,6 +688,7 @@ Use the IDs below to track progress. Update the status column as work is complet
 | BUG-007 | Deleting a person leaves the "Payment from …" income their settlements added (orphaned; account balance keeps it), while deleting a settlement or "Clear all debts" removes it | Medium | Completed (2026-10-28: owner decided money already received stays; behaviour pinned by a test, delete dialogs now say so) |
 | BUG-008 | Tests left data in the owner account on every run (payments on Revolut, cooked meals, shopping items, registered users, photo files) | High | Completed (2026-10-28, Batch 2) |
 | BUG-009 | Test registrations sent real verification emails through SendGrid to `@example.com` addresses (bounces hurt sender reputation) | High | Completed (2026-10-28, Batch 2) |
+| BUG-010 | A wrong current password on change-password returned 401, which the app treats as an expired session: one typo signed the user out | High | Completed (2026-10-28, Batch 3) |
 | DEBT-001 | Consider splitting monolithic server.py | Medium | Not started |
 | DEBT-002 | Remove unused dependencies | Low | Not started |
 | DEBT-003 | Adopt Alembic | Medium | Completed |
@@ -904,3 +905,13 @@ The Groceries backend redesign, data seeding, AI tools, and tests are complete. 
 - **Test-user cleanup moved to the end of the run** (`tests/conftest.py`, controller only): a per-module teardown raced with the module's other class on the second xdist worker and deleted users still in use (seen once as `test_refresh_token_flow` / `test_unverified_user_cannot_access_protected` failures).
 - **Final Batch 2 verification:** backend **272 passed** twice in a row (0 failures); 2 users remain (owner + `testuser1@example.com`); storage empty; no test leftovers.
 - **Owner decisions applied:** BUG-007 — deleting a person keeps money they already paid you (the "Payment from …" transaction holds only text, no link to the person, so it stays as an accurate income record; no rename needed). `tests/test_people_delete_keeps_payments.py` pins it; the three delete dialogs (People single/bulk, person detail) no longer claim payments are removed from the ledger. The 46 accidental weigh-ins (1/5/11 kg on 2026-10-18, no note) were deleted at the owner's request; the 8 real check-ins remain.
+
+### Batch 3 — Settings: accounts and password (ACCT-001, AUTH-001) — Completed
+- **Shared account dialog:** the create/edit form and its save logic moved from `pages/Money.jsx` into `components/AccountDialog.jsx` (with `buildAccountTree`), used by Money and Settings, so both behave the same. A new place's type now follows the chosen parent (previously it was fixed when the dialog opened, so switching parent Cash ↔ Revolut kept a stale type). Icon-only buttons on Money sub-places got accessible names.
+- **Settings → Accounts:** tree of top-level places and sub-places with balances and lock marker; Add place (parent selectable), Edit for every place, Delete for sub-places with a confirmation; the server's own guards (no delete with sub-places or transactions) surface as a toast. Owed/person accounts are not listed (as on Money).
+- **Settings → Password:** current / new / repeat with live checks (strength rule matches the server, must differ, must match), show/hide, specific messages for wrong password and rate limit.
+- **Backend `POST /auth/change-password`:** wrong current password now returns **400** (BUG-010 — the 401 made the app sign the user out); new password must differ; attempts are rate limited per user (same limiter as login), so a stolen session cannot be used to guess the current password.
+- **Also:** the AI card in Settings no longer says "Powered by Gemini" (chat runs on OpenCode Go; voice/receipts on Gemini) — it now states what the assistant does and that keys stay server-side.
+- **Test speed:** Python resolves `localhost` to IPv6 first on Windows and waited ~2 s per request before reaching uvicorn on IPv4; `tests/conftest.py` now points the API tests at `127.0.0.1` when no URL is configured. Full backend run: ~140 s → **~33 s**.
+- **Tests:** `backend/tests/test_change_password.py` (5: wrong current = 400 and session kept, weak, unchanged, success then login with new only, rate limit incl. refusing the correct password while limited); `frontend/e2e/settings.spec.js` (2: place add/edit/delete via the UI; password validation and wrong-password stays signed in — the success path is not run in the browser because it would change the owner's real password).
+- **Verified:** backend **278 passed**; e2e settings + smoke + pages-smooth **7/7**; `craco build` "Compiled successfully"; console clean on Money (Add sub-place, Edit) and Settings (Add place, Edit); Settings and Money dialog screenshots reviewed.

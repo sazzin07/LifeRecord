@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Sun, Moon, Monitor, Sparkles, Plus, Trash2, LogOut } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Sun, Moon, Monitor, Sparkles, Plus, Trash2, LogOut, Pencil, Lock, KeyRound, Eye, EyeOff } from "lucide-react";
 import { api, eur } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -9,8 +9,113 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+const strongEnough = (p) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p);
+
+function ChangePassword() {
+  const [f, setF] = useState({ current: "", next: "", confirm: "" });
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const problem = !f.next ? null : !strongEnough(f.next) ? "At least 8 characters, with a letter and a number."
+    : f.next === f.current ? "Choose a password different from the current one."
+    : f.confirm && f.confirm !== f.next ? "The two new passwords do not match." : null;
+  const ready = f.current && f.next && f.confirm === f.next && !problem;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!ready) return;
+    setSaving(true);
+    try {
+      await api.post("/auth/change-password", { current_password: f.current, new_password: f.next });
+      toast.success("Password changed");
+      setF({ current: "", next: "", confirm: "" });
+    } catch (err) {
+      toast.error(err.response?.status === 429 ? "Too many attempts. Wait a minute and try again." : err.response?.data?.detail || "Could not change password");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const type = show ? "text" : "password";
+  return (
+    <Card className="p-5">
+      <Label>Password</Label>
+      <form onSubmit={submit} className="mt-3 space-y-3" data-testid="change-password-form">
+        <Input type={type} autoComplete="current-password" placeholder="Current password" aria-label="Current password" value={f.current} onChange={set("current")} data-testid="pw-current" />
+        <div className="grid sm:grid-cols-2 gap-2">
+          <Input type={type} autoComplete="new-password" placeholder="New password" aria-label="New password" value={f.next} onChange={set("next")} data-testid="pw-new" />
+          <Input type={type} autoComplete="new-password" placeholder="Repeat new password" aria-label="Repeat new password" value={f.confirm} onChange={set("confirm")} data-testid="pw-confirm" />
+        </div>
+        <p className={cn("text-xs", problem ? "text-red-600 dark:text-red-400" : "text-slate-500")} aria-live="polite">{problem || "At least 8 characters, with a letter and a number."}</p>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={() => setShow((v) => !v)} className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+            {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}{show ? "Hide passwords" : "Show passwords"}
+          </button>
+          <Button type="submit" disabled={!ready || saving} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="pw-save"><KeyRound className="h-4 w-4 mr-1" />Change password</Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function Accounts({ accounts }) {
+  const [dialog, setDialog] = useState({ open: false, account: null, parent: null });
+  const [deleteId, setDeleteId] = useState(null);
+  const { roots } = useMemo(() => buildAccountTree((accounts || []).filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
+  const toDelete = (accounts || []).find((a) => a.id === deleteId);
+
+  const remove = async (id) => {
+    try {
+      await api.delete(`/accounts/${id}`);
+      toast.success("Deleted");
+      refreshAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not delete account");
+    } finally {
+      setDeleteId(null);
+    }
+  };
+
+  const row = (a, child) => (
+    <div key={a.id} className={cn("flex items-center gap-2 text-sm py-1.5", child && "pl-5")} data-testid={`settings-account-${a.id}`}>
+      <span className={cn("flex-1 flex items-center gap-1.5", child ? "text-slate-600 dark:text-slate-300" : "font-medium")}>
+        {a.name}{a.is_locked && <Lock className="h-3 w-3 text-amber-600" aria-label="Locked" />}
+      </span>
+      <span className="stat-num font-semibold">{eur(a.balance)}</span>
+      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${a.name}`} onClick={() => setDialog({ open: true, account: a, parent: null })}><Pencil className="h-3.5 w-3.5" /></Button>
+      {child
+        ? <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" aria-label={`Delete ${a.name}`} onClick={() => setDeleteId(a.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+        : <span className="h-7 w-7" aria-hidden="true" />}
+    </div>
+  );
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <Label>Accounts</Label>
+        <Button variant="outline" size="sm" onClick={() => setDialog({ open: true, account: null, parent: roots.find(canHaveSubPlaces) || null })} data-testid="settings-add-place"><Plus className="h-4 w-4 mr-1" />Add place</Button>
+      </div>
+      <div className="mt-3 divide-y divide-border">
+        {accounts === null && [0, 1, 2].map((i) => <div key={i} className="skeleton h-8 my-1.5 rounded-lg" aria-hidden="true" />)}
+        {roots.map((r) => (
+          <div key={r.id} className="py-1">
+            {row(r, false)}
+            {r.children.map((c) => row(c, true))}
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">A place that has transactions can't be deleted; move its money first. Transfers are on the Money page.</p>
+      <AccountDialog open={dialog.open} setOpen={(o) => setDialog((d) => ({ ...d, open: o }))} account={dialog.account} parent={dialog.parent} parents={roots.filter(canHaveSubPlaces)} />
+      <ConfirmDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }} title="Delete place?"
+        description={toDelete ? `"${toDelete.name}" will be removed. This cannot be undone.` : "This place will be removed."}
+        onConfirm={() => deleteId && remove(deleteId)} confirmText="Delete" variant="danger" />
+    </Card>
+  );
+}
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -29,7 +134,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <SectionHeading title="Settings" sub="Appearance, categories and your account" />
+      <SectionHeading title="Settings" sub="Appearance, accounts, password and categories" />
 
       <Card className="p-5 flex items-center gap-4">
         <Avatar name={user?.name || "?"} size="h-12 w-12" />
@@ -54,16 +159,9 @@ export default function Settings() {
         </div>
       </Card>
 
-      <Card className="p-5">
-        <Label>Accounts</Label>
-        <div className="mt-3 space-y-2">
-          {(accounts || []).map((a) => (
-            <div key={a.id} className="flex items-center justify-between text-sm border-b border-border pb-2 last:border-0">
-              <span className="font-medium">{a.name}</span><span className="stat-num font-semibold">{eur(a.balance)}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <Accounts accounts={accounts} />
+
+      <ChangePassword />
 
       <Card className="p-5">
         <Label>Finance categories</Label>
@@ -76,7 +174,7 @@ export default function Settings() {
           {(cats || []).map((c) => (
             <span key={c.id} className="group inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm">
               <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.name}
-              <button onClick={() => { setDeleteCatId(c.id); setDeleteCatOpen(true); }} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+              <button onClick={() => { setDeleteCatId(c.id); setDeleteCatOpen(true); }} aria-label={`Delete ${c.name} category`} className="text-slate-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
             </span>
           ))}
         </div>
@@ -84,7 +182,7 @@ export default function Settings() {
 
       <Card className="p-5 flex items-center gap-3">
         <Sparkles className="h-5 w-5 text-emerald-600" />
-        <div><p className="font-medium text-sm">AI assistant</p><p className="text-xs text-slate-500">Powered by Gemini · text, voice and receipt photos. Your key is stored securely on the server.</p></div>
+        <div><p className="font-medium text-sm">AI assistant</p><p className="text-xs text-slate-500">Chat, voice and receipt photos. API keys are kept on the server and never sent to your browser.</p></div>
       </Card>
 
       <ConfirmDialog

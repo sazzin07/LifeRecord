@@ -84,7 +84,7 @@ test.describe("People tab", () => {
     const person = people.find((p) => p.name === name);
     expect(person).toBeTruthy();
 
-    await apiContext.post("/api/transactions/expense", {
+    const expense = await apiContext.post("/api/transactions/expense", {
       data: {
         amount: 20,
         description: "Test dinner",
@@ -121,6 +121,13 @@ test.describe("People tab", () => {
     await dialog2.getByTestId("person-delete-confirm").click();
     await expect(dialog2).not.toBeVisible();
     await expect(page.getByText(name)).not.toBeVisible();
+
+    // Cleanup: deleting a person keeps money already received, so remove the test payment and expense explicitly.
+    const txns = await (await apiContext.get("/api/transactions")).json();
+    for (const t of txns) {
+      if (t.description === `Payment from ${name}`) await apiContext.delete(`/api/transactions/${t.id}`);
+    }
+    await apiContext.delete(`/api/transactions/${(await expense.json()).transaction.id}`);
   });
 
   test("delete person from detail modal", async ({ authenticatedPage: page }) => {

@@ -235,7 +235,8 @@ class TestFinance:
         bob2 = next(p for p in people2 if p["id"] == p1["id"])
         assert bob2["owes_me"] == 0.0
 
-        # Cleanup
+        # Cleanup (deleting the settlement also removes the income it added to the account)
+        client.delete(f"{BASE_URL}/api/settlements/{s.json()['id']}")
         client.delete(f"{BASE_URL}/api/transactions/{txn['id']}")
         client.delete(f"{BASE_URL}/api/people/{p1['id']}")
         client.delete(f"{BASE_URL}/api/people/{p2['id']}")

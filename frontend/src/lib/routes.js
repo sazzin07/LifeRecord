@@ -1,6 +1,7 @@
 import { prefetchGroceries } from "@/lib/groceriesData";
 import { prefetchQuery } from "@/lib/query";
 import { moneyPaths } from "@/lib/periods";
+import { calendarPath, monthGridRange } from "@/lib/calendarRange";
 
 /**
  * Lazy page chunks. App.js lazy()-loads these same functions, so calling one early (on hover, or when idle)
@@ -31,7 +32,7 @@ const routeQueries = {
   "/fitness": () => ["/workouts", "/workouts/prs"],
   "/body": () => ["/weight", "/photos"],
   "/tasks": () => ["/tasks"],
-  "/calendar": () => ["/tasks"],
+  "/calendar": () => [calendarPath(monthGridRange(new Date()))],
   "/settings": () => ["/categories", "/accounts"],
 };
 

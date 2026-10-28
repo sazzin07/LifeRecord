@@ -127,14 +127,16 @@ class TestRefundLinking:
         assert got["remaining_refund"] == 6.0
         assert got["refund_status"] == "partial"
         # Full refund
-        client.post(f"{BASE_URL}/api/settlements", json={
+        s2 = client.post(f"{BASE_URL}/api/settlements", json={
             "person": person_name, "amount": 6.0, "method": "Revolut",
             "account": "revolut", "direction": "in", "transaction_id": t["id"]})
         txns2 = client.get(f"{BASE_URL}/api/transactions").json()
         got2 = next(x for x in txns2 if x["id"] == t["id"])
         assert got2["remaining_refund"] == 0.0
         assert got2["refund_status"] == "settled"
-        # cleanup
+        # cleanup (deleting the settlements also removes the income they added to the account)
+        for settlement in (s, s2):
+            client.delete(f"{BASE_URL}/api/settlements/{settlement.json()['id']}")
         client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
         client.delete(f"{BASE_URL}/api/people/{p['id']}")
 
@@ -339,6 +341,15 @@ class TestShopping:
 
 
 # --- Recipes cook ---
+@pytest.fixture(scope="module", autouse=True)
+def _remove_cooked_meals(client):
+    # Cooking logs a meal ("<recipe> (1 serving)"); remove the ones these tests create so runs leave no trace.
+    yield
+    for m in client.get(f"{BASE_URL}/api/meals").json():
+        if m["description"].startswith(TAG):
+            client.delete(f"{BASE_URL}/api/meals/{m['id']}")
+
+
 class TestRecipes:
     def test_cook_decrements_inventory(self, client):
         ingname = f"{TAG}_flour"

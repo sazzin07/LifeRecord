@@ -634,8 +634,8 @@ Use the IDs below to track progress. Update the status column as work is complet
 | DASH-001 | Expand grocery dashboard widgets | High | Completed |
 | DASH-002 | Add dashboard quick actions | Medium | Completed |
 | DASH-003 | Sync dashboard with mutations | High | Completed |
-| CAL-001 | Implement calendar grid | Medium | Not started |
-| CAL-002 | Show grocery/meal events on calendar | Low | Not started |
+| CAL-001 | Implement calendar grid | Medium | Completed (2026-10-28, Batch 2) |
+| CAL-002 | Show grocery/meal events on calendar | Low | Completed (2026-10-28, Batch 2) |
 | NUTR-001 | Add manual meal form | High | Completed |
 | NUTR-002 | Add manual recipe form | High | Completed |
 | NUTR-003 | Add recipe edit/delete backend | Medium | Completed |
@@ -684,6 +684,9 @@ Use the IDs below to track progress. Update the status column as work is complet
 | BUG-003 | Use fetched accounts in ExpenseDialog | Medium | Completed |
 | BUG-004 | Remove dead fetch logic in PersonDetailModal | Low | Not started |
 | BUG-005 | Fix or remove sonner next-themes wrapper | Low | Completed (verified 2026-10-28: `sonner.jsx` uses `useSettings`, no `next-themes` import) |
+| BUG-006 | Deleting a single shopping item failed (no `DELETE /shopping/{id}` route; UI showed "Method Not Allowed") | High | Completed (2026-10-28, Batch 2) |
+| BUG-007 | Deleting a person leaves the "Payment from …" income their settlements added (orphaned; account balance keeps it), while deleting a settlement or "Clear all debts" removes it | Medium | Blocked — needs owner decision (keep received money vs. reverse it) |
+| BUG-008 | Tests left data in the owner account on every run (payments on Revolut, cooked meals, shopping items, registered users, photo files) | High | Completed (2026-10-28, Batch 2) |
 | DEBT-001 | Consider splitting monolithic server.py | Medium | Not started |
 | DEBT-002 | Remove unused dependencies | Low | Not started |
 | DEBT-003 | Adopt Alembic | Medium | Completed |
@@ -887,3 +890,13 @@ The Groceries backend redesign, data seeding, AI tools, and tests are complete. 
 - **Tests:** new `backend/tests/test_body_fitness_edit.py` (7) and `test_tasks_edit.py` (6, incl. month-end and no-duplicate cases) written first and seen failing (405) before the endpoints existed. New `tests/support_auth.py` + `tests/conftest.py`: one login per account per run, cached in a temp file shared by the xdist workers, re-validated with `/auth/me`, deleted at the end of the run; 8 modules switched to it. Fixed an invalid-escape `DeprecationWarning` in `test_conversations.py`. New `frontend/e2e/edit-flows.spec.js` (4 tests).
 - **Verified:** backend **249 passed, 0 errors, 0 warnings** (`pytest tests -q`); new e2e 4/4; regression e2e smoke + pages-smooth + people 10/10; `craco build` "Compiled successfully" with no ESLint warnings; scripted browser pass over Tasks/Fitness/Body/QuickAdd with every new dialog opened: no console warnings or errors.
 - **Remaining / notes:** the `fs.F_OK` deprecation printed by the build comes from build tooling on Node 24 (pre-existing). Checklist rows that were stale (AI-007, TEST-002, BUG-005) were corrected after checking the code.
+
+### Batch 2 — Calendar (CAL-001, CAL-002) + data-integrity fixes found while verifying — Completed
+- **Backend:** new `backend/calendar_api.py` (registered like `conversations_api`, keeps `server.py` from growing): `GET /api/calendar?start&end` (ISO dates, forwards, max 100 days) returns sorted events of kind `task` (due), `expiry` (food in stock with an expiry date; flagged `expired`), `shopping` (recurring list next due = last spawn + interval, or today if overdue / never spawned), `workout`, `weight` and `meals` (one per-day summary with count and kcal). User-scoped; 401 without login.
+- **Frontend:** `pages/Calendar.jsx` rewritten as a month grid (Mon–Sun, outside days dimmed, today highlighted, up to 3 labelled chips + "+N more"; coloured dots on phones) and a week view; prev/next/Today; filter chips per kind (remembered per browser); day panel listing the day's items with links to their page and a checkbox to complete tasks (repeating tasks schedule the next). Built with `date-fns` rather than react-day-picker (v8 is a date picker; multi-event cells fight its cell API). `lib/calendarRange.js` shares the range/path with the route prefetch in `lib/routes.js`, so revisits paint from cache. The static "Weekly body check-in" card was replaced by real weigh-ins on the grid.
+- **BUG-006 (found while verifying):** the Groceries page removes a single shopping item with `DELETE /shopping/{id}`, but that route never existed (the API inventory in §5.7 listed it as working). Added the route (user-scoped, 404 otherwise); icon-only Edit/Delete buttons on shopping rows got accessible names.
+- **BUG-008 (found while verifying):** the calendar showed test data in the owner account. Causes and fixes: people-payment tests deleted the person but not the settlement, leaving "Payment from TEST…/E2E…" income on Revolut (+€82.00 over 26 transactions; tests now delete their settlements/transactions); cooking tests left `TEST2_*` meals (72; module teardown added); shopping-item cleanup silently hit the missing route above (11 items); auth tests never removed registered users (710 `…@example.com` accounts; module teardown added, deleting only the exact patterns the tests generate); photo delete was a soft delete that kept the file. All leftovers were removed through the API where side effects matter — Revolut balance went from €101.43 to €19.43, exactly the fake income. `testuser1@example.com` was kept (no current test creates it; origin unknown).
+- **Photo delete is now real:** `DELETE /photos/{id}` removes the row and then the file (progress photos are private; "cannot be undone" in the UI is now true).
+- **Tests:** `test_calendar.py` (6), `test_shopping_item_delete.py` (2), photo hard-delete test; `e2e/calendar.spec.js` (2, incl. no horizontal scroll at 375 px) and a BUG-006 test in `groceries.spec.js`. After a full run, a scan of tasks/groceries/people/transactions/meals/shopping/users/photos/storage finds no test leftovers.
+- **Verified:** backend **257 passed** (before the photo test was added) then module re-runs green; e2e calendar + edit-flows + people + groceries + pages-smooth + smoke **28/28**, BUG-006 test 1/1; `craco build` "Compiled successfully"; console clean on Calendar (month, week, filters); desktop, phone and dark screenshots reviewed.
+- **Open:** BUG-007 needs a decision. 46 weigh-ins of 1 kg / 5 kg / 11 kg dated 2026-10-18 (created within 45 s, no note) look accidental but are not tagged as test data, so they were left alone pending the owner's call.

@@ -38,6 +38,7 @@ import conversations_api
 import chat_images
 import scheduling
 import scheduling_api
+import calendar_api
 from starlette.responses import StreamingResponse
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
@@ -153,6 +154,10 @@ def save_object(path: str, data: bytes) -> str:
 
 def read_object(path: str) -> bytes:
     return _safe_storage_path(path).read_bytes()
+
+
+def delete_object(path: str) -> None:
+    _safe_storage_path(path).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -2531,8 +2536,11 @@ async def delete_photo(pid: str, user: dict = Depends(get_current_user), db: Asy
     )).scalar_one_or_none()
     if not photo:
         raise HTTPException(404, "Photo not found")
-    await db.execute(update(Photo).where(Photo.id == pid, Photo.user_id == user["_id"]).values(is_deleted=True))
+    # A deleted progress photo is gone for good: the row and the file (removed once the row is).
+    path = photo.storage_path
+    await db.execute(delete(Photo).where(Photo.id == pid, Photo.user_id == user["_id"]))
     await db.commit()
+    delete_object(path)
     return {"ok": True}
 
 
@@ -3180,6 +3188,15 @@ async def update_shopping_item(sid: str, body: ShoppingItemUpdate, user: dict = 
         await db.commit()
         await db.refresh(it)
     return {**to_dict(it), "list": to_dict(it.list) if it.list else None}
+
+
+@api_router.delete("/shopping/{sid}")
+async def delete_shopping_item(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(delete(ShoppingItem).where(ShoppingItem.id == sid, ShoppingItem.user_id == user["_id"]))
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Item not found")
+    return {"ok": True}
 
 
 @api_router.post("/shopping/{sid}/toggle")
@@ -5189,6 +5206,7 @@ async def root():
 conversations_api.register(api_router, sys.modules[__name__])
 chat_images.register(api_router, sys.modules[__name__])
 scheduling_api.register(api_router, sys.modules[__name__])
+calendar_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------

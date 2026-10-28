@@ -801,8 +801,8 @@ export default function Groceries() {
                         </div>
                         <div className="flex gap-1">
                           <Hint label="Price history"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button></Hint>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${it.name}`} onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${it.name}`} onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                       </div>
                     );

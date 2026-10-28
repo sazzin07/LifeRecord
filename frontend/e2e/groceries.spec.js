@@ -293,6 +293,23 @@ test.describe("Groceries kitchen", () => {
     }
   });
 
+  test("shopping: delete a single item from the list (BUG-006)", async ({ authenticatedPage: page, apiContext }) => {
+    const name = uniqueName();
+    const item = await (await apiContext.post("/api/shopping", { data: { name } })).json();
+    try {
+      await page.reload();
+      await page.getByRole("tab", { name: "Shopping" }).click();
+      await page.getByRole("button", { name: `Delete ${name}` }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+      await expect(page.getByRole("alertdialog")).toHaveCount(0);
+      await expect(page.getByText("Could not delete")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: `Delete ${name}` })).toHaveCount(0);
+      await expect.poll(async () => (await (await apiContext.get("/api/shopping")).json()).items.some((i) => i.id === item.id)).toBe(false);
+    } finally {
+      await apiContext.post("/api/shopping/bulk-delete", { data: { ids: [item.id] } });
+    }
+  });
+
   test("no empty-state flash: last-seen data shows instantly, skeleton on a cold start", async ({ authenticatedPage: page }) => {
     // Slow every API response so any placeholder would have time to show
     await page.route("**/api/**", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });

@@ -113,3 +113,15 @@ def test_update_photo_note_and_date(client, photo):
 def test_update_photo_unknown_is_404(client):
     r = client.put(f"{BASE_URL}/api/photos/does-not-exist", json={"note": "x"})
     assert r.status_code == 404
+
+
+def test_deleting_a_photo_removes_the_file(client):
+    r = client.post(f"{BASE_URL}/api/photos", params={"note": "TEST_photo"}, files={"file": ("t.png", PNG, "image/png")})
+    p = r.json()
+    storage = Path(os.environ.get("STORAGE_DIR", Path(__file__).resolve().parents[1] / "storage"))
+    stored = storage / p["storage_path"]
+    assert stored.exists()
+    assert client.delete(f"{BASE_URL}/api/photos/{p['id']}").status_code == 200
+    assert not stored.exists()
+    assert client.get(f"{BASE_URL}{p['url']}").status_code == 404
+    assert client.delete(f"{BASE_URL}/api/photos/{p['id']}").status_code == 404

@@ -17,6 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Hint } from "@/components/ui/hint";
 
 const TYPE_META = {
   debt: { label: "You paid", icon: Receipt, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-500/10", sign: "+" },
@@ -251,15 +252,15 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
                             <p className={cn("font-semibold text-sm", meta.color)}>{meta.sign}{eur(item.amount)}</p>
                             <p className="text-xs text-slate-400">bal {eur(item.running)}</p>
                           </div>
-                          <Button
+                          <Hint label={isSettlement ? "Remove payment" : "Remove split / debt record"}><Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"
-                            title={isSettlement ? "Remove payment" : "Remove split / debt record"}
+                            aria-label={isSettlement ? "Remove payment" : "Remove split / debt record"}
                             onClick={() => { setDeleteItem({ kind: isSettlement ? "settlement" : "split", id: item.id }); setDeleteItemOpen(true); }}
                           >
                             <X className="h-4 w-4" />
-                          </Button>
+                          </Button></Hint>
                         </div>
                       );
                     })}

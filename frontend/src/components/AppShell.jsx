@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { prefetchRoute, warmAllRoutes } from "@/lib/routes";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell,
@@ -63,6 +64,18 @@ export function AppShell({ children }) {
   const [quickOpen, setQuickOpen] = useState(false);
   const [offline, setOffline] = useState(false);
 
+  // Once things are quiet after sign-in, download every page and warm its data, one page at a time.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    const t = setTimeout(() => { stopWarm = warmAllRoutes(user.id); }, 1200);
+    let stopWarm = () => {};
+    return () => { clearTimeout(t); stopWarm(); };
+  }, [user?.id]);
+  // Moving towards a link is a strong hint: refresh that page's code and data before the click lands.
+  const warm = (to) => { if (user?.id) prefetchRoute(to, user.id, { maxAgeMs: 15_000 }); };
+  // New page: start at the top, like a real navigation.
+  useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
+
   useEffect(() => {
     const off = () => setOffline(true);
     const on = () => setOffline(false);
@@ -95,6 +108,7 @@ export function AppShell({ children }) {
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`nav-${n.label.toLowerCase()}`}
+              onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)}
               className={({ isActive }) => cn(
                 "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
@@ -142,7 +156,7 @@ export function AppShell({ children }) {
             ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.
           </div>
         )}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-28 lg:pb-10">{children}</div>
+        <div key={loc.pathname} className="lm-page max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-28 lg:pb-10">{children}</div>
       </main>
 
       {/* Mobile bottom nav */}
@@ -155,6 +169,7 @@ export function AppShell({ children }) {
             </button>
           ) : (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`mnav-${n.label.toLowerCase()}`}
+              onTouchStart={() => warm(n.to)} onFocus={() => warm(n.to)}
               className={({ isActive }) => cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
                 isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500")}>
               <n.icon className="h-5 w-5" />{n.label}

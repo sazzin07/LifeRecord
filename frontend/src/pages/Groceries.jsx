@@ -4,7 +4,7 @@ import {
   AlertTriangle, Search, X, ChevronDown, ChevronUp, ListChecks, ArrowRight,
   RotateCcw, TrendingDown, Archive, Loader2, Receipt, Filter, Beef, Fish,
   Egg, Milk, Wheat, Apple, Carrot, Snowflake, Cookie, Wine, MoreHorizontal,
-  History, Repeat, Lightbulb, TrendingUp, Minus
+  History, Repeat, Lightbulb, TrendingUp, Minus, LayoutDashboard, Refrigerator, BookMarked, ChefHat
 } from "lucide-react";
 import { api, eur } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
@@ -13,30 +13,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
+import { CATS, UNITS, CatIcon, quantityText } from "./groceries/shared";
+import { StorageTab } from "./groceries/StorageTab";
+import { OverviewTab } from "./groceries/OverviewTab";
+import { BudgetField } from "./groceries/BudgetField";
+import { CatalogTab } from "./groceries/CatalogTab";
+import { useAuth } from "@/context/AuthContext";
+import { readCache, writeCache } from "@/lib/swrCache";
+import { fetchGroceries, GROCERIES_CACHE_KEY, watchGroceries } from "@/lib/groceriesData";
+import { KitchenTab } from "./groceries/KitchenTab";
 import { toast } from "sonner";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-
-const CATS = ["Meat", "Fish", "Eggs", "Dairy", "Carbohydrates", "Fruit", "Vegetables", "Frozen", "Pantry", "Snacks", "Drinks", "Other"];
-const UNITS = ["unit", "kg", "g", "L", "ml", "pack", "bottle", "can", "box", "bag", "bunch", "jar"];
-
-const CAT_META = {
-  Meat: { icon: Beef, color: "#EF4444" },
-  Fish: { icon: Fish, color: "#0EA5E9" },
-  Eggs: { icon: Egg, color: "#F59E0B" },
-  Dairy: { icon: Milk, color: "#3B82F6" },
-  Carbohydrates: { icon: Wheat, color: "#F97316" },
-  Fruit: { icon: Apple, color: "#EC4899" },
-  Vegetables: { icon: Carrot, color: "#10B981" },
-  Frozen: { icon: Snowflake, color: "#06B6D4" },
-  Pantry: { icon: Package, color: "#8B5CF6" },
-  Snacks: { icon: Cookie, color: "#D946EF" },
-  Drinks: { icon: Wine, color: "#14B8A6" },
-  Other: { icon: MoreHorizontal, color: "#64748B" },
-};
+import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Hint } from "@/components/ui/hint";
 
 const PRICE_CONF = {
   known: { type: "exact", label: "Known price" },
@@ -44,52 +39,20 @@ const PRICE_CONF = {
   unknown: { type: "unknown", label: "Unknown" },
 };
 
-function CatIcon({ category, className }) {
-  const meta = CAT_META[category] || CAT_META.Other;
-  const Icon = meta.icon;
+function Field({ label, children, className }) {
   return (
-    <div className={cn("h-9 w-9 rounded-xl grid place-items-center shrink-0", className)} style={{ background: `${meta.color}22` }}>
-      <Icon className="h-4 w-4" style={{ color: meta.color }} />
-    </div>
+    <label className={cn("block space-y-1.5", className)}>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </label>
   );
 }
 
-function quantityText(q, unit) {
-  const val = Number(q || 0);
-  if (val === 0) return "—";
-  if (val === Math.floor(val)) return `${Math.floor(val)} ${unit || ""}`.trim();
-  return `${val.toFixed(2)} ${unit || ""}`.trim();
-}
-
-function LowStockAlert({ items }) {
-  if (!items?.length) return null;
-  return (
-    <Card className="p-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-            {items.length} item{items.length !== 1 ? "s" : ""} running low or out of stock
-          </p>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {items.map((g) => (
-              <span key={g.id} className={cn("text-xs px-2 py-1 rounded-full border bg-white dark:bg-slate-800",
-                g.status === "out" ? "border-red-200 dark:border-red-800 text-red-700 dark:text-red-300" : "border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200")}>
-                {g.name} · {quantityText(g.quantity, g.unit)} {g.status === "out" ? "(out)" : "(low)"}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function GroceryDialog({ item, open, setOpen, onSave }) {
+function GroceryDialog({ item, prefill, locations, defaultLocation, open, setOpen, onSave }) {
   const [f, setF] = useState({});
   useEffect(() => {
-    setF(item || { name: "", quantity: "", unit: "unit", category: "", price: "", store: "", low_threshold: "", notes: "", is_favorite: false });
-  }, [item, open]);
+    setF(item || { name: "", quantity: "", unit: "unit", category: "", price: "", store: "", low_threshold: "", notes: "", is_favorite: false, storage_location: defaultLocation || "", expiration: "", ...(prefill || {}) });
+  }, [item, open, defaultLocation, prefill]);
   const submit = (e) => {
     e.preventDefault();
     onSave({
@@ -101,41 +64,68 @@ function GroceryDialog({ item, open, setOpen, onSave }) {
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{item ? "Edit inventory item" : "Add to inventory"}</DialogTitle>
           <DialogDescription>{item ? "Update stock, price or reorder threshold." : "Track something you already have."}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-3 mt-2">
-          <Input placeholder="Item name" value={f.name || ""} onChange={(e) => setF((x) => ({ ...x, name: e.target.value }))} required />
+        <form onSubmit={submit} className="mt-2 space-y-4">
+          <Field label="Name">
+            <Input placeholder="e.g. Semi-skimmed milk" value={f.name || ""} onChange={(e) => setF((x) => ({ ...x, name: e.target.value }))} required />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Input type="number" min={0} step="0.01" placeholder="Quantity" value={f.quantity} onChange={(e) => setF((x) => ({ ...x, quantity: e.target.value }))} />
-            <Select value={f.unit} onValueChange={(v) => setF((x) => ({ ...x, unit: v }))}>
-              <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
-              <SelectContent>
-                {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-              </SelectContent>
+            <Field label="Quantity">
+              <Input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0" value={f.quantity ?? ""} onChange={(e) => setF((x) => ({ ...x, quantity: e.target.value }))} />
+            </Field>
+            <Field label="Unit">
+              <Select value={f.unit || "unit"} onValueChange={(v) => setF((x) => ({ ...x, unit: v }))}>
+                <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
+                <SelectContent>{UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Stored in">
+              <Select value={f.storage_location || "none"} onValueChange={(v) => setF((x) => ({ ...x, storage_location: v === "none" ? "" : v }))}>
+                <SelectTrigger aria-label="Storage space"><SelectValue placeholder="Stored in" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Out on the counter</SelectItem>
+                  {(locations || []).map((l) => <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Expires">
+              <DatePicker aria-label="Expiry date" placeholder="No expiry" value={f.expiration || ""} onChange={(v) => setF((x) => ({ ...x, expiration: v }))}
+                presets={[{ label: "Tomorrow", days: 1 }, { label: "In a week", days: 7 }, { label: "In a month", days: 30 }]} />
+            </Field>
+          </div>
+          <Field label="Category">
+            <Select value={f.category || "Other"} onValueChange={(v) => setF((x) => ({ ...x, category: v }))}>
+              <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectContent>{CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
             </Select>
-          </div>
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Input type="number" min={0} step="0.01" placeholder="Price (€)" value={f.price} onChange={(e) => setF((x) => ({ ...x, price: e.target.value }))} />
-            <Input placeholder="Store" value={f.store || ""} onChange={(e) => setF((x) => ({ ...x, store: e.target.value }))} />
+            <Field label="Price per unit (€)">
+              <Input type="number" inputMode="decimal" min={0} step="0.01" placeholder="Optional" value={f.price ?? ""} onChange={(e) => setF((x) => ({ ...x, price: e.target.value }))} />
+            </Field>
+            <Field label="Store">
+              <Input placeholder="Optional" value={f.store || ""} onChange={(e) => setF((x) => ({ ...x, store: e.target.value }))} />
+            </Field>
           </div>
-          <Select value={f.category || "Other"} onValueChange={(v) => setF((x) => ({ ...x, category: v }))}>
-            <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
-            <SelectContent>
-              {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Input type="number" min={0} step="0.01" placeholder="Low-stock threshold" value={f.low_threshold} onChange={(e) => setF((x) => ({ ...x, low_threshold: e.target.value }))} />
-          <Input placeholder="Notes" value={f.notes || ""} onChange={(e) => setF((x) => ({ ...x, notes: e.target.value }))} />
-          <div className="flex items-center gap-2">
-            <input id="fav" type="checkbox" checked={!!f.is_favorite} onChange={(e) => setF((x) => ({ ...x, is_favorite: e.target.checked }))} />
-            <Label htmlFor="fav">Favorite / staple item</Label>
-          </div>
-          <div className="flex justify-end gap-2">
+          <Field label="Warn me when stock is at or below">
+            <Input type="number" inputMode="decimal" min={0} step="0.01" placeholder="0 = never" value={f.low_threshold ?? ""} onChange={(e) => setF((x) => ({ ...x, low_threshold: e.target.value }))} />
+          </Field>
+          <Field label="Notes">
+            <Input placeholder="Optional" value={f.notes || ""} onChange={(e) => setF((x) => ({ ...x, notes: e.target.value }))} />
+          </Field>
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+            <Checkbox checked={!!f.is_favorite} onCheckedChange={(c) => setF((x) => ({ ...x, is_favorite: c === true }))} />
+            Staple I always keep in stock
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Save</Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{item ? "Save changes" : "Add to inventory"}</Button>
           </div>
         </form>
       </DialogContent>
@@ -239,7 +229,7 @@ function SubmitReviewDialog({ open, setOpen, items, onSubmit }) {
           <span className="text-lg font-bold">{eur(total)}</span>
         </div>
         <div className="flex items-center gap-2 mt-3">
-          <input id="record-expense" type="checkbox" checked={recordExpense} onChange={(e) => setRecordExpense(e.target.checked)} />
+          <Checkbox id="record-expense" checked={recordExpense} onCheckedChange={(c) => setRecordExpense(c === true)} />
           <Label htmlFor="record-expense">Record as expense in Money</Label>
         </div>
         <div className="flex justify-end gap-2 mt-4">
@@ -369,19 +359,36 @@ function RecurringDialog({ open, setOpen, onSave, editing }) {
   );
 }
 
-export default function Groceries() {
-  const [tab, setTab] = useState("shopping");
-  const [inventory, setInventory] = useState([]);
-  const [shopping, setShopping] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [selectedListId, setSelectedListId] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [recurring, setRecurring] = useState([]);
-  const [lowStock, setLowStock] = useState([]);
+function TabSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading groceries">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-[68px] rounded-2xl" />)}</div>
+      <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <div key={i} className="skeleton h-72 rounded-2xl" />)}</div>
+    </div>
+  );
+}
 
-  const [searchInv, setSearchInv] = useState("");
-  const [catFilter, setCatFilter] = useState("all");
-  const [stockFilter, setStockFilter] = useState("all");
+export default function Groceries() {
+  const [tab, setTab] = useState("overview");
+  const { user } = useAuth();
+  // Last-seen data (per user) renders instantly; the fetch below then replaces it with the real thing.
+  const cached = useMemo(() => readCache(user?.id, GROCERIES_CACHE_KEY), [user?.id]);
+  const [locations, setLocations] = useState(cached?.locations ?? []);
+  const [selectedSpaceId, setSelectedSpaceId] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [defaultLocation, setDefaultLocation] = useState("");
+  const [prefill, setPrefill] = useState(null);
+  const [products, setProducts] = useState(cached?.products ?? []);
+  const [recipeIdeas, setRecipeIdeas] = useState(cached?.recipeIdeas ?? []);
+  const [appliances, setAppliances] = useState(cached?.appliances ?? []);
+  const [inventory, setInventory] = useState(cached?.inventory ?? []);
+  const [shopping, setShopping] = useState(cached?.shopping ?? null);
+  const [loading, setLoading] = useState(!cached);
+  const [ready, setReady] = useState(!!cached);
+  const [selectedListId, setSelectedListId] = useState(cached?.selectedListId ?? "");
+  const [suggestions, setSuggestions] = useState(cached?.suggestions ?? []);
+  const [recurring, setRecurring] = useState(cached?.recurring ?? []);
+  const [lowStock, setLowStock] = useState(cached?.lowStock ?? []);
 
   const [searchShop, setSearchShop] = useState("");
   const [catShopFilter, setCatShopFilter] = useState("all");
@@ -404,51 +411,39 @@ export default function Groceries() {
 
   const load = useCallback(async () => {
     try {
-      const [inv, shop, low, sugg, rec] = await Promise.all([
-        api.get("/groceries"),
-        api.get("/shopping", { params: selectedListId ? { list_id: selectedListId } : {} }),
-        api.get("/groceries/low-stock"),
-        api.get("/groceries/suggestions"),
-        api.get("/shopping/recurring"),
-      ]);
-      setInventory(inv.data);
-      setShopping(shop.data);
-      setLowStock(low.data);
-      setSuggestions(sugg.data);
-      setRecurring(rec.data);
-      if (shop.data?.lists?.length && !selectedListId) {
-        const active = shop.data.lists.find((l) => !l.archived);
-        setSelectedListId(active?.id || shop.data.lists[0].id);
+      const data = await fetchGroceries(selectedListId);
+      setProducts(data.products);
+      setRecipeIdeas(data.recipeIdeas);
+      setAppliances(data.appliances);
+      setLocations(data.locations);
+      setInventory(data.inventory);
+      setShopping(data.shopping);
+      setLowStock(data.lowStock);
+      setSuggestions(data.suggestions);
+      setRecurring(data.recurring);
+      let listId = selectedListId;
+      if (data.shopping?.lists?.length && !listId) {
+        const active = data.shopping.lists.find((l) => !l.archived);
+        listId = active?.id || data.shopping.lists[0].id;
+        setSelectedListId(listId);
       }
-      setSelectedIds(new Set((shop.data?.items || []).filter((i) => i.selected).map((i) => i.id)));
+      setSelectedIds(new Set((data.shopping?.items || []).filter((i) => i.selected).map((i) => i.id)));
+      writeCache(user?.id, GROCERIES_CACHE_KEY, { ...data, selectedListId: listId });
+      setReady(true);
     } finally { setLoading(false); }
-  }, [selectedListId]);
+  }, [selectedListId, user?.id]);
 
   useEffect(() => {
-    setLoading(true);
+    // With cached data on screen the refresh is silent; only a cold start shows the loading state.
+    const unwatch = watchGroceries();
     load();
     const h = () => load();
     window.addEventListener("lm:refresh", h);
-    return () => window.removeEventListener("lm:refresh", h);
+    return () => { window.removeEventListener("lm:refresh", h); unwatch(); };
   }, [load]);
 
   const currentList = useMemo(() => (shopping?.lists || []).find((l) => l.id === selectedListId), [shopping, selectedListId]);
   const listItems = useMemo(() => (shopping?.items || []).filter((it) => it.list_id === selectedListId), [shopping, selectedListId]);
-
-  const filteredInventory = useMemo(() => {
-    let rows = [...inventory];
-    const q = searchInv.trim().toLowerCase();
-    if (q) rows = rows.filter((g) => g.name.toLowerCase().includes(q) || (g.category || "").toLowerCase().includes(q));
-    if (catFilter !== "all") rows = rows.filter((g) => g.category === catFilter);
-    if (stockFilter === "low") rows = rows.filter((g) => g.low_threshold > 0 && Number(g.quantity) <= Number(g.low_threshold));
-    if (stockFilter === "out") rows = rows.filter((g) => Number(g.quantity) <= 0);
-    return rows.sort((a, b) => {
-      const aLow = a.low_threshold > 0 && Number(a.quantity) <= Number(a.low_threshold);
-      const bLow = b.low_threshold > 0 && Number(b.quantity) <= Number(b.low_threshold);
-      if (aLow !== bLow) return aLow ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [inventory, searchInv, catFilter, stockFilter]);
 
   const filteredShopItems = useMemo(() => {
     let rows = [...listItems];
@@ -484,17 +479,9 @@ export default function Groceries() {
       }
       setGroceryDialogOpen(false);
       setEditingGrocery(null);
+      setPrefill(null);
       refreshAll();
     } catch (err) { toast.error(err.response?.data?.detail || "Could not save"); }
-  };
-
-  const deleteGrocery = async (id) => {
-    try {
-      await api.delete(`/groceries/${id}`);
-      toast.success("Deleted");
-      setDeleteItemId(null);
-      refreshAll();
-    } catch (err) { toast.error(err.response?.data?.detail || "Could not delete"); }
   };
 
   const saveShoppingItem = async (payload) => {
@@ -554,10 +541,11 @@ export default function Groceries() {
   const updateBudget = async (budget) => {
     if (!selectedListId) return;
     try {
-      await api.put(`/shopping/lists/${selectedListId}`, { budget: budget === "" ? null : parseFloat(budget) });
-      toast.success("Budget updated");
+      await api.put(`/shopping/lists/${selectedListId}`, { budget });
+      // One fixed id so repeated saves replace the toast instead of stacking up.
+      toast.success(budget === null ? "Budget removed" : "Budget updated", { id: "list-budget" });
       refreshAll();
-    } catch (err) { toast.error(err.response?.data?.detail || "Could not update budget"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not update budget", { id: "list-budget" }); }
   };
 
   const bulkDelete = async () => {
@@ -640,111 +628,40 @@ export default function Groceries() {
   const selectedCount = selectedIds.size;
   const allSelected = filteredShopItems.length > 0 && filteredShopItems.every((i) => selectedIds.has(i.id));
 
-  const groupedInventory = useMemo(() => {
-    const map = {};
-    filteredInventory.forEach((g) => {
-      const cat = g.category || "Other";
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(g);
-    });
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filteredInventory]);
-
   return (
     <div className="space-y-6">
       <SectionHeading
         title="Groceries"
         sub="Inventory, shopping lists and smart restocking"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant={tab === "shopping" ? "default" : "outline"} size="sm" onClick={() => setTab("shopping")} className={cn(tab === "shopping" && "bg-emerald-600 hover:bg-emerald-700 text-white")}>
-              <ShoppingCart className="h-4 w-4 mr-1" /> Shopping
-            </Button>
-            <Button variant={tab === "inventory" ? "default" : "outline"} size="sm" onClick={() => setTab("inventory")} className={cn(tab === "inventory" && "bg-emerald-600 hover:bg-emerald-700 text-white")}>
-              <Package className="h-4 w-4 mr-1" /> Inventory
-            </Button>
-          </div>
-        }
       />
 
-      <LowStockAlert items={lowStock} />
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="h-11 w-full justify-start overflow-x-auto scrollbar-hide sm:w-auto">
+          <TabsTrigger value="overview" className="flex-1 shrink-0 sm:flex-none gap-1.5"><LayoutDashboard className="h-4 w-4" />Overview</TabsTrigger>
+          <TabsTrigger value="storage" className="flex-1 shrink-0 sm:flex-none gap-1.5"><Refrigerator className="h-4 w-4" />Storage</TabsTrigger>
+          <TabsTrigger value="shopping" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ShoppingCart className="h-4 w-4" />Shopping</TabsTrigger>
+          <TabsTrigger value="catalog" className="flex-1 shrink-0 sm:flex-none gap-1.5"><BookMarked className="h-4 w-4" />Catalog</TabsTrigger>
+          <TabsTrigger value="kitchen" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ChefHat className="h-4 w-4" />Kitchen</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {tab === "inventory" ? (
-        <>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input placeholder="Search inventory..." value={searchInv} onChange={(e) => setSearchInv(e.target.value)} className="pl-9" />
-              {searchInv && <button onClick={() => setSearchInv("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><X className="h-3.5 w-3.5" /></button>}
-            </div>
-            <Select value={catFilter} onValueChange={setCatFilter}>
-              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Category" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={stockFilter} onValueChange={setStockFilter}>
-              <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Stock" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All stock</SelectItem>
-                <SelectItem value="low">Low stock</SelectItem>
-                <SelectItem value="out">Out of stock</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={() => { setEditingGrocery(null); setGroceryDialogOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Plus className="h-4 w-4 mr-1" /> Add item
-            </Button>
-          </div>
-
-          {groupedInventory.length === 0 && !loading ? (
-            <EmptyState icon={Package} title="No inventory items" sub={searchInv || catFilter !== "all" ? "Try adjusting filters." : "Add items you already have at home."}
-              action={<Button onClick={() => { setEditingGrocery(null); setGroceryDialogOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" /> Add item</Button>} />
-          ) : (
-            <div className="space-y-6">
-              {groupedInventory.map(([cat, items]) => (
-                <div key={cat}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <CatIcon category={cat} />
-                    <h3 className="font-semibold text-sm">{cat}</h3>
-                    <span className="text-xs text-slate-400">{items.length}</span>
-                  </div>
-                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                    {items.map((g) => {
-                      const qty = Number(g.quantity);
-                      const low = g.low_threshold > 0 && qty <= Number(g.low_threshold);
-                      const out = qty <= 0;
-                      return (
-                        <Card key={g.id} className={cn("p-4 transition-colors hover:shadow-sm", out ? "border-red-200 dark:border-red-800" : low ? "border-amber-200 dark:border-amber-800" : "")}>
-                          <div className="flex items-start justify-between">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm truncate">{g.name}</p>
-                              <p className="text-xs text-slate-500">{g.store || "No store"}</p>
-                            </div>
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingGrocery(g); setGroceryDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => setDeleteItemId(g.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex items-end justify-between">
-                            <div>
-                              <p className={cn("text-2xl font-bold", out ? "text-red-600" : low ? "text-amber-600" : "text-slate-900 dark:text-slate-100")}>{quantityText(g.quantity, g.unit)}</p>
-                              {g.low_threshold > 0 && <p className="text-xs text-slate-400">Low at {quantityText(g.low_threshold, g.unit)}</p>}
-                            </div>
-                            <div className="text-right">
-                              {g.price ? <p className="text-sm font-medium">{eur(g.price)}</p> : <p className="text-xs text-slate-400">No price</p>}
-                              {g.is_favorite && <p className="text-[10px] text-emerald-600 font-medium">Favorite</p>}
-                            </div>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+      {!ready ? (
+        <TabSkeleton />
+      ) : tab === "overview" ? (
+        <OverviewTab lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
+          onOpenSpace={(id) => { if (id) { setSelectedSpaceId(id); setTab("storage"); } }}
+          onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
+      ) : tab === "catalog" ? (
+        <CatalogTab products={products} inventory={inventory} listItems={listItems} selectedListName={currentList?.name}
+          onAddToInventory={(p) => { setEditingGrocery(null); setDefaultLocation(""); setPrefill({ name: p.name, unit: p.default_unit || "unit", category: CATS.includes(p.category) ? p.category : "Other", quantity: p.typical_quantity ?? "", is_favorite: !!p.is_favorite }); setGroceryDialogOpen(true); }}
+          onAddToList={(p) => addSuggestion({ name: p.name, default_quantity: p.typical_quantity || 1, unit: p.default_unit, category: p.category })} />
+      ) : tab === "kitchen" ? (
+        <KitchenTab suggestions={recipeIdeas} appliances={appliances} lists={shopping?.lists || []} selectedListId={selectedListId} />
+      ) : tab === "storage" ? (
+        <StorageTab locations={locations} inventory={inventory}
+          selectedId={selectedSpaceId} setSelectedId={setSelectedSpaceId} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen}
+          onAddItem={(loc) => { setEditingGrocery(null); setPrefill(null); setDefaultLocation(loc || ""); setGroceryDialogOpen(true); }}
+          onEditItem={(g) => { setEditingGrocery(g); setPrefill(null); setGroceryDialogOpen(true); }} />
       ) : (
         <>
           <div className="flex flex-col lg:flex-row gap-5">
@@ -776,28 +693,7 @@ export default function Groceries() {
                     <Label>List budget</Label>
                     <Button variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-600" onClick={() => setDeleteListId(currentList.id)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
-                  <Input
-                    type="number" min={0} step="0.01" placeholder="No budget"
-                    value={shopping?.budget_summary?.budget ?? ""}
-                    onChange={(e) => updateBudget(e.target.value)}
-                  />
-                  {shopping?.budget_summary?.budget != null && (
-                    <>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Estimated</span>
-                        <span className={cn("font-medium", (shopping.budget_summary.remaining || 0) < 0 ? "text-red-500" : "text-slate-700 dark:text-slate-200")}>{eur(shopping.budget_summary.estimated_total)}</span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div className={cn("h-full rounded-full transition-all", (shopping.budget_summary.remaining || 0) < 0 ? "bg-red-500" : shopping.budget_summary.estimated_total / shopping.budget_summary.budget >= 0.8 ? "bg-amber-500" : "bg-emerald-500")}
-                          style={{ width: `${Math.min(100, Math.round((shopping.budget_summary.estimated_total / shopping.budget_summary.budget) * 100))}%` }} />
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        {(shopping.budget_summary.remaining || 0) < 0
-                          ? `${eur(Math.abs(shopping.budget_summary.remaining))} over budget`
-                          : `${eur(shopping.budget_summary.remaining)} remaining`}
-                      </p>
-                    </>
-                  )}
+                  <BudgetField summary={shopping?.budget_summary} listId={selectedListId} onCommit={updateBudget} />
                 </Card>
               )}
 
@@ -811,7 +707,7 @@ export default function Groceries() {
                     <div key={rl.id} className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
                       <span className="text-sm truncate">{rl.name}</span>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Spawn now" onClick={() => spawnRecurring(rl.id)}><RotateCcw className="h-3.5 w-3.5" /></Button>
+                        <Hint label="Spawn now"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Spawn now" onClick={() => spawnRecurring(rl.id)}><RotateCcw className="h-3.5 w-3.5" /></Button></Hint>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingRecurring(rl); setRecurringOpen(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => setDeleteRecurringId(rl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
@@ -852,7 +748,7 @@ export default function Groceries() {
               {filteredShopItems.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-3">
-                    <input id="select-all" type="checkbox" checked={allSelected} onChange={() => allSelected ? deselectAll() : selectAll()} className="h-4 w-4" />
+                    <Checkbox id="select-all" checked={allSelected} onCheckedChange={() => allSelected ? deselectAll() : selectAll()} />
                     <Label htmlFor="select-all">{allSelected ? "Deselect all" : "Select all"}</Label>
                     <span className="text-xs text-slate-400">{selectedCount} selected</span>
                   </div>
@@ -886,7 +782,7 @@ export default function Groceries() {
                     return (
                       <div key={it.id} className={cn("group flex items-center gap-3 p-3 rounded-xl border transition-all",
                         selected ? "bg-emerald-50/60 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" : "bg-card border-border hover:border-slate-300 dark:hover:border-slate-600")}>
-                        <input type="checkbox" checked={selected} onChange={() => toggleSelect(it.id)} className="h-4 w-4 shrink-0 accent-emerald-600" />
+                        <Checkbox checked={selected} onCheckedChange={() => toggleSelect(it.id)} aria-label={`Select ${it.name}`} className="shrink-0" />
                         <CatIcon category={it.category || "Other"} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -904,7 +800,7 @@ export default function Groceries() {
                           {it.estimated_price && <p className="text-xs text-slate-400">{eur(it.estimated_price)} / {it.unit || "unit"}</p>}
                         </div>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button>
+                          <Hint label="Price history"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button></Hint>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
                         </div>
@@ -946,7 +842,7 @@ export default function Groceries() {
         </>
       )}
 
-      <GroceryDialog item={editingGrocery} open={groceryDialogOpen} setOpen={setGroceryDialogOpen} onSave={saveGrocery} />
+      <GroceryDialog item={editingGrocery} prefill={prefill} locations={locations} defaultLocation={defaultLocation} open={groceryDialogOpen} setOpen={setGroceryDialogOpen} onSave={saveGrocery} />
       <ShoppingItemDialog item={editingItem} listId={selectedListId} open={itemDialogOpen} setOpen={setItemDialogOpen} onSave={saveShoppingItem} />
       <ListDialog open={listDialogOpen} setOpen={setListDialogOpen} onSave={createList} />
       <SubmitReviewDialog open={submitOpen} setOpen={setSubmitOpen} items={selectedForSubmit} onSubmit={submitPurchase} />
@@ -958,7 +854,7 @@ export default function Groceries() {
         onOpenChange={(v) => !v && setDeleteItemId(null)}
         title="Delete item?"
         description="This will permanently remove the item."
-        onConfirm={() => deleteItemId && (tab === "inventory" ? deleteGrocery(deleteItemId) : deleteShoppingItem(deleteItemId))}
+        onConfirm={() => deleteItemId && deleteShoppingItem(deleteItemId)}
         confirmText="Delete"
         variant="danger"
       />

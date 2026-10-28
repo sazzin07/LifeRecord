@@ -192,10 +192,13 @@ class Product(Base):
     name = Column(String(255), nullable=False)
     name_lower = Column(String(255), nullable=False, index=True)
     category = Column(String(255), nullable=True)
+    subcategory = Column(String(100), nullable=True)
     default_unit = Column(String(50), nullable=False, default="unit")
     typical_quantity = Column(DECIMAL(12, 2), nullable=True)
     synonyms = Column(JSON, nullable=True)
     nutrition = Column(JSON, nullable=True)
+    tags = Column(JSON, nullable=True)  # dietary: vegan, vegetarian, gluten-free, lactose-free
+    icon = Column(String(16), nullable=True)  # an emoji
     is_favorite = Column(Boolean, nullable=False, default=False)
     created_at = Column(String(32), nullable=False)
 
@@ -330,8 +333,92 @@ class AIMessage(Base):
     session_id = Column(String(36), nullable=False, index=True)
     role = Column(String(50), nullable=False)
     text = Column(Text, nullable=False)
+    meta = Column(JSON, nullable=True)  # what the assistant did on that turn (tool chips), so reopening shows it
     created_at = Column(String(32), nullable=False)
 
     __table_args__ = (
         Index("ix_ai_messages_session_created", "session_id", "created_at"),
+    )
+
+
+class AIConversation(Base):
+    """A saved chat. Its id is the session id its AIMessage rows use."""
+    __tablename__ = "ai_conversations"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False, default="New chat")
+    title_source = Column(String(16), nullable=False, default="default")  # default | auto | user
+    archived = Column(Boolean, nullable=False, default=False)
+    preview = Column(String(300), nullable=False, default="")
+    message_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=False)
+
+    __table_args__ = (
+        Index("ix_ai_conversations_user_updated", "user_id", "updated_at"),
+    )
+
+
+class ScheduledTask(Base):
+    """A saved analysis that runs on a schedule and can email its report."""
+    __tablename__ = "scheduled_tasks"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    instruction = Column(Text, nullable=False)
+    schedule = Column(JSON, nullable=False)          # {"kind": "daily|weekly|monthly|interval|once", "time": "09:00", ...}
+    timezone = Column(String(64), nullable=False)
+    data_sources = Column(JSON, nullable=True)       # areas the run may read, e.g. ["money", "tasks"]
+    recipients = Column(JSON, nullable=True)         # verified addresses the report is emailed to
+    status = Column(String(16), nullable=False, default="draft")  # draft | active | paused | completed
+    next_run_at = Column(String(32), nullable=True, index=True)   # UTC ISO
+    last_run_at = Column(String(32), nullable=True)
+    last_status = Column(String(16), nullable=True)
+    confirmed_at = Column(String(32), nullable=True)
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=False)
+
+
+class ScheduledTaskRun(Base):
+    __tablename__ = "scheduled_task_runs"
+    id = Column(String(36), primary_key=True)
+    task_id = Column(String(36), ForeignKey("scheduled_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_key = Column(String(80), nullable=False)     # unique per task: "sched:<utc time>" or "manual:<id>"; blocks duplicates
+    trigger = Column(String(16), nullable=False)     # schedule | manual | retry | preview
+    scheduled_for = Column(String(32), nullable=False)
+    status = Column(String(16), nullable=False, default="queued")  # queued | running | succeeded | failed | missed
+    started_at = Column(String(32), nullable=True)
+    finished_at = Column(String(32), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    output = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    tools_used = Column(JSON, nullable=True)
+    data_errors = Column(JSON, nullable=True)
+    delivery_status = Column(String(16), nullable=False, default="none")  # none | pending | sending | sent | failed | not_configured
+    delivery_detail = Column(String(500), nullable=True)
+    deliveries = Column(JSON, nullable=True)         # per recipient: [{"email", "status", "detail"}]
+    delivered_at = Column(String(32), nullable=True)
+    created_at = Column(String(32), nullable=False)
+
+    __table_args__ = (
+        Index("uq_task_run_key", "task_id", "run_key", unique=True),
+    )
+
+
+class ReportRecipient(Base):
+    """An extra address a user may email reports to; usable only after the owner of the address enters its code."""
+    __tablename__ = "report_recipients"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    verified = Column(Boolean, nullable=False, default=False)
+    code_hash = Column(String(128), nullable=True)
+    code_expires_at = Column(String(32), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    last_sent_at = Column(String(32), nullable=True)
+    created_at = Column(String(32), nullable=False)
+
+    __table_args__ = (
+        Index("uq_report_recipient", "user_id", "email", unique=True),
     )

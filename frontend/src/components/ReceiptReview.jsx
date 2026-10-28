@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { swr } from "@/lib/query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { api, eur } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Plus, Trash2, ScanLine } from "lucide-react";
 import { toast } from "sonner";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const CATS = ["Groceries", "Eating Out", "Transport", "Shopping", "Entertainment", "Health", "Bills", "Other"];
 
@@ -14,9 +16,20 @@ export function ReceiptReview({ data, open, setOpen }) {
   const [merchant, setMerchant] = useState("");
   const [date, setDate] = useState("");
   const [category, setCategory] = useState("Groceries");
-  const [account, setAccount] = useState("card");
+  const [account, setAccount] = useState("");
+  const [accounts, setAccounts] = useState([]);
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    swr("/accounts", (d) => {
+      const r = { data: d };
+      const list = r.data.filter((a) => a.type !== "owed" && a.type !== "owed_person");
+      setAccounts(list);
+      setAccount((cur) => cur || (list.find((a) => a.type === "revolut") || list[0])?.id || "");
+    });
+  }, [open]);
 
   useEffect(() => {
     if (!data) return;
@@ -32,7 +45,7 @@ export function ReceiptReview({ data, open, setOpen }) {
     try {
       await api.post("/transactions/expense", {
         amount: total || data?.total || 0, merchant, description: merchant, category,
-        account: account === "cash" ? "cash" : "revolut", date,
+        account: account || "revolut", date,
         participants: ["Me"], split_mode: "items",
         items: items.filter((i) => i.name).map((i) => ({ name: i.name, price: parseFloat(i.price) || 0, assigned: ["Me"] })),
         add_to_inventory: category === "Groceries",
@@ -53,7 +66,7 @@ export function ReceiptReview({ data, open, setOpen }) {
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder="Merchant" value={merchant} onChange={(e) => setMerchant(e.target.value)} data-testid="receipt-merchant" />
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="receipt-date" />
+            <DatePicker value={date} onChange={setDate} clearable={false} data-testid="receipt-date" aria-label="Receipt date" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Select value={category} onValueChange={setCategory}>
@@ -62,7 +75,7 @@ export function ReceiptReview({ data, open, setOpen }) {
             </Select>
             <Select value={account} onValueChange={setAccount}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="card">Card (Revolut)</SelectItem></SelectContent>
+              <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="rounded-xl border border-border p-3 space-y-2">

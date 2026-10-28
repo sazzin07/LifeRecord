@@ -3,8 +3,11 @@ import logging
 import html
 from typing import Optional
 
+from dataclasses import dataclass
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+import httpx
 
 logger = logging.getLogger("liferecord")
 
@@ -62,10 +65,105 @@ async def _fallback_log(to_email: str, subject: str, text_body: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# SendGrid (HTTPS API; no extra package needed)
+# ---------------------------------------------------------------------------
+def sendgrid_key() -> str:
+    return os.environ.get("SENDGRID_API_KEY", "").strip()
+
+
+def sendgrid_from() -> str:
+    return os.environ.get("SENDGRID_FROM_EMAIL", "").strip() or SMTP_FROM_EMAIL
+
+
+def sendgrid_host() -> str:
+    return "https://api.eu.sendgrid.com" if os.environ.get("SENDGRID_EU", "").lower() in ("1", "true", "yes") else "https://api.sendgrid.com"
+
+
+@dataclass
+class Delivery:
+    """Outcome of one send. `status` is sent, failed or not_configured; `detail` is safe to show to the user."""
+    status: str
+    detail: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "sent"
+
+
+def smtp_configured() -> bool:
+    return bool(SMTP_HOST and (SMTP_USERNAME or SMTP_FROM_EMAIL))
+
+
+def provider_name() -> Optional[str]:
+    """The provider real emails would go through, or None when nothing is configured."""
+    if sendgrid_key() and sendgrid_from():
+        return "sendgrid"
+    return "smtp" if smtp_configured() else None
+
+
+def configuration_problem() -> Optional[str]:
+    if provider_name():
+        return None
+    if sendgrid_key():
+        return "Email is not fully set up: SENDGRID_FROM_EMAIL must be a sender address verified in SendGrid."
+    return "Email is not set up. Add SENDGRID_API_KEY and SENDGRID_FROM_EMAIL to the server settings."
+
+
+async def _send_sendgrid(to_email: str, subject: str, html_body: str, text_body: str,
+                         custom_args: Optional[dict] = None) -> Delivery:
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from": {"email": sendgrid_from(), "name": SMTP_FROM_NAME or "Life Record"},
+        "subject": subject,
+        "content": [{"type": "text/plain", "value": text_body}, {"type": "text/html", "value": html_body}],
+    }
+    if custom_args:
+        payload["custom_args"] = {k: str(v) for k, v in custom_args.items()}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20, connect=10)) as client:
+            resp = await client.post(f"{sendgrid_host()}/v3/mail/send", json=payload,
+                                     headers={"Authorization": f"Bearer {sendgrid_key()}", "Content-Type": "application/json"})
+    except httpx.TimeoutException:
+        return Delivery("failed", "The email service took too long to answer.")
+    except httpx.HTTPError as exc:
+        logger.warning("SendGrid transport problem: %s", type(exc).__name__)
+        return Delivery("failed", "Could not reach the email service.")
+    if resp.status_code in (200, 201, 202):
+        return Delivery("sent", "Accepted by SendGrid")
+    try:
+        message = (resp.json().get("errors") or [{}])[0].get("message", "")
+    except ValueError:
+        message = ""
+    if sendgrid_key():
+        message = message.replace(sendgrid_key(), "[redacted]")
+    logger.warning("SendGrid rejected a message: status=%s", resp.status_code)
+    if resp.status_code == 401:
+        return Delivery("failed", "SendGrid rejected the API key.")
+    if resp.status_code == 403:
+        return Delivery("failed", "SendGrid refused the message: the sender address is not verified, or the key lacks Mail Send permission.")
+    if resp.status_code == 429:
+        return Delivery("failed", "SendGrid rate limit reached. Try again later.")
+    if resp.status_code >= 500:
+        return Delivery("failed", "SendGrid is temporarily unavailable.")
+    return Delivery("failed", f"SendGrid rejected the message: {message[:160]}" if message else "SendGrid rejected the message.")
+
+
+async def deliver(to_email: str, subject: str, html_body: str, text_body: str, custom_args: Optional[dict] = None) -> Delivery:
+    """Send one email and report what really happened. Unlike `send_email` it never treats a log line as a success."""
+    provider = provider_name()
+    if provider == "sendgrid":
+        return await _send_sendgrid(to_email, subject, html_body, text_body, custom_args)
+    if provider == "smtp":
+        ok = await _send_smtp(to_email, subject, html_body, text_body)
+        return Delivery("sent", "Sent by SMTP") if ok else Delivery("failed", "The mail server did not accept the message.")
+    return Delivery("not_configured", configuration_problem() or "Email is not set up.")
+
+
 async def send_email(to_email: str, subject: str, html_body: str, text_body: str) -> bool:
-    """Public send helper. Uses SMTP if configured, otherwise logs for development."""
-    if SMTP_HOST and (SMTP_USERNAME or SMTP_FROM_EMAIL):
-        return await _send_smtp(to_email, subject, html_body, text_body)
+    """Send helper for account emails. Uses the configured provider; with none, logs for development."""
+    if provider_name():
+        return (await deliver(to_email, subject, html_body, text_body)).ok
     return await _fallback_log(to_email, subject, text_body)
 
 

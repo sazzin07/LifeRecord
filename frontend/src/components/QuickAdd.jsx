@@ -4,10 +4,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
+import { swr } from "@/lib/query";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Receipt, Utensils, ShoppingCart, Dumbbell, Scale, CheckSquare, HandCoins, UserPlus, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const OPTIONS = [
   { key: "expense", label: "Expense", icon: Receipt },
@@ -25,8 +27,15 @@ export function QuickAdd({ open, setOpen }) {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [form, setForm] = useState({});
   const [people, setPeople] = useState([]);
+  const [accounts, setAccounts] = useState([]);
 
-  useEffect(() => { if (open) { setMode(null); setForm({}); api.get("/people").then((r) => setPeople(r.data)); } }, [open]);
+  useEffect(() => {
+    if (open) {
+      setMode(null); setForm({});
+      swr("/people", (d) => setPeople(d));
+      swr("/accounts", (d) => setAccounts(d.filter((a) => a.type !== "owed" && a.type !== "owed_person")));
+    }
+  }, [open]);
 
   const choose = (key) => {
     if (key === "expense") { setOpen(false); setExpenseOpen(true); return; }
@@ -40,7 +49,7 @@ export function QuickAdd({ open, setOpen }) {
       if (mode === "grocery") await api.post("/groceries", { name: form.name, quantity: num(form.quantity) || 1, unit: form.unit || "unit", category: form.category || "Other", price: num(form.price), store: form.store });
       if (mode === "weight") await api.post("/weight", { weight: num(form.weight), note: form.note || "" });
       if (mode === "task") await api.post("/tasks", { title: form.title, priority: form.priority || "normal", due: form.due || null });
-      if (mode === "payment") await api.post("/settlements", { person: form.person, amount: num(form.amount), method: form.method || "Revolut", account: form.account || "revolut", direction: "in" });
+      if (mode === "payment") await api.post("/settlements", { person: form.person, amount: num(form.amount), method: form.method || "Revolut", account: "revolut", account_id: form.account || undefined, direction: "in" });
       if (mode === "person") await api.post("/people", { name: form.name });
       toast.success("Saved");
       refreshAll();
@@ -104,7 +113,7 @@ export function QuickAdd({ open, setOpen }) {
                   <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
                   <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectContent>
                 </Select>
-                <Input type="date" onChange={set("due")} />
+                <DatePicker value={form.due || ""} onChange={(v) => set("due")({ target: { value: v } })} aria-label="Due date" placeholder="Due date" presets={[{ label: "Today", days: 0 }, { label: "Tomorrow", days: 1 }, { label: "Next week", days: 7 }]} />
               </div>
             </div>
           )}
@@ -122,7 +131,7 @@ export function QuickAdd({ open, setOpen }) {
                 </Select>
                 <Select onValueChange={(v) => setForm((f) => ({ ...f, account: v }))}>
                   <SelectTrigger><SelectValue placeholder="Into" /></SelectTrigger>
-                  <SelectContent><SelectItem value="revolut">Revolut</SelectItem><SelectItem value="cash">Cash</SelectItem></SelectContent>
+                  <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>

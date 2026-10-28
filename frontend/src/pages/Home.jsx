@@ -85,7 +85,7 @@ export default function Home() {
     return out.slice(0, 4);
   }, [sum, people, nutri, weight]);
 
-  if (loading) return (
+  if (loading || !tasks || !people || !weight || !meals || !groceries || !transactions) return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}</div>
   );
 
@@ -99,7 +99,7 @@ export default function Home() {
           <p className="text-slate-300 text-sm">Total available</p>
           <div className="stat-num text-4xl md:text-5xl font-extrabold tracking-tight mt-1">{eur(sum?.total_available)}</div>
           <div className="flex flex-wrap gap-6 mt-5">
-            <div><Label><span className="text-slate-400">Cash</span></Label><div className="stat-num font-bold text-lg">{eur(sum?.cash)}</div></div>
+            <div><Label><span className="text-slate-400">Cash</span></Label><div className="stat-num font-bold text-lg">{eur(sum?.cash_available)}</div></div>
             <div><Label><span className="text-slate-400">Revolut</span></Label><div className="stat-num font-bold text-lg">{eur(sum?.revolut)}</div></div>
             <div><Label><span className="text-slate-400">Owed to you</span></Label><div className="stat-num font-bold text-lg text-emerald-400">{eur(sum?.owed_to_me)}</div></div>
           </div>

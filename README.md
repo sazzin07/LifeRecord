@@ -130,6 +130,11 @@ Required backend environment variables:
 | `JWT_SECRET` | Secret for signing JWTs |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime (default `30`) |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | Refresh-token lifetime (default `7`) |
+| `AI_PROVIDER` | Chat provider: `opencode` (default) or `gemini` |
+| `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` / `SENDGRID_EU` | Email for scheduled reports and recipient codes (sender must be verified in SendGrid; `SENDGRID_EU=true` for EU residency) |
+| `SCHEDULER_ENABLED` / `SCHEDULER_TICK_SECONDS` / `SCHEDULED_RUN_TIMEOUT_SECONDS` | Scheduler on/off (default on), poll interval (30) and per-run timeout (120) |
+| `OPENCODE_API_KEY` | OpenCode API key for chat (server-side only) |
+| `OPENCODE_MODEL` | Chat model (default `gpt-6-luna`); `OPENCODE_BASE_URL` defaults to the Go endpoint, `OPENCODE_TIMEOUT_SECONDS` to 60 |
 | `GEMINI_MODEL` | Primary Gemini model (default `gemini-3.5-flash-lite`) |
 | `GEMINI_MODEL_FALLBACKS` | Comma-separated fallback models on quota errors |
 | `GEMINI_FALLBACK_DELAY_SECONDS` | Delay between fallback attempts (default `0.5`) |
@@ -145,7 +150,7 @@ Required backend environment variables:
 | `FRONTEND_URL` | Frontend URL used in password-reset links |
 | `RATE_LIMIT_AUTH_WINDOW_SECONDS` | Auth rate-limit window (default `60`) |
 | `RATE_LIMIT_AUTH_MAX_ATTEMPTS` | Auth rate-limit max attempts per window (default `10`) |
-| `GEMINI_API_KEY` | Google Gemini API key (optional; AI features return 503/504 without it) |
+| `GEMINI_API_KEY` | Google Gemini API key (voice transcription and receipt scanning; chat only if `AI_PROVIDER=gemini`) |
 | `GEMINI_TIMEOUT_SECONDS` | AI request timeout (default `25`) |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins (default `http://localhost:3000`) |
 | `ALLOWED_HOSTS` | Comma-separated allowed `Host` headers (optional; set in production) |
@@ -317,7 +322,9 @@ yarn build
 - Inventory organized by storage locations: Fridge, Pantry, Freezer, and custom locations.
 - Move, consume, discard, and expiry tracking for inventory items.
 - Recurring shopping list templates and frequently bought suggestions.
-- AI can manage lists, inventory, storage locations, and suggest recipes from available ingredients.
+- Interactive kitchen: storage spaces are doors on a kitchen wall; tap one to zoom in, see what is inside, use/add/move items, and switch spaces from a speed-dial rail. "More details" opens the full list with search, filters and bulk actions.
+- AI can manage lists, inventory, storage locations (add, rename, move items, consume, discard with confirmation) and expiry dates, give a whole-kitchen overview, and suggest recipes from available ingredients.
+- Realistic demo data: `cd backend && .venv\Scripts\python.exe seed_groceries.py --reset` (expiry dates are relative to today).
 
 ### Nutrition
 - Meal logging with macro tracking.
@@ -339,6 +346,30 @@ The AI assistant is accessed through the floating sparkle button in the app. It 
 AI-recorded financial transactions (expenses, income, transfers, person payments) use the same validated backend endpoints as manual entry, are saved to the database, and appear immediately in the Transactions table and Home dashboard.
 
 All AI requests are made server-side. The Gemini API key must be set in `backend/.env` as `GEMINI_API_KEY`. The key is never sent to the browser. AI requests time out after `GEMINI_TIMEOUT_SECONDS` to prevent the UI from hanging when Gemini is overloaded.
+
+### Assistant
+
+- **Streaming:** `POST /api/ai/chat/stream` (server-sent events: `session`, `delta`, `tool`, `done`, `error`). `POST /api/ai/chat` still returns the whole reply and is used as a fallback by the UI. `GET /api/ai/history?session_id=` restores a conversation when the panel opens.
+- **Coverage:** about 70 tools across Home (`get_overview`), Money (transactions, accounts, spaces, income, transfers, categories and budgets), People, Tasks and Calendar (a task's due date is its calendar entry), Groceries and Kitchen, Nutrition (meals, recipes), Fitness and Body. Tools call the same functions as the REST endpoints, so validation, ownership and balance logic are shared. Deleting anything needs a preview and a confirmation on a later message.
+- **Context:** each turn includes the current page and short notes on what the assistant changed earlier in the conversation, so "that expense" or "the rest" can be resolved.
+- **Formatting:** the prompt asks for amounts as `€14.00`; the UI also tidies `**2.00€**`-style output and sets amounts in the mono face.
+- **Voice and receipt scanning** still use Gemini (`/ai/transcribe`, `/ai/receipt`).
+- **Provider:** chat runs on OpenCode Go with `gpt-6-luna` (`AI_PROVIDER=opencode`, the default); set `AI_PROVIDER=gemini` to chat with Gemini instead. Nothing switches automatically: if the chosen provider is not configured the assistant says so. OpenCode Go is a subscription with its own endpoint (`https://opencode.ai/inference/go/openai/v1/responses`); the pay-as-you-go Console endpoint uses prepaid credits and answers 402 "Insufficient account funds" when that balance is empty, even with an active Go plan. Go requires a stable `x-opencode-session` header (the conversation id) and a client user agent; both are sent. Go's docs say it is designed for coding agents and that traffic is monitored, so check your plan's terms for use in a general app.
+
+### Saved chats
+
+Every assistant conversation is saved on the server as soon as a reply finishes (`ai_conversations` + `ai_messages`, with the change chips kept so a reopened chat looks the same). The assistant menu lists chats grouped by recency with search (titles and message text), sort, archive/restore, rename and delete (with confirmation). New chats are named after their first exchange by the model, falling back to the first words; a name you choose is never overwritten. API: `GET/PATCH/DELETE /api/ai/conversations[/{id}]`, `POST /api/ai/conversations/{id}/title`. Everything is scoped to the signed-in user, and a session id belonging to another user is never reused. Images attached to a message are validated by their content (JPEG, PNG, WebP or GIF, up to about 6 MB), stored under `STORAGE_DIR/chat_images/<user>/<chat>/`, shown again when the chat is reopened, served only to their owner (`GET /api/ai/conversations/{id}/images/{message_id}`), kept when a chat is archived and deleted together with the chat.
+
+### Scheduled tasks
+
+Describe a report in plain language (“every Monday at 9:00, review last week's spending and email me the key changes”), review the schedule, preview the real report, and confirm. Tasks live in the assistant menu under **Scheduled tasks**.
+
+- **Scheduler:** a database-backed loop in the API process (`SCHEDULER_TICK_SECONDS`, default 30). Schedules (once, daily, weekly, monthly, every N hours/days; at most hourly) are evaluated in the task's own timezone, so 09:00 stays 09:00 across daylight-saving changes. A due task is claimed with a compare-and-set plus a unique `(task, occurrence)` key, so restarts and parallel schedulers cannot run it twice. A run missed by under 24 h is caught up once; older ones are recorded as missed; runs interrupted by a restart are marked failed and can be retried. Run on one API process; extra processes are safe but add nothing.
+- **Runs are read-only:** a report may only call the lookup tools for the data areas you pick, as you, and has no tool to change data or send mail. Data returned by tools is treated as untrusted text. If every lookup fails the run fails instead of inventing a report; partial failures are stated in the report.
+- **Email (SendGrid):** `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` (a sender verified in SendGrid) are required; without them tasks still run and results stay in the run history, and the UI says email is not set up. A run is only marked *Emailed* when SendGrid accepted the message; failures show the reason and can be retried (only the recipients that did not receive it are retried). Recipients must be your verified account address or another address that confirmed a 6-digit code emailed to it.
+- **Safety:** drafts never run; activation needs an explicit confirmation that lists the recipients, and changing the instruction, data areas or recipients of a live task makes it a draft again. Limits: 20 tasks per user, 10 manual runs/previews per hour, 30 scheduled runs per day, 120 s per run.
+- **API:** `/api/scheduled/{options,schedule-preview,draft,recipients,tasks,runs}`.
+
 
 The default model is `gemini-3.5-flash-lite` because it has the highest free-tier quota. If the primary model returns a quota, rate-limit, or capacity error, the backend automatically tries the models listed in `GEMINI_MODEL_FALLBACKS` in order.
 

@@ -4,6 +4,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import os
+import sys
 import uuid
 import json
 import logging
@@ -29,6 +30,14 @@ from models import (
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIMessage,
 )
+import kitchen_logic
+import ai_tools_extra
+import ai_opencode
+import conversations_api
+import chat_images
+import scheduling
+import scheduling_api
+from starlette.responses import StreamingResponse
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     create_password_reset_token, decode_token, generate_six_digit_code,
@@ -39,6 +48,7 @@ from email_service import send_verification_code, send_password_reset
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
+_background_tasks: set = set()  # keeps fire-and-forget tasks alive until they finish
 # Session-scoped pending confirmations for destructive tool calls.
 # Maps session_id -> {tool, target_id, match, expires_at}.
 _pending_confirmations: Dict[str, Dict[str, Any]] = {}
@@ -403,20 +413,26 @@ class TxnUpdate(BaseModel):
 class ProductBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     category: Optional[str] = Field(default=None, max_length=255)
+    subcategory: Optional[str] = Field(default=None, max_length=100)
     default_unit: str = Field(default="unit", max_length=50)
     typical_quantity: Optional[float] = Field(default=None, ge=0)
     synonyms: List[str] = Field(default=[])
     nutrition: Optional[Dict[str, Any]] = Field(default=None)
+    tags: List[str] = Field(default=[])
+    icon: Optional[str] = Field(default=None, max_length=16)
     is_favorite: bool = Field(default=False)
 
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, max_length=255)
     category: Optional[str] = Field(default=None, max_length=255)
+    subcategory: Optional[str] = Field(default=None, max_length=100)
     default_unit: Optional[str] = Field(default=None, max_length=50)
     typical_quantity: Optional[float] = Field(default=None, ge=0)
     synonyms: Optional[List[str]] = Field(default=None)
     nutrition: Optional[Dict[str, Any]] = Field(default=None)
+    tags: Optional[List[str]] = Field(default=None)
+    icon: Optional[str] = Field(default=None, max_length=16)
     is_favorite: Optional[bool] = Field(default=None)
 
 
@@ -478,6 +494,9 @@ class AccountUpdate(BaseModel):
     parent_id: Optional[str] = Field(default=None, max_length=36)
     currency: Optional[str] = Field(default=None, max_length=10)
     opening_balance: Optional[float] = Field(default=None, ge=0)
+    # Desired current balance. The server derives the opening balance so that
+    # opening + transactions == balance, which is what "set my balance to X" means.
+    balance: Optional[float] = Field(default=None, ge=0)
     initial_balance: Optional[float] = Field(default=None, ge=0)
     is_locked: Optional[bool] = Field(default=None)
     sort_order: Optional[int] = Field(default=None)
@@ -603,6 +622,7 @@ class AIChatBody(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=36)
     image_base64: Optional[str] = Field(default=None, max_length=8_000_000)  # ~6 MB base64
     confirm_token: Optional[str] = Field(default=None, max_length=256)
+    page: Optional[str] = Field(default=None, max_length=40)  # which page the user is on, for context
 
 
 class WorkoutSet(BaseModel):
@@ -648,18 +668,42 @@ async def resolve_person(db: AsyncSession, name: str, user_id: str) -> dict:
     return {"id": p.id, "name": p.name}
 
 
+async def default_cash_account(db: AsyncSession, user_id: str) -> Optional[Account]:
+    """Where a generic 'cash' payment comes from: the unlocked cash place holding the most money,
+    or the Money in hand account itself when it has no places."""
+    parent = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.type == "cash", Account.is_active == True)
+    )).scalars().first()
+    places = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.type == "cash_place",
+                              Account.is_active == True, Account.is_locked == False)
+        .order_by(Account.sort_order, Account.name)
+    )).scalars().all()
+    if not places:
+        return parent
+    balances = [(await compute_account_balance(db, p.id, user_id), p) for p in places]
+    return max(balances, key=lambda b: b[0])[1]
+
+
+async def normalize_account_ref(db: AsyncSession, ref: Optional[str], user_id: str) -> Optional[str]:
+    """Turn any account reference (id, name, legacy 'cash'/'revolut'/'card') into an account id.
+    Unresolvable references are returned unchanged."""
+    if not ref:
+        return ref
+    acc = await resolve_account(db, ref, user_id)
+    return acc.id if acc else ref
+
+
 async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[Account]:
     """Resolve an account by id, name, or legacy cash/revolut alias."""
     if not ref:
         return None
     ref_lower = ref.strip().lower()
     if ref_lower == "cash":
-        return (await db.execute(
-            select(Account).where(Account.user_id == user_id, Account.type == "cash")
-        )).scalars().first()
+        return await default_cash_account(db, user_id)
     if ref_lower in ("revolut", "card"):
         return (await db.execute(
-            select(Account).where(Account.user_id == user_id, Account.type == "revolut")
+            select(Account).where(Account.user_id == user_id, Account.type == "revolut", Account.is_active == True)
         )).scalars().first()
     # Try by id first.
     acc = (await db.execute(
@@ -667,12 +711,13 @@ async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[
     )).scalar_one_or_none()
     if acc:
         return acc
-    # Try by name (exact or partial).
-    acc = (await db.execute(
-        select(Account).where(Account.user_id == user_id, Account.is_active == True,
-                              Account.name_lower.ilike(f"%{ref_lower}%"))
-    )).scalars().first()
-    return acc
+    # Try by name: an exact match wins over a partial one.
+    accs = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.is_active == True)
+        .order_by(Account.sort_order, Account.name)
+    )).scalars().all()
+    exact = next((a for a in accs if a.name.strip().lower() == ref_lower), None)
+    return exact or next((a for a in accs if ref_lower in a.name.lower()), None)
 
 
 def normalize_name(n: str) -> str:
@@ -728,7 +773,7 @@ async def create_expense_record(db: AsyncSession, body: ExpenseBody, user_id: st
         id=new_id(), user_id=user_id, type="expense", gross_amount=gross, personal_amount=personal,
         reimbursable_amount=reimbursable,
         description=body.description or body.merchant, category=body.category,
-        account=body.account, merchant=body.merchant, date=date, month=month_of(date),
+        account=await normalize_account_ref(db, body.account, user_id), merchant=body.merchant, date=date, month=month_of(date),
         notes=body.notes, paid_by=paid_by, items=items, created_at=now_iso(),
     )
     db.add(txn)
@@ -800,8 +845,10 @@ async def compute_account_balance(db: AsyncSession, account: str, user_id: str) 
         if t.to_account == account:
             bal += float(t.gross_amount)
 
+    # Settlements that created their own income/expense transaction are already counted above.
     result = await db.execute(select(Settlement).where(
-        (Settlement.user_id == user_id) & (Settlement.account == account)
+        (Settlement.user_id == user_id) & (Settlement.account == account) &
+        (Settlement.balance_transaction_id == None)
     ))
     for s in result.scalars():
         bal += float(s.amount) if s.direction == "in" else -float(s.amount)
@@ -1052,18 +1099,25 @@ async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = 
 
 
 async def cook_recipe_doc(db: AsyncSession, recipe: dict, user_id: str) -> dict:
+    """Use up a recipe's ingredients from inventory (unit-aware) and log one serving as a meal."""
+    stock = (await db.execute(select(Grocery).where(Grocery.user_id == user_id))).scalars().all()
+    by_id = {g.id: g for g in stock}
+    inventory = [to_dict(g) for g in stock]
     changes = []
     for ing in recipe.get("ingredients", []):
-        g = (await db.execute(
-            select(Grocery).where(Grocery.name_lower == ing["name"].lower(), Grocery.user_id == user_id)
-        )).scalar_one_or_none()
-        if g:
-            newq = max(0, round(float(g.quantity) - (ing.get("quantity") or 0), 2))
-            g.quantity = newq
-            g.updated_at = now_iso()
-            changes.append(f"{ing['name']} −{ing.get('quantity', 0)}{ing.get('unit', '')} (now {newq})")
-        else:
+        item = kitchen_logic.find_item(ing["name"], inventory)
+        if not item:
             changes.append(f"{ing['name']} (not in inventory)")
+            continue
+        g = by_id[item["id"]]
+        used = kitchen_logic.convert(float(ing.get("quantity") or 0), ing.get("unit"), g.unit)
+        if used is None:
+            changes.append(f"{ing['name']}: units differ ({ing.get('unit')} vs {g.unit}), adjust the stock by hand")
+            continue
+        newq = max(0, round(float(g.quantity) - used, 3))
+        g.quantity = newq
+        g.updated_at = now_iso()
+        changes.append(f"{ing['name']} −{ing.get('quantity', 0)}{ing.get('unit', '')} (now {newq} {g.unit})")
     servings = recipe.get("servings") or 1
     meal = None
     if recipe.get("calories"):
@@ -1394,6 +1448,13 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
     if not person:
         raise HTTPException(404, "Person not found")
 
+    account_names = {a.id: a.name for a in (await db.execute(
+        select(Account).where(Account.user_id == user["_id"])
+    )).scalars()}
+
+    def acct(ref):
+        return account_names.get(ref, ref)
+
     # Build a unified ledger of debts and repayments
     ledger = []
     total_original_debt = 0.0
@@ -1412,9 +1473,9 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
             ledger.append({
                 "id": sp.id, "transaction_id": txn.id, "type": "debt", "date": txn.date,
                 "merchant": txn.merchant or txn.description or txn.category,
-                "description": f"Paid by you · {txn.account}",
+                "description": f"Paid by you · {acct(txn.account)}",
                 "amount": amount, "balance_effect": +amount,
-                "category": txn.category, "payment_method": txn.account,
+                "category": txn.category, "payment_method": acct(txn.account),
                 "gross": float(txn.gross_amount),
             })
         elif txn.paid_by == pid and sp.is_me:
@@ -1422,9 +1483,9 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
             ledger.append({
                 "id": sp.id, "transaction_id": txn.id, "type": "credit", "date": txn.date,
                 "merchant": txn.merchant or txn.description or txn.category,
-                "description": f"Paid by {person['name']} · {txn.account}",
+                "description": f"Paid by {person['name']} · {acct(txn.account)}",
                 "amount": amount, "balance_effect": -amount,
-                "category": txn.category, "payment_method": txn.account,
+                "category": txn.category, "payment_method": acct(txn.account),
                 "gross": float(txn.gross_amount),
             })
 
@@ -1440,17 +1501,17 @@ async def person_detail(pid: str, user: dict = Depends(get_current_user), db: As
             total_repaid += amount
             ledger.append({
                 "id": s.id, "type": "repayment", "date": s.date,
-                "merchant": f"Payment via {s.method}", "description": f"Received into {s.account}",
+                "merchant": f"Payment via {s.method}", "description": f"Received into {acct(s.account)}",
                 "amount": amount, "balance_effect": -amount,
-                "method": s.method, "account": s.account,
+                "method": s.method, "account": acct(s.account),
                 "transaction_id": s.transaction_id,
             })
         else:
             ledger.append({
                 "id": s.id, "type": "payment_out", "date": s.date,
-                "merchant": f"Payment via {s.method}", "description": f"Sent from {s.account}",
+                "merchant": f"Payment via {s.method}", "description": f"Sent from {acct(s.account)}",
                 "amount": amount, "balance_effect": +amount,
-                "method": s.method, "account": s.account,
+                "method": s.method, "account": acct(s.account),
                 "transaction_id": s.transaction_id,
             })
 
@@ -1628,6 +1689,10 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
     if not acc:
         raise HTTPException(404, "Account not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    target_balance = updates.pop("balance", None)
+    if target_balance is not None:
+        current = await compute_account_balance(db, aid, user["_id"])
+        updates["opening_balance"] = round(float(acc.opening_balance) + float(target_balance) - current, 2)
     if "parent_id" in updates:
         if updates["parent_id"] == aid:
             raise HTTPException(400, "Account cannot be its own parent")
@@ -1813,19 +1878,9 @@ async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get
     if body.notes is not None:
         updates["notes"] = body.notes
     if body.payment_method:
-        if body.payment_method == "cash":
-            updates["account"] = "cash"
-        elif body.payment_method == "card":
-            updates["account"] = "revolut"
-        else:
-            updates["account"] = body.payment_method
+        updates["account"] = await normalize_account_ref(db, body.payment_method, user["_id"])
     if body.account:
-        if body.account == "cash":
-            updates["account"] = "cash"
-        elif body.account == "card":
-            updates["account"] = "revolut"
-        else:
-            updates["account"] = body.account
+        updates["account"] = await normalize_account_ref(db, body.account, user["_id"])
     if body.date:
         updates["date"] = body.date
         updates["month"] = month_of(body.date)
@@ -1923,10 +1978,12 @@ async def delete_transaction(tid: str, user: dict = Depends(get_current_user), d
 @api_router.post("/transactions/transfer")
 async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    t = Transaction(id=new_id(), user_id=user["_id"], type="transfer", from_account=body.from_account,
-                    to_account=body.to_account, gross_amount=round(body.amount, 2),
+    from_id = await normalize_account_ref(db, body.from_account, user["_id"])
+    to_id = await normalize_account_ref(db, body.to_account, user["_id"])
+    t = Transaction(id=new_id(), user_id=user["_id"], type="transfer", from_account=from_id,
+                    to_account=to_id, gross_amount=round(body.amount, 2),
                     description=body.notes or "Transfer", date=date, month=month_of(date),
-                    account=body.from_account, created_at=now_iso())
+                    account=from_id, created_at=now_iso())
     db.add(t)
     await db.commit()
     await db.refresh(t)
@@ -1958,20 +2015,15 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
 
     # Resolve account by id, then by name/type fallback for backwards compatibility
     account_id = body.account_id
-    if not account_id:
-        acc = (await db.execute(
-            select(Account).where(
-                Account.user_id == user["_id"],
-                Account.is_active == True,
-            ).where(
-                (Account.name.ilike(body.account)) | (Account.type.ilike(body.account))
-            )
-        )).scalars().first()
+    if account_id:
+        account_id = await normalize_account_ref(db, account_id, user["_id"])
+    else:
+        acc = await resolve_account(db, body.account, user["_id"])
         if acc:
             account_id = acc.id
 
     s = Settlement(id=new_id(), user_id=user["_id"], person_id=person["id"], person_name=person["name"],
-                   amount=round(body.amount, 2), method=body.method, account=body.account,
+                   amount=round(body.amount, 2), method=body.method, account=account_id or body.account,
                    direction=body.direction, date=date, transaction_id=body.transaction_id,
                    created_at=now_iso())
     db.add(s)
@@ -2023,16 +2075,20 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     bank_initial = round(sum(a.get("initial_balance") if a.get("initial_balance") is not None else a["balance"] for a in accounts if a["type"] == "bank"), 2)
     money_left_bank = round(bank_initial - bank_current, 2)
     # Cash places: separate freely available from locked funds.
-    cash_available = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and not a.get("is_locked")), 2)
-    cash_locked = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and a.get("is_locked")), 2)
     cash_parent = round(sum(a["balance"] for a in accounts if a["type"] == "cash"), 2)
-    cash = round(cash_available + cash_locked + cash_parent, 2)
-    revolut = sum_by_types("revolut")
-    in_hand = round(cash_available + cash_locked + revolut, 2)
+    cash_available = round(cash_parent + sum(a["balance"] for a in accounts if a["type"] == "cash_place" and not a.get("is_locked")), 2)
+    cash_locked = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and a.get("is_locked")), 2)
+    cash = round(cash_available + cash_locked, 2)
+    # Revolut spaces mirror cash places: locked ones are kept apart from freely available funds.
+    revolut_parent = sum_by_types("revolut")
+    revolut_spaces_available = round(sum(a["balance"] for a in accounts if a["type"] == "revolut_space" and not a.get("is_locked")), 2)
+    revolut_locked = round(sum(a["balance"] for a in accounts if a["type"] == "revolut_space" and a.get("is_locked")), 2)
+    revolut = round(revolut_parent + revolut_spaces_available, 2)
+    revolut_total = round(revolut + revolut_locked, 2)
+    # Locked money isn't available, so it isn't "in hand".
+    in_hand = round(cash_available + revolut, 2)
     actual_spent = round(money_left_bank - in_hand, 2) if money_left_bank > 0 else None
-    owed = sum_by_types("owed", "owed_person")
     total_available = round(bank + cash_available + revolut, 2)
-    total_with_owed = round(total_available + owed, 2)
 
     filters = [Transaction.user_id == user["_id"]] + _date_filter(month, start, end)
     stmt = select(Transaction).where(Transaction.type == "expense").where(*filters)
@@ -2068,9 +2124,11 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
         refunded += float(s.amount)
 
     people = await people_balances(db, user["_id"])
-    owed_to_me = round(sum(p["owes_me"] for p in people), 2)
-    i_owe = round(sum(p["i_owe"] for p in people), 2)
-    outstanding = round(sum(max(p["net"], 0) for p in people), 2)
+    # Same net-per-person totals the People tab shows.
+    owed_to_me = round(sum(max(p["net"], 0) for p in people), 2)
+    i_owe = round(sum(max(-p["net"], 0) for p in people), 2)
+    outstanding = owed_to_me
+    total_with_owed = round(total_available + owed_to_me, 2)
 
     groceries = (await db.execute(
         select(Grocery).where(Grocery.user_id == user["_id"])
@@ -2198,7 +2256,8 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     return {
         "bank": bank, "cash": cash, "revolut": revolut,
         "cash_available": cash_available, "cash_locked": cash_locked,
-        "total_available": total_available, "owed_to_me": owed,
+        "revolut_locked": revolut_locked, "revolut_total": revolut_total,
+        "total_available": total_available, "owed_to_me": owed_to_me,
         "total_with_owed": total_with_owed,
         "bank_initial": bank_initial, "money_left_bank": money_left_bank,
         "in_hand": in_hand, "actual_spent": actual_spent,
@@ -2435,6 +2494,47 @@ async def serve_photo(path: str, user: dict = Depends(get_current_user), db: Asy
 # ---------------------------------------------------------------------------
 # Groceries
 # ---------------------------------------------------------------------------
+async def resolve_storage_name(db: AsyncSession, user_id: str, value: Optional[str], strict: bool = False) -> Optional[str]:
+    """Canonicalise a storage reference (location name or kind, any case) to the configured location's name.
+
+    Inventory rows reference their location by name, so this keeps UI, REST and AI writes consistent.
+    With strict=True an unknown reference raises a 400 that lists the valid choices.
+    """
+    if not value or not value.strip():
+        return None
+    rows = (await db.execute(select(StorageLocation).where(StorageLocation.user_id == user_id))).scalars().all()
+    v = value.strip().lower()
+    for loc in rows:
+        if loc.name.lower() == v:
+            return loc.name
+    for loc in rows:
+        if (loc.kind or "").lower() == v:
+            return loc.name
+    if strict:
+        raise HTTPException(400, f"Unknown storage location '{value}'. Available: {', '.join(l.name for l in rows) or 'none yet'}")
+    return value.strip()
+
+
+async def find_grocery(db: AsyncSession, user_id: str, grocery_id: Optional[str] = None, name: Optional[str] = None):
+    """Resolve an inventory item by id or (case-insensitive) name. Returns (grocery, error_message)."""
+    if grocery_id:
+        g = (await db.execute(select(Grocery).where(Grocery.id == grocery_id, Grocery.user_id == user_id))).scalar_one_or_none()
+        return (g, None) if g else (None, "Item not found")
+    q = (name or "").strip().lower()
+    if not q:
+        return None, "Provide grocery_id or name"
+    rows = (await db.execute(select(Grocery).where(Grocery.user_id == user_id))).scalars().all()
+    exact = [g for g in rows if g.name_lower == q]
+    if len(exact) == 1:
+        return exact[0], None
+    partial = [g for g in rows if q in g.name_lower]
+    if len(partial) == 1:
+        return partial[0], None
+    if not partial and not exact:
+        return None, f"No inventory item matching '{name}'"
+    return None, f"'{name}' matches several items: " + ", ".join(sorted(g.name for g in (exact or partial)))
+
+
 @api_router.get("/groceries")
 async def get_groceries(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return [to_dict(g) for g in (await db.execute(
@@ -2444,6 +2544,7 @@ async def get_groceries(user: dict = Depends(get_current_user), db: AsyncSession
 
 @api_router.post("/groceries")
 async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    body.storage_location = await resolve_storage_name(db, user["_id"], body.storage_location)
     await record_price(db, body.name, body.store, body.price, body.unit, user_id=user["_id"])
     existing = (await db.execute(
         select(Grocery).where(Grocery.name_lower == body.name.lower(), Grocery.user_id == user["_id"])
@@ -2457,6 +2558,8 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
             existing.store = body.store
         if body.storage_location:
             existing.storage_location = body.storage_location
+        if body.expiration:
+            existing.expiration = body.expiration
         if body.is_favorite:
             existing.is_favorite = True
         if body.default_quantity is not None:
@@ -2469,7 +2572,7 @@ async def add_grocery(body: GroceryBody, user: dict = Depends(get_current_user),
         return to_dict(existing)
     g = Grocery(id=new_id(), user_id=user["_id"], name=body.name, name_lower=body.name.lower(),
                 quantity=body.quantity, unit=body.unit, category=body.category,
-                storage_location=body.storage_location or "pantry",
+                storage_location=body.storage_location or await resolve_storage_name(db, user["_id"], "pantry") or "pantry",
                 price=body.price, store=body.store, low_threshold=body.low_threshold,
                 notes=body.notes or "", expiration=body.expiration,
                 is_favorite=body.is_favorite,
@@ -2493,6 +2596,8 @@ async def update_grocery(gid: str, body: GroceryUpdate, user: dict = Depends(get
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "name" in updates:
         updates["name_lower"] = updates["name"].lower()
+    if updates.get("storage_location"):
+        updates["storage_location"] = await resolve_storage_name(db, user["_id"], updates["storage_location"])
     if updates.get("price") is not None:
         await record_price(db, updates.get("name", g.name), updates.get("store", g.store), updates["price"],
                            updates.get("unit", g.unit or "unit"), user_id=user["_id"])
@@ -2573,7 +2678,7 @@ async def move_grocery(gid: str, body: MoveInventoryBody, user: dict = Depends(g
     )).scalar_one_or_none()
     if not g:
         raise HTTPException(404, "Item not found")
-    g.storage_location = body.storage_location
+    g.storage_location = await resolve_storage_name(db, user["_id"], body.storage_location)
     g.updated_at = now_iso()
     await db.commit()
     await db.refresh(g)
@@ -2648,32 +2753,69 @@ async def search_products(q: str, user: dict = Depends(get_current_user), db: As
     term = (q or "").strip().lower()
     if not term:
         return []
-    rows = (await db.execute(
-        _user_owned_query(Product, user).where(
-            (Product.name_lower.ilike(f"%{term}%")) |
-            (Product.category.ilike(f"%{term}%"))
-        ).order_by(Product.name)
-    )).scalars().all()
-    # Also match synonyms if stored as JSON list.
-    out = []
-    for p in rows:
-        d = to_dict(p)
-        out.append(d)
-    return out
+    rows = (await db.execute(_user_owned_query(Product, user).order_by(Product.name))).scalars().all()
+
+    def matches(p: Product) -> bool:
+        haystack = [p.name_lower, (p.category or "").lower(), (p.subcategory or "").lower()]
+        haystack += [str(s).lower() for s in (p.synonyms or [])] + [str(t).lower() for t in (p.tags or [])]
+        return any(term in h for h in haystack)
+
+    return [to_dict(p) for p in rows if matches(p)]
 
 
 @api_router.post("/products")
 async def create_product(body: ProductBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     p = Product(
         id=new_id(), user_id=user["_id"], name=body.name, name_lower=body.name.lower(),
-        category=body.category, default_unit=body.default_unit,
+        category=body.category, subcategory=body.subcategory, default_unit=body.default_unit,
         typical_quantity=round(body.typical_quantity, 2) if body.typical_quantity is not None else None,
-        synonyms=body.synonyms or [], nutrition=body.nutrition,
+        synonyms=body.synonyms or [], nutrition=body.nutrition, tags=body.tags or [], icon=body.icon,
         is_favorite=body.is_favorite, created_at=now_iso())
     db.add(p)
     await db.commit()
     await db.refresh(p)
     return to_dict(p)
+
+
+@api_router.post("/products/import-library")
+async def import_product_library(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add the built-in starter catalog. Products you already have are kept as they are: only their
+    empty subcategory, icon, tags, nutrition and alternative names are filled in. Safe to run repeatedly."""
+    from catalog_data import LIBRARY
+    valid = {"Meat", "Fish", "Eggs", "Dairy", "Carbohydrates", "Fruit", "Vegetables", "Frozen", "Pantry", "Snacks", "Drinks", "Other"}
+    rows = (await db.execute(_user_owned_query(Product, user))).scalars().all()
+    by_name = {p.name_lower: p for p in rows}
+    by_synonym = {str(s).lower(): p for p in rows for s in (p.synonyms or [])}
+    added = enriched = 0
+    for item in LIBRARY:
+        key = item["name"].lower()
+        existing = by_name.get(key) or by_synonym.get(key)
+        if existing is None:
+            p = Product(
+                id=new_id(), user_id=user["_id"], name=item["name"], name_lower=key, category=item["category"],
+                subcategory=item["subcategory"], default_unit=item["default_unit"],
+                typical_quantity=item["typical_quantity"], synonyms=item["synonyms"], nutrition=item["nutrition"],
+                tags=item["tags"], icon=item["icon"], is_favorite=False, created_at=now_iso())
+            db.add(p)
+            by_name[key] = p
+            added += 1
+            continue
+        changed = False
+        if existing.category not in valid:  # an alias such as "Produce"; adopt the app's own category
+            existing.category, changed = item["category"], True
+        if existing.category == item["category"] and not existing.subcategory:
+            existing.subcategory, changed = item["subcategory"], True
+        if not existing.icon and item["icon"]:
+            existing.icon, changed = item["icon"], True
+        if not existing.tags and item["tags"]:
+            existing.tags, changed = item["tags"], True
+        if not existing.nutrition and item["nutrition"]:
+            existing.nutrition, changed = item["nutrition"], True
+        if not existing.synonyms and item["synonyms"]:
+            existing.synonyms, changed = item["synonyms"], True
+        enriched += 1 if changed else 0
+    await db.commit()
+    return {"added": added, "enriched": enriched, "library_size": len(LIBRARY)}
 
 
 @api_router.put("/products/{pid}")
@@ -2734,7 +2876,14 @@ async def update_storage_location(sid: str, body: StorageLocationUpdate, user: d
         raise HTTPException(404, "Storage location not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if updates:
+        old_name = s.name
         await db.execute(update(StorageLocation).where(StorageLocation.id == sid, StorageLocation.user_id == user["_id"]).values(**updates))
+        new_name = updates.get("name")
+        if new_name and new_name != old_name:
+            # Items reference their location by name: keep them attached after a rename.
+            for model in (Grocery, ShoppingItem):
+                await db.execute(update(model).where(model.user_id == user["_id"], func.lower(model.storage_location) == old_name.lower())
+                                 .values(storage_location=new_name))
         await db.commit()
         await db.refresh(s)
     return to_dict(s)
@@ -2903,8 +3052,10 @@ async def update_shopping_list(lid: str, body: ShoppingListUpdate, user: dict = 
     if not lst:
         raise HTTPException(404, "List not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "budget" in updates and updates["budget"] is not None:
+    if "budget" in updates:
         updates["budget"] = round(updates["budget"], 2)
+    elif "budget" in body.model_fields_set:
+        updates["budget"] = None  # an explicit null clears the budget ("no budget")
     if updates:
         updates["updated_at"] = now_iso()
         await db.execute(update(ShoppingList).where(ShoppingList.id == lid, ShoppingList.user_id == user["_id"]).values(**updates))
@@ -3240,8 +3391,7 @@ async def update_recipe(rid: str, body: RecipeBody, user: dict = Depends(get_cur
     r = (await db.execute(select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]))).scalar_one_or_none()
     if not r:
         raise HTTPException(404, "Recipe not found")
-    updates = body.model_dump()
-    updates["ingredients"] = [i.model_dump() for i in updates["ingredients"]]
+    updates = body.model_dump()  # ingredients are already plain dicts here
     await db.execute(update(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]).values(**updates))
     await db.commit()
     await db.refresh(r)
@@ -3255,6 +3405,47 @@ async def delete_recipe(rid: str, user: dict = Depends(get_current_user), db: As
     if result.rowcount == 0:
         raise HTTPException(404, "Recipe not found")
     return {"ok": True}
+
+
+class MissingIngredient(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    quantity: float = Field(..., gt=0, le=100000)
+    unit: str = Field(default="unit", max_length=50)
+
+
+class AddMissingBody(BaseModel):
+    list_id: Optional[str] = Field(default=None, max_length=36)
+    items: Optional[List[MissingIngredient]] = None
+
+
+@api_router.get("/recipes/suggestions")
+async def recipe_suggestions(limit: int = Query(default=20, ge=1, le=100), user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Recipes ranked by what you can cook now, with missing ingredients and what would help avoid waste."""
+    recipes = [to_dict(r) for r in (await db.execute(_user_owned_query(Recipe, user))).scalars().all()]
+    inventory = [to_dict(g) for g in (await db.execute(_user_owned_query(Grocery, user))).scalars().all()]
+    return kitchen_logic.suggest(recipes, inventory)[:limit]
+
+
+@api_router.post("/recipes/{rid}/add-missing")
+async def add_missing_to_list(rid: str, body: AddMissingBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Put a recipe's missing ingredients on a shopping list (quantities can be edited). Never touches inventory."""
+    r = (await db.execute(select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]))).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, "Recipe not found")
+    if body.list_id:
+        lst = (await db.execute(select(ShoppingList).where(ShoppingList.id == body.list_id, ShoppingList.user_id == user["_id"]))).scalar_one_or_none()
+        if not lst:
+            raise HTTPException(404, "List not found")
+    if body.items is not None:
+        wanted = [{"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in body.items]
+    else:
+        inventory = [to_dict(g) for g in (await db.execute(_user_owned_query(Grocery, user))).scalars().all()]
+        wanted = kitchen_logic.evaluate_recipe(to_dict(r), inventory)["missing"]
+    added = []
+    for w in wanted:
+        added.append(await add_shopping_item_doc(db, w["name"], w["quantity"], w["unit"], note=f"For {r.name}",
+                                                 user_id=user["_id"], list_id=body.list_id))
+    return {"added": added, "count": len(added), "list_id": body.list_id}
 
 
 @api_router.post("/recipes/{rid}/cook")
@@ -3346,15 +3537,17 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "get_groceries",
-        "description": "Get all grocery inventory items with current stock, categories, prices and low-stock status.",
-        "parameters": {"type": "object", "properties": {}},
+        "description": "Get grocery inventory items with id, stock, unit, category, storage_location, expiration, price and low-stock status. Optionally filter by storage_location (name or kind, e.g. Fridge).",
+        "parameters": {"type": "object", "properties": {"storage_location": {"type": "string"}}},
     }},
     {"type": "function", "function": {
         "name": "add_grocery",
-        "description": "Add a grocery item to inventory with optional price and store.",
+        "description": "Add a grocery item to inventory with optional price, store, storage location and expiry date. Adding an item that already exists increases its quantity.",
         "parameters": {"type": "object", "properties": {
             "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"},
             "category": {"type": "string"}, "price": {"type": "number"}, "store": {"type": "string"},
+            "storage_location": {"type": "string", "description": "Name or kind of a storage location, e.g. Fridge, Freezer, Pantry"},
+            "expiration": {"type": "string", "description": "Use-by date, YYYY-MM-DD"},
             "low_threshold": {"type": "number", "description": "Warn when stock falls at or below this quantity"}},
             "required": ["name"]},
     }},
@@ -3501,9 +3694,10 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "update_grocery",
-        "description": "Update a grocery inventory item by name: change quantity/stock, price, unit, category, low_threshold or notes.",
+        "description": "Update a grocery inventory item by name: set quantity/stock, price, unit, category, low_threshold, notes, expiration (YYYY-MM-DD) or storage_location.",
         "parameters": {"type": "object", "properties": {
             "name": {"type": "string"}, "quantity": {"type": "number"}, "price": {"type": "number"},
+            "expiration": {"type": "string"}, "storage_location": {"type": "string"},
             "unit": {"type": "string"}, "category": {"type": "string"}, "low_threshold": {"type": "number"},
             "notes": {"type": "string"}}, "required": ["name"]},
     }},
@@ -3550,7 +3744,7 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "update_account_balance",
-        "description": "Update the balance of a money place/account. Use this when the user says they received cash, spent cash, or want to correct a balance. For the bank account you can also set the initial balance used to calculate money that left the bank.",
+        "description": "Correct/set the balance of a money place/account to an exact figure (e.g. 'my Revolut is actually 39.16'). Do NOT use this when the user received or spent money: use record_income, create_expense or transfer_money so it appears in the transaction history. For the bank account you can also set the initial balance used to calculate money that left the bank.",
         "parameters": {"type": "object", "properties": {
             "account": {"type": "string", "description": "Account id, name or 'bank'/'cash'/'revolut'"},
             "balance": {"type": "number", "description": "New current balance"},
@@ -3559,8 +3753,33 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "get_accounts",
-        "description": "Get all money accounts and their current balances.",
+        "description": "Get all money accounts and their current balances. Use each account's `balance` as the real current balance (not `opening_balance`). Spaces/places have a parent_id pointing at Money in hand or Revolut.",
         "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "create_money_space",
+        "description": "Create a new space/place inside Money in hand (e.g. a new envelope) or inside Revolut (e.g. savings, vault, trip pocket). Optionally give it a starting balance and mark it locked (not freely available).",
+        "parameters": {"type": "object", "properties": {
+            "parent": {"type": "string", "description": "'cash' / 'money in hand' or 'revolut'"},
+            "name": {"type": "string"},
+            "balance": {"type": "number", "description": "Starting balance, default 0"},
+            "is_locked": {"type": "boolean", "description": "True if the money isn't freely available"}},
+            "required": ["parent", "name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_money_space",
+        "description": "Rename a space/place, lock or unlock it, or hide it. Use update_account_balance to change its balance.",
+        "parameters": {"type": "object", "properties": {
+            "account": {"type": "string", "description": "Account id or name of the space"},
+            "name": {"type": "string"}, "is_locked": {"type": "boolean"}, "is_active": {"type": "boolean"}},
+            "required": ["account"]},
+    }},
+    {"type": "function", "function": {
+        "name": "delete_money_space",
+        "description": "Delete a space/place. Only works when it has no transactions; otherwise suggest transferring its money elsewhere and hiding it. Ask the user to confirm first.",
+        "parameters": {"type": "object", "properties": {
+            "account": {"type": "string", "description": "Account id or name of the space"}},
+            "required": ["account"]},
     }},
     {"type": "function", "function": {
         "name": "get_products",
@@ -3573,24 +3792,47 @@ AI_TOOLS = [
         "description": "Add a new reusable product to the catalog.",
         "parameters": {"type": "object", "properties": {
             "name": {"type": "string"}, "category": {"type": "string"},
+            "subcategory": {"type": "string", "description": "e.g. Poultry, Cheese, Leafy greens"},
             "default_unit": {"type": "string"}, "typical_quantity": {"type": "number"},
             "synonyms": {"type": "array", "items": {"type": "string"}},
+            "tags": {"type": "array", "items": {"type": "string", "enum": ["vegan", "vegetarian", "gluten-free", "lactose-free"]}},
+            "icon": {"type": "string", "description": "A single emoji"},
             "nutrition": {"type": "object"}, "is_favorite": {"type": "boolean"}},
             "required": ["name"]},
     }},
     {"type": "function", "function": {
         "name": "update_grocery_storage",
-        "description": "Move a grocery inventory item to a different storage location (e.g. fridge, pantry, freezer).",
+        "description": "Move a grocery inventory item to a different storage location (e.g. fridge, pantry, freezer). Identify the item by grocery_id or name.",
         "parameters": {"type": "object", "properties": {
-            "grocery_id": {"type": "string"}, "storage_location": {"type": "string"}},
-            "required": ["grocery_id", "storage_location"]},
+            "grocery_id": {"type": "string"}, "name": {"type": "string"}, "storage_location": {"type": "string"}},
+            "required": ["storage_location"]},
     }},
     {"type": "function", "function": {
         "name": "consume_grocery",
-        "description": "Reduce grocery quantity because it was used/consumed.",
+        "description": "Reduce grocery quantity because it was used/consumed. Identify the item by grocery_id or name.",
         "parameters": {"type": "object", "properties": {
-            "grocery_id": {"type": "string"}, "quantity": {"type": "number"}},
-            "required": ["grocery_id", "quantity"]},
+            "grocery_id": {"type": "string"}, "name": {"type": "string"}, "quantity": {"type": "number"}},
+            "required": ["quantity"]},
+    }},
+    {"type": "function", "function": {
+        "name": "discard_grocery",
+        "description": "Throw away / remove an inventory item (spoiled, expired, or no longer wanted); omit quantity to remove all of it. Destructive: call first WITHOUT confirm to preview, then only call again with confirm=true after the user explicitly agrees. Use consume_grocery instead for food that was eaten or used.",
+        "parameters": {"type": "object", "properties": {
+            "grocery_id": {"type": "string"}, "name": {"type": "string"}, "quantity": {"type": "number"},
+            "confirm": {"type": "boolean"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "update_storage_location",
+        "description": "Rename a storage location or change its kind (fridge, freezer, pantry, custom). Items stored there stay attached after a rename.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Current name of the location"},
+            "new_name": {"type": "string"}, "kind": {"type": "string", "enum": ["fridge", "pantry", "freezer", "custom"]}},
+            "required": ["name"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_kitchen_overview",
+        "description": "Read-only snapshot of the whole kitchen: every storage location with its items, plus items that are expired, expiring within 3 days, low or out of stock, and items stored in an unconfigured place. Use it to answer 'what is in my fridge', 'what should I use up' or to suggest where foods should be stored or replenished.",
+        "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
         "name": "get_expiring_items",
@@ -3625,34 +3867,45 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "suggest_recipes_from_inventory",
-        "description": "Suggest recipes that can be made mostly from current grocery inventory. Read-only.",
+        "description": "Rank the user's recipes by what can be cooked from current inventory: coverage, missing ingredients (with the shortfall quantity) and which ingredients are about to expire. Read-only.",
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
         "name": "add_missing_ingredients",
-        "description": "For a recipe id, add missing ingredients to a shopping list.",
+        "description": "Add a recipe's missing ingredients to a shopping list (not a purchase; inventory is unchanged). Optionally pass items to override names/quantities.",
         "parameters": {"type": "object", "properties": {
-            "recipe_id": {"type": "string"}, "list_id": {"type": "string"}},
+            "recipe_id": {"type": "string"}, "list_id": {"type": "string"},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"}}}}},
             "required": ["recipe_id"]},
     }},
 ]
+AI_TOOLS += ai_tools_extra.EXTRA_TOOLS
 
-AI_SYSTEM = """You are Life Record's personal assistant, a friendly multi-user life-management helper.
+AI_SYSTEM ="""You are Life Record's personal assistant, a friendly multi-user life-management helper.
 You turn natural language into structured, connected data by calling tools. You handle money/expenses, shared expenses and reimbursements, groceries, meals/nutrition, workouts, weight and tasks for the current user.
 
 Rules:
 - When the user refers to themselves, use the participant name "Me".
-- Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut. When the user mentions an account, pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
+- Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut (which can have spaces such as savings or a vault). Locked spaces (is_locked) are not available money: when asked what the user has or can spend, use cash_available, revolut and total_available, and mention locked amounts (cash_locked, revolut_locked) separately. Each account has a `balance` field, which is the real current balance; `opening_balance` is only the starting amount, so never quote it as the balance. Any money received, spent or moved must be recorded with record_income / create_expense / transfer_money so it shows in the transaction history; only use update_account_balance to correct a balance to a known figure. Spaces can be created, renamed, locked and deleted with create_money_space / update_money_space / delete_money_space; setting a balance with update_account_balance works even if the account has no transactions. When the user mentions an account (including a space such as "savings" or "wallet"), pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record income/money received use record_income. To record a refund use mark_refunded (or record_payment for a general person payment).
 - To move money between the user's own places (e.g. "I withdrew 50€ from the bank") use transfer_money. To correct a balance or set the bank's initial balance use update_account_balance.
 - Actual spending is calculated as: money that left the bank (initial bank balance - current bank balance) minus money still in hand (cash + Revolut). Do not double-count transfers between the user's own accounts as spending.
-- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists. Use get_products/add_product for the reusable product catalog, get_storage_locations/add_storage_location for storage places, and update_grocery_storage/consume_grocery/get_expiring_items to manage inventory location and usage. Use suggest_recipes_from_inventory and add_missing_ingredients for recipe planning.
+- Groceries: use get_groceries to inspect inventory and get_shopping_lists for lists. Adding a grocery (add_grocery) puts it in inventory. Adding a shopping item (add_shopping_item) only puts it on a list; it never changes inventory. To update inventory from a list, use submit_purchase and only selected items will be purchased. Generating a list (generate_shopping_list) creates suggestions, not purchases. Use get_grocery_suggestions for frequently bought items, get_price_history for prices, and create_recurring_list/spawn_recurring_list for recurring lists. Use get_products/add_product for the reusable product catalog, get_storage_locations/add_storage_location for storage places, and update_grocery_storage/consume_grocery/get_expiring_items to manage inventory location and usage. Use get_kitchen_overview to look across the whole kitchen (what is where, what is expiring, what is low); suggest better storage places or replenishment from it, and only move or change things after the user agrees. Use consume_grocery for food that was eaten and discard_grocery (preview first, then confirm) for food that is thrown away; update_storage_location renames or retypes a storage space. Pass storage_location and expiration (YYYY-MM-DD) to add_grocery/update_grocery when the user says where something is kept or when it expires. If a tool returns an error or needs_confirmation, say so plainly and never claim the change was made. Use suggest_recipes_from_inventory and add_missing_ingredients for recipe planning.
 - NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
 - If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
 - For destructive actions (delete, large bulk changes) always confirm with the user first.
 - For nutrition you MAY estimate calories/macros from typical food values, but say they are estimates.
-- After performing actions, give a concise summary of exactly what changed (amounts, shares, refunds, remaining owed, inventory). Be warm but brief. Use € for currency.
+- Other pages: get_overview gives the whole day at a glance (Home); get_transactions searches the ledger; get_tasks lists tasks and calendar reminders (a due date is a calendar entry) and update_task / delete_task change them; get_people, update_person, delete_person manage contacts; get_categories and create/update/delete_category manage categories and monthly budgets; get_meals, update_meal, delete_meal and get_recipes / delete_recipe cover nutrition; get_workouts, delete_workout, get_weight_history and delete_weight_entry cover fitness and body. Look things up with a get_ tool before you change or delete them, and use the ids it returns. Deleting always needs a preview and the user's confirmation on a later message: when the user agrees to a previewed deletion, call the same tool again with confirm=true straight away (do not preview a second time). Call every lookup you need in one step rather than one at a time.
+- Context: use the conversation and the "Context" notes below to resolve references such as "that expense", "it", "the rest" or "the remaining money". If the reference could match more than one record, or the change moves money, ask one short question instead of guessing. Never state a figure you did not get from a tool result or the user; do not do arithmetic on money yourself when a tool can return the number.
+- Honesty: say a change was made only if its tool returned success. If a tool returned an error or needs_confirmation, say that plainly.
+- After performing actions, give a concise summary of exactly what changed (amounts, shares, refunds, remaining owed, inventory). Be warm but brief.
+
+Formatting (the chat renders Markdown):
+- Write money as €14.00: the symbol first, two decimals, a comma for thousands (€1,250.00). Never write 14.00€ or 14 euros.
+- Never wrap amounts, numbers, dates or units in ** or backticks. Do not bold figures. Use bold only for a short label or a name when it really helps, never next to a currency symbol.
+- Keep answers short: a sentence or two, then a bulleted list if there are several items. Use a table only when comparing three or more rows with two or more columns. Dates read like 23 Oct 2026. No emojis. Do not show internal ids.
 - Today's date is {today}.
 """
 
@@ -3734,10 +3987,10 @@ async def _gemini_generate_with_fallback(
     raise HTTPException(503, "AI service is temporarily unavailable. Please try again in a moment.")
 
 
-def build_gemini_tools():
+def build_gemini_tools(tools: Optional[list] = None):
     from google.genai import types
     declarations = []
-    for t in AI_TOOLS:
+    for t in (AI_TOOLS if tools is None else tools):
         fn = t["function"]
         declarations.append(types.FunctionDeclaration(
             name=fn["name"],
@@ -3747,12 +4000,63 @@ def build_gemini_tools():
     return [types.Tool(function_declarations=declarations)]
 
 
+def _json_default(o):
+    from decimal import Decimal
+    return float(o) if isinstance(o, Decimal) else str(o)
+
+
 def _safe_json(obj):
-    return json.dumps(obj, default=str)
+    return json.dumps(obj, default=_json_default)
 
 
-def _system_text():
-    return AI_SYSTEM.replace("{today}", datetime.now(timezone.utc).strftime("%Y-%m-%d (%A)"))
+def _json_clean(obj):
+    """Round-trip through JSON so tool results (Decimals, dates...) are always serialisable for the model."""
+    return json.loads(json.dumps(obj, default=_json_default))
+
+
+def _tool_response(result) -> dict:
+    """A function response must be an object; tools that return a list are wrapped."""
+    clean = _json_clean(result)
+    return clean if isinstance(clean, dict) else {"result": clean}
+
+
+# Short notes about what the assistant just did, per conversation, so "that transaction" or "the remaining
+# money" can be resolved on the next turn (the chat history only keeps plain text, not tool results).
+_session_notes: Dict[str, List[str]] = {}
+_MAX_NOTES = 8
+
+
+def _remember_tool(session_id: str, name: str, args: dict, result) -> None:
+    if not isinstance(result, dict) or result.get("error") or result.get("needs_confirmation"):
+        return
+    if name.startswith("get_") or name == "suggest_recipes_from_inventory":
+        return
+    brief = {k: v for k, v in args.items() if k != "confirm" and not isinstance(v, (list, dict))}
+    keep = ("id", "amount", "gross_amount", "merchant", "name", "title", "deleted", "balance", "date")
+    out = {k: v for k, v in result.items() if k in keep and not isinstance(v, (list, dict))}
+    txn = result.get("transaction")
+    if isinstance(txn, dict):
+        out.update({k: txn.get(k) for k in ("id", "gross_amount", "merchant", "date") if txn.get(k) is not None})
+    notes = _session_notes.setdefault(session_id, [])
+    notes.append(f"{name} {_safe_json(brief)[:200]} -> {_safe_json(out)[:240]}")
+    del notes[:-_MAX_NOTES]
+    if len(_session_notes) > 500:
+        _session_notes.pop(next(iter(_session_notes)))
+
+
+def _system_text(user: Optional[dict] = None, page: Optional[str] = None, session_id: Optional[str] = None):
+    now = datetime.now(timezone.utc)
+    text = AI_SYSTEM.replace("{today}", now.strftime("%Y-%m-%d (%A)"))
+    ctx = []
+    if user and user.get("name"):
+        ctx.append(f"The user's name is {user['name']}.")
+    page = re.sub(r"[^a-z ]", "", (page or "").lower())[:30]
+    if page:
+        ctx.append(f"They are currently on the {page} page.")
+    notes = _session_notes.get(session_id or "")
+    if notes:
+        ctx.append("Changes you made earlier in this conversation (use them to resolve 'that', 'it', 'the rest'):\n- " + "\n- ".join(notes))
+    return text + ("\nContext:\n" + "\n".join(ctx) if ctx else "")
 
 
 def _text_part(text: str):
@@ -3762,98 +4066,262 @@ def _text_part(text: str):
 
 def _image_part(b64_data_url: str):
     from google.genai import types
-    b64 = b64_data_url.split(",")[-1]
-    return types.Part.from_bytes(data=__import__("base64").b64decode(b64), mime_type="image/jpeg")
+    data = __import__("base64").b64decode(b64_data_url.split(",")[-1])
+    return types.Part.from_bytes(data=data, mime_type=chat_images.sniff(data) or "image/jpeg")
 
 
-async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
+async def _gemini_stream(contents, config, timeout: float, operation: str):
+    """Stream a Gemini reply, trying the configured models in order until one starts answering.
+
+    Yields response chunks. Fallback only happens before the first chunk; once text is flowing the model is
+    fixed. A stall of `timeout` seconds between chunks ends the attempt.
+    """
+    client = gemini_client()
+    last_error: Optional[Exception] = None
+    for model in _gemini_models_to_try():
+        try:
+            stream = await asyncio.wait_for(
+                client.aio.models.generate_content_stream(model=model, contents=contents, config=config), timeout=timeout)
+            it = stream.__aiter__()
+            first = await asyncio.wait_for(it.__anext__(), timeout=timeout)
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError as exc:
+            last_error = exc
+            logger.warning("%s timed out on model %s", operation, model)
+            continue
+        except Exception as exc:
+            last_error = exc
+            if _is_retryable_gemini_error(exc):
+                logger.warning("%s failed on model %s: %s", operation, model, exc)
+                if GEMINI_FALLBACK_DELAY > 0:
+                    await asyncio.sleep(GEMINI_FALLBACK_DELAY)
+                continue
+            logger.exception("%s non-retryable error on model %s", operation, model)
+            raise
+        yield first
+        while True:
+            try:
+                chunk = await asyncio.wait_for(it.__anext__(), timeout=timeout)
+            except StopAsyncIteration:
+                return
+            yield chunk
+    logger.error("%s exhausted all Gemini models", operation)
+    if isinstance(last_error, asyncio.TimeoutError):
+        raise HTTPException(504, "The assistant took too long to answer. Please try again.")
+    raise HTTPException(503, "The assistant is busy right now. Please try again in a moment.")
+
+
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "opencode").strip().lower()
+if AI_PROVIDER not in ("opencode", "gemini"):
+    logger.warning("Unknown AI_PROVIDER %r; using opencode", AI_PROVIDER)
+    AI_PROVIDER = "opencode"
+
+
+def chat_unavailable() -> Optional[str]:
+    """User-facing reason the chat provider cannot be used, or None when it is configured."""
+    if AI_PROVIDER == "gemini":
+        return None if GEMINI_API_KEY else "AI is not configured. Set GEMINI_API_KEY to enable the assistant."
+    return None if ai_opencode.configured() else "AI is not configured. Set OPENCODE_API_KEY to enable the assistant."
+
+
+async def _gemini_turn(items: list, system: str, tools: Optional[list] = None):
+    """Gemini adapter: neutral conversation items in, ("text", s) / ("call", {...}) out."""
     from google.genai import types
-    session_id = body.session_id or new_id()
+    contents = []
+    for it in items:
+        if it["role"] == "user":
+            parts = [_text_part(it["text"] or "")]
+            if it.get("image"):
+                parts.append(_image_part(it["image"]))
+            contents.append(types.Content(role="user", parts=parts))
+        elif it["role"] == "assistant":
+            parts = [_text_part(it["text"])] if it.get("text") else []
+            parts += [c.get("_raw") or types.Part(function_call=types.FunctionCall(name=c["name"], args=c["args"])) for c in it.get("calls", [])]
+            contents.append(types.Content(role="model", parts=parts))
+        else:
+            contents.append(types.Content(role="user", parts=[
+                types.Part.from_function_response(name=r["name"], response=r["response"]) for r in it["results"]]))
+    config = types.GenerateContentConfig(system_instruction=system, tools=build_gemini_tools(tools) if tools != [] else None, temperature=0.2)
+    timeout = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "25"))
+    async for chunk in _gemini_stream(contents, config, timeout, "ai_chat"):
+        if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+            continue
+        for part in chunk.candidates[0].content.parts:
+            if part.function_call:
+                yield ("call", {"id": new_id(), "name": part.function_call.name,
+                                "args": dict(part.function_call.args) if part.function_call.args else {}, "_raw": part})
+            elif part.text and not getattr(part, "thought", False):
+                yield ("text", part.text)
 
-    # load history (strictly scoped to the current user)
+
+async def _provider_stream(items: list, system: str, session_id: str, tools: Optional[list] = None):
+    """One model turn from the configured chat provider, as ("text", s) / ("call", {id, name, args}) events.
+
+    `tools` is a list of tool declarations; None means the assistant's full set and [] means no tools."""
+    if AI_PROVIDER == "gemini":
+        async for ev in _gemini_turn(items, system, tools):
+            yield ev
+    else:
+        async for ev in ai_opencode.stream_turn(items, system, AI_TOOLS if tools is None else tools, session_id):
+            yield ev
+
+
+async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
+    """Run one assistant turn, yielding events: session, delta, tool, done or error.
+
+    Tool calls go through `dispatch_tool`, so ownership checks, validation and confirmations are unchanged.
+    """
+    session_id = body.session_id or new_id()
+    if await conversations_api.id_taken_by_someone_else(db, session_id, user["_id"]):
+        session_id = new_id()  # never write into another user's conversation
+    yield {"type": "session", "session_id": session_id}
+    unavailable = chat_unavailable()
+    if unavailable:
+        yield {"type": "error", "message": unavailable}
+        return
+    image_bytes = image_mime = None
+    if body.image_base64:
+        try:
+            image_bytes, image_mime = chat_images.decode(body.image_base64, MAX_UPLOAD_SIZE)
+        except ValueError as exc:
+            yield {"type": "error", "message": str(exc)}
+            return
+
     history_rows = (await db.execute(
-        select(AIMessage).where(
-            AIMessage.session_id == session_id,
-            AIMessage.user_id == user["_id"],
-        ).order_by(asc(AIMessage.created_at))
+        select(AIMessage).where(AIMessage.session_id == session_id, AIMessage.user_id == user["_id"])
+        .order_by(asc(AIMessage.created_at))
     )).scalars().all()
 
-    tools = build_gemini_tools()
-    config = types.GenerateContentConfig(
-        system_instruction=_system_text(),
-        tools=tools,
-        temperature=0.2,
-    )
+    system = _system_text(user, body.page, session_id)
+    items = [{"role": "assistant" if h.role == "assistant" else "user", "text": h.text} for h in history_rows[-16:]]
+    shown = f"data:{image_mime};base64,{__import__('base64').b64encode(image_bytes).decode()}" if image_bytes else None
+    items.append({"role": "user", "text": body.message or "", "image": shown})
 
-    contents = []
-    for h in history_rows[-12:]:
-        contents.append(types.Content(role=h.role, parts=[_text_part(h.text)]))
-
-    user_parts = [_text_part(body.message or "")]
-    if body.image_base64:
-        user_parts.append(_image_part(body.image_base64))
-    contents.append(types.Content(role="user", parts=user_parts))
-
-    created = []
-    tool_summary = []
+    created, tool_summary = [], []
     previewed_this_turn: set = set()
-    AI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "25"))
     reply = ""
+    nudged = False
+    failure: Optional[str] = None
     try:
-        resp = await _gemini_generate_with_fallback(
-            lambda client, model: client.aio.models.generate_content(model=model, contents=contents, config=config),
-            timeout=AI_TIMEOUT,
-            operation="ai_chat",
-        )
-        guard = 0
-        while resp.candidates and resp.candidates[0].content.parts and any(p.function_call for p in resp.candidates[0].content.parts) and guard < 6:
-            guard += 1
-            fc_parts = [p for p in resp.candidates[0].content.parts if p.function_call]
-            # add model function-call turn
-            contents.append(types.Content(role="model", parts=fc_parts))
-            tool_responses = []
-            for part in fc_parts:
-                call = part.function_call
-                args = dict(call.args) if call.args else {}
-                result = await dispatch_tool(db, call.name, args, created, user, session_id, previewed_this_turn)
-                tool_summary.append({"tool": call.name, "args": args})
-                tool_responses.append(types.Part.from_function_response(name=call.name, response=result))
-            contents.append(types.Content(role="user", parts=tool_responses))
-            resp = await _gemini_generate_with_fallback(
-                lambda client, model: client.aio.models.generate_content(model=model, contents=contents, config=config),
-                timeout=AI_TIMEOUT,
-                operation="ai_chat_tool_followup",
-            )
-        reply = ""
-        if resp.candidates:
-            for part in resp.candidates[0].content.parts:
-                if part.text:
-                    reply += part.text
-    except HTTPException:
-        raise
+        for step in range(7):
+            calls, text_this_step = [], ""
+            async for kind, value in _provider_stream(items, system, session_id):
+                if kind == "text":
+                    text_this_step += value
+                    yield {"type": "delta", "text": value}
+                else:
+                    calls.append(value)
+            reply += text_this_step
+            if not calls:
+                if not reply.strip() and tool_summary and not nudged:
+                    # The model sometimes stops right after tool results without writing anything: ask once more.
+                    nudged = True
+                    items.append({"role": "user", "text": "Answer the user now, using the tool results above."})
+                    continue
+                break
+            if step == 6:
+                failure = "That took too many steps. Check what changed and ask me to continue."
+                break
+            items.append({"role": "assistant", "text": text_this_step, "calls": calls})
+            results = []
+            for call in calls:
+                args = call["args"]
+                yield {"type": "tool", "name": call["name"], "status": "running"}
+                try:
+                    result = await dispatch_tool(db, call["name"], args, created, user, session_id, previewed_this_turn)
+                except HTTPException as exc:
+                    # A rejected tool call goes back to the model as an error so it can explain or retry
+                    # instead of failing the whole chat or claiming success.
+                    await db.rollback()
+                    result = {"error": str(exc.detail)}
+                err = result.get("error") if isinstance(result, dict) else None
+                _remember_tool(session_id, call["name"], args, result)
+                tool_summary.append({"tool": call["name"], "args": args, "error": err,
+                                     "pending": bool(isinstance(result, dict) and result.get("needs_confirmation"))})
+                yield {"type": "tool", "name": call["name"], "status": "error" if err else "done"}
+                results.append({"id": call["id"], "name": call["name"], "response": _tool_response(result)})
+            items.append({"role": "tool", "results": results})
+            if text_this_step:
+                reply += "\n\n"
+                yield {"type": "delta", "text": "\n\n"}
+    except HTTPException as exc:
+        failure = str(exc.detail)
     except Exception:
         logger.exception("ai chat failed")
-        raise HTTPException(500, "AI request failed. Please try again later.")
+        failure = "The assistant ran into a problem. Please try again."
 
-    # persist messages
-    db.add(AIMessage(id=new_id(), user_id=user["_id"], session_id=session_id, role="user", text=body.message or "", created_at=now_iso()))
-    db.add(AIMessage(id=new_id(), user_id=user["_id"], session_id=session_id, role="assistant", text=reply or "", created_at=now_iso()))
+    reply = reply.strip()
+    if failure and not tool_summary:
+        yield {"type": "error", "message": failure}
+        return
+    if failure and not reply:
+        reply = failure
 
-    if tool_summary:
+    changed = any(not t["error"] and not t.get("pending") and not t["tool"].startswith("get_") and t["tool"] != "suggest_recipes_from_inventory" for t in tool_summary)
+    stored = reply or (f"({failure})" if failure else "")
+    # The clock can tie on some systems; keep the reply strictly after the question so history loads in order.
+    asked_at = datetime.now(timezone.utc)
+    user_msg_id, user_meta = new_id(), None
+    if image_bytes:
+        try:  # a chat is still saved if the picture cannot be written; it just will not show the picture later
+            user_meta = {"image": chat_images.save(sys.modules[__name__], user["_id"], session_id, user_msg_id, image_bytes, image_mime)}
+        except Exception:
+            logger.exception("could not store a chat image")
+    db.add(AIMessage(id=user_msg_id, user_id=user["_id"], session_id=session_id, role="user", text=body.message or "", meta=user_meta,
+                     created_at=asked_at.isoformat()))
+    db.add(AIMessage(id=new_id(), user_id=user["_id"], session_id=session_id, role="assistant", text=stored,
+                     meta={"actions": [{"tool": t["tool"], "error": t["error"], "pending": t.get("pending", False)} for t in tool_summary],
+                           "changed": changed} if tool_summary else None,
+                     created_at=(asked_at + timedelta(milliseconds=1)).isoformat()))
+    await conversations_api.record_turn(db, user["_id"], session_id, body.message or "", stored, asked_at)
+    if changed:
         label = reply[:140] if reply else (tool_summary[0]["tool"].replace("_", " ").title())
         db.add(AIAction(
             id=new_id(), user_id=user["_id"], label=label,
             tools=[t["tool"] for t in tool_summary], created=created,
             undoable=len(created) > 0, undone=False, created_at=now_iso(),
         ))
-
     await db.commit()
-    return {"reply": reply, "session_id": session_id, "actions": tool_summary, "changed": len(created) > 0 or len(tool_summary) > 0}
+    yield {"type": "done", "reply": reply, "session_id": session_id, "actions": tool_summary,
+           "changed": changed, "error": failure}
+
+
+async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
+    result = None
+    async for ev in ai_chat_events(db, user, body):
+        if ev["type"] == "error":
+            raise HTTPException(503, ev["message"])
+        if ev["type"] == "done":
+            result = ev
+    result = result or {"reply": "", "session_id": body.session_id, "actions": [], "changed": False}
+    return {k: result[k] for k in ("reply", "session_id", "actions", "changed")}
 
 
 @api_router.post("/ai/chat")
 async def ai_chat(body: AIChatBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await run_ai_chat(db, user, body)
+
+
+@api_router.post("/ai/chat/stream")
+async def ai_chat_stream(body: AIChatBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Server-sent events: the reply arrives as it is written, followed by a final `done` event."""
+    unavailable = chat_unavailable()
+    if unavailable:
+        raise HTTPException(503, unavailable)
+
+    async def gen():
+        try:
+            async for ev in ai_chat_events(db, user, body):
+                yield f"data: {json.dumps(ev, default=str)}\n\n"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("ai stream failed")
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The assistant ran into a problem. Please try again.'})}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @api_router.get("/ai/history")
@@ -3970,8 +4438,73 @@ async def find_expense(db: AsyncSession, match: str, user_id: str) -> Optional[d
     return txn_to_dict(t) if t else None
 
 
+def _confirmation_gate(session_id: Optional[str], previewed_this_turn: Optional[set], tool: str, target_id: str, confirm, message: str):
+    """Two-step guard for destructive AI tools.
+
+    The first call records a pending confirmation and returns a preview; the action only proceeds when a
+    *later* call (a later user turn, not the same model turn) passes confirm=true for the same target.
+    Returns None when the action is confirmed, otherwise the needs_confirmation payload.
+    """
+    pending = _pending_confirmations.get(session_id or "")
+    has_pending = bool(
+        pending and pending.get("tool") == tool and pending.get("target_id") == target_id
+        and datetime.now(timezone.utc) < pending.get("expires_at", datetime.min.replace(tzinfo=timezone.utc))
+    )
+    self_confirming = previewed_this_turn is not None and target_id in previewed_this_turn
+    if confirm is True and has_pending and not self_confirming:
+        _pending_confirmations.pop(session_id or "", None)
+        return None
+    _pending_confirmations[session_id or ""] = {
+        "tool": tool, "target_id": target_id, "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+    }
+    if previewed_this_turn is not None:
+        previewed_this_turn.add(target_id)
+    return {"needs_confirmation": True, "message": message}
+
+
+async def kitchen_overview(db: AsyncSession, user_id: str) -> dict:
+    """Read-only snapshot of every storage location and the items that need attention."""
+    from datetime import date as _date
+    locations = (await db.execute(
+        select(StorageLocation).where(StorageLocation.user_id == user_id).order_by(StorageLocation.sort_order, StorageLocation.name)
+    )).scalars().all()
+    items = (await db.execute(select(Grocery).where(Grocery.user_id == user_id).order_by(Grocery.name))).scalars().all()
+    by_name = {l.name.lower(): l.name for l in locations}
+    by_kind = {}
+    for l in locations:
+        by_kind.setdefault((l.kind or "").lower(), l.name)
+    today = _date.today()
+    spaces = {l.name: [] for l in locations}
+    elsewhere, expired, expiring, low = [], [], [], []
+    for g in items:
+        key = (g.storage_location or "").lower()
+        place = by_name.get(key) or by_kind.get(key)
+        row = {"id": g.id, "name": g.name, "quantity": float(g.quantity or 0), "unit": g.unit,
+               "category": g.category, "expiration": g.expiration}
+        (spaces[place] if place else elsewhere).append(row)
+        qty = float(g.quantity or 0)
+        if g.expiration and qty > 0:
+            try:
+                days = (_date.fromisoformat(g.expiration) - today).days
+            except ValueError:
+                days = None
+            if days is not None and days < 0:
+                expired.append({**row, "days_overdue": -days, "location": place})
+            elif days is not None and days <= 3:
+                expiring.append({**row, "days_left": days, "location": place})
+        if qty <= 0 or (float(g.low_threshold or 0) > 0 and qty <= float(g.low_threshold)):
+            low.append({**row, "out_of_stock": qty <= 0, "location": place})
+    return {
+        "storage_locations": [{"name": l.name, "kind": l.kind, "item_count": len(spaces[l.name]), "items": spaces[l.name]} for l in locations],
+        "unassigned_location": elsewhere,
+        "expired": expired, "expiring_within_3_days": expiring, "low_or_out_of_stock": low,
+    }
+
+
 async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
     try:
+        if name in ai_tools_extra.EXTRA_NAMES:
+            return await ai_tools_extra.dispatch_extra(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name == "create_expense":
             acc_ref = args.get("account", "cash")
             acc = await resolve_account(db, acc_ref, user["_id"])
@@ -4021,7 +4554,10 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
         if name == "create_person":
             return await resolve_person(db, args["name"], user["_id"])
         if name == "add_grocery":
-            g = await add_grocery(GroceryBody(**{k: v for k, v in args.items() if k in GroceryBody.model_fields}), user, db)
+            fields = {k: v for k, v in args.items() if k in GroceryBody.model_fields}
+            if fields.get("storage_location"):
+                fields["storage_location"] = await resolve_storage_name(db, user["_id"], fields["storage_location"], strict=True)
+            g = await add_grocery(GroceryBody(**fields), user, db)
             if g.get("id"):
                 created.append({"collection": "groceries", "id": g["id"]})
             return g
@@ -4110,15 +4646,18 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             )).scalar_one_or_none()
             if not g:
                 return {"error": f"No grocery item named '{args['name']}'"}
-            upd = GroceryUpdate(**{k: v for k, v in args.items() if k in GroceryUpdate.model_fields and k != "name"})
-            res = await update_grocery(g.id, upd, user, db)
+            fields = {k: v for k, v in args.items() if k in GroceryUpdate.model_fields and k != "name"}
+            if fields.get("storage_location"):
+                fields["storage_location"] = await resolve_storage_name(db, user["_id"], fields["storage_location"], strict=True)
+            res = await update_grocery(g.id, GroceryUpdate(**fields), user, db)
             return {"updated": res}
         if name == "generate_shopping_list":
             return await generate_shopping_doc(db, int(args.get("days", 7)), user_id=user["_id"], list_id=args.get("list_id"))
         if name == "get_groceries":
-            gs = (await db.execute(
-                select(Grocery).where(Grocery.user_id == user["_id"]).order_by(Grocery.name)
-            )).scalars().all()
+            q = select(Grocery).where(Grocery.user_id == user["_id"]).order_by(Grocery.name)
+            if args.get("storage_location"):
+                q = q.where(Grocery.storage_location == await resolve_storage_name(db, user["_id"], args["storage_location"], strict=True))
+            gs = (await db.execute(q)).scalars().all()
             return {"groceries": [to_dict(g) for g in gs]}
         if name == "get_shopping_lists":
             lists = await get_shopping_lists(user, db)
@@ -4233,11 +4772,42 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             acc = await resolve_account(db, args.get("account", ""), user["_id"])
             if not acc:
                 return {"error": "Account not found"}
-            upd = AccountUpdate(opening_balance=args.get("balance"))
+            upd = AccountUpdate(balance=args.get("balance"))
             if args.get("initial_balance") is not None:
                 upd.initial_balance = args["initial_balance"]
             res = await update_account(acc.id, upd, user, db)
+            res["balance"] = await compute_account_balance(db, acc.id, user["_id"])
             return {"updated": res}
+        if name in ("create_money_space", "update_money_space", "delete_money_space"):
+            try:
+                if name == "create_money_space":
+                    ref = (args.get("parent") or "").strip().lower()
+                    parent_type = "cash" if ref in ("cash", "money in hand", "hand") else "revolut" if ref == "revolut" else None
+                    parent = None
+                    if parent_type:
+                        parent = (await db.execute(select(Account).where(
+                            Account.user_id == user["_id"], Account.type == parent_type, Account.is_active == True
+                        ))).scalars().first()
+                    else:
+                        parent = await resolve_account(db, args.get("parent", ""), user["_id"])
+                    if not parent or parent.type not in ("cash", "revolut"):
+                        return {"error": "Spaces can only be created inside Money in hand or Revolut"}
+                    res = await create_account(AccountBody(
+                        name=args["name"], type="revolut_space" if parent.type == "revolut" else "cash_place",
+                        parent_id=parent.id, opening_balance=args.get("balance") or 0,
+                        is_locked=bool(args.get("is_locked", False)),
+                    ), user, db)
+                    created.append({"collection": "accounts", "id": res["id"]})
+                    return res
+                acc = await resolve_account(db, args.get("account", ""), user["_id"])
+                if not acc:
+                    return {"error": "Account not found"}
+                if name == "update_money_space":
+                    upd = AccountUpdate(name=args.get("name"), is_locked=args.get("is_locked"), is_active=args.get("is_active"))
+                    return {"updated": await update_account(acc.id, upd, user, db)}
+                return await delete_account(acc.id, user, db)
+            except HTTPException as e:
+                return {"error": e.detail}
         if name == "get_products":
             return {"products": await search_products(args.get("query", ""), user, db)}
         if name == "add_product":
@@ -4245,9 +4815,37 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             created.append({"collection": "products", "id": p["id"]})
             return p
         if name == "update_grocery_storage":
-            return await move_grocery(args["grocery_id"], MoveInventoryBody(storage_location=args["storage_location"]), user, db)
+            g, err = await find_grocery(db, user["_id"], args.get("grocery_id"), args.get("name"))
+            if err:
+                return {"error": err}
+            dest = await resolve_storage_name(db, user["_id"], args["storage_location"], strict=True)
+            return await move_grocery(g.id, MoveInventoryBody(storage_location=dest), user, db)
         if name == "consume_grocery":
-            return await consume_grocery(args["grocery_id"], ConsumeBody(quantity=args["quantity"]), user, db)
+            g, err = await find_grocery(db, user["_id"], args.get("grocery_id"), args.get("name"))
+            if err:
+                return {"error": err}
+            return await consume_grocery(g.id, ConsumeBody(quantity=args["quantity"]), user, db)
+        if name == "discard_grocery":
+            g, err = await find_grocery(db, user["_id"], args.get("grocery_id"), args.get("name"))
+            if err:
+                return {"error": err}
+            qty = args.get("quantity")
+            what = f"{qty:g} {g.unit} of {g.name}" if qty else f"all of {g.name} ({float(g.quantity):g} {g.unit})"
+            gate = _confirmation_gate(session_id, previewed_this_turn, "discard_grocery", f"{g.id}:{qty}", args.get("confirm"),
+                                      f"This will remove {what} from the inventory. Ask the user to confirm before discarding.")
+            if gate:
+                return gate
+            res = await discard_grocery(g.id, DiscardBody(quantity=qty), user, db)
+            return {"discarded": what, "result": res}
+        if name == "update_storage_location":
+            loc = (await db.execute(select(StorageLocation).where(
+                StorageLocation.user_id == user["_id"], func.lower(StorageLocation.name) == (args.get("name") or "").strip().lower()
+            ))).scalar_one_or_none()
+            if not loc:
+                return {"error": f"No storage location named '{args.get('name')}'"}
+            return await update_storage_location(loc.id, StorageLocationUpdate(name=args.get("new_name"), kind=args.get("kind")), user, db)
+        if name == "get_kitchen_overview":
+            return await kitchen_overview(db, user["_id"])
         if name == "get_expiring_items":
             return {"items": await get_expiring_groceries(int(args.get("days", 7)), user, db)}
         if name == "get_storage_locations":
@@ -4267,60 +4865,20 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             created.append({"collection": "appliances", "id": a["id"]})
             return a
         if name == "suggest_recipes_from_inventory":
-            recipes = (await db.execute(
-                _user_owned_query(Recipe, user).order_by(Recipe.name)
-            )).scalars().all()
-            groceries = (await db.execute(
-                select(Grocery).where(Grocery.user_id == user["_id"], Grocery.quantity > 0)
-            )).scalars().all()
-            stock = {g.name_lower: float(g.quantity) for g in groceries}
-            suggestions = []
-            for r in recipes:
-                ings = r.ingredients or []
-                if not ings:
-                    continue
-                missing = []
-                have = 0
-                for ing in ings:
-                    q = ing.get("quantity") or 0
-                    available = stock.get(ing["name"].lower(), 0)
-                    if available >= q:
-                        have += 1
-                    else:
-                        missing.append({"name": ing["name"], "quantity_needed": q, "quantity_have": available})
-                total = len(ings)
-                pct = round(have / total * 100, 1) if total else 0
-                suggestions.append({
-                    "recipe": to_dict(r),
-                    "match_percent": pct,
-                    "missing_ingredients": missing,
-                })
-            suggestions.sort(key=lambda x: (-x["match_percent"], len(x["missing_ingredients"])))
-            return {"suggestions": suggestions[:10]}
+            ranked = await recipe_suggestions(limit=10, user=user, db=db)
+            return {"suggestions": [{
+                "recipe_id": e["recipe"]["id"], "recipe": e["recipe"]["name"], "servings": e["recipe"].get("servings"),
+                "coverage_percent": e["coverage"], "can_cook_now": e["can_cook_now"],
+                "missing_ingredients": e["missing"], "uses_soon_to_expire": e["uses_expiring"],
+            } for e in ranked]}
         if name == "add_missing_ingredients":
             rid = args.get("recipe_id")
-            list_id = args.get("list_id")
             if not rid:
                 return {"error": "recipe_id is required"}
-            r = (await db.execute(
-                select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"])
-            )).scalar_one_or_none()
-            if not r:
-                return {"error": "Recipe not found"}
-            groceries = (await db.execute(
-                select(Grocery).where(Grocery.user_id == user["_id"], Grocery.quantity > 0)
-            )).scalars().all()
-            stock = {g.name_lower: float(g.quantity) for g in groceries}
-            added = []
-            for ing in (r.ingredients or []):
-                name = ing["name"]
-                q = ing.get("quantity") or 1
-                if stock.get(name.lower(), 0) < q:
-                    item = await add_shopping_item_doc(
-                        db, name, q, ing.get("unit", "unit"),
-                        user_id=user["_id"], list_id=list_id)
-                    added.append(item)
-            return {"added": added}
+            items = [MissingIngredient(**i) for i in args["items"]] if args.get("items") else None
+            res = await add_missing_to_list(rid, AddMissingBody(list_id=args.get("list_id"), items=items), user, db)
+            return {"added_to_shopping_list": [{"name": i.get("name"), "quantity": i.get("quantity"), "unit": i.get("unit")} for i in res["added"]],
+                    "note": "These are shopping-list entries only; inventory was not changed."}
     except HTTPException:
         raise
     except Exception:
@@ -4364,7 +4922,10 @@ async def seed():
             for n, i, c in cats:
                 db.add(Category(id=new_id(), user_id=admin_id, name=n, icon=i, color=c, created_at=now_iso()))
 
-        if (await db.execute(select(func.count(Account.id)))).scalar() == 0:
+        # Demo transactions are only for a brand-new install. Without this guard, deleting all your
+        # transactions made the next restart refill the app with demo data.
+        fresh_install = (await db.execute(select(func.count(Account.id)))).scalar() == 0
+        if fresh_install:
             db.add(Account(id="cash", user_id=admin_id, name="Cash", type="cash", opening_balance=120.0, created_at=now_iso()))
             db.add(Account(id="revolut", user_id=admin_id, name="Revolut", type="revolut", opening_balance=640.0, created_at=now_iso()))
 
@@ -4373,7 +4934,7 @@ async def seed():
                 db.add(Person(id=new_id(), user_id=admin_id, name=n, name_lower=n.lower(),
                               photo=None, notes="", payment_preference="", created_at=now_iso()))
 
-        if (await db.execute(select(func.count(Transaction.id)))).scalar() == 0:
+        if fresh_install and (await db.execute(select(func.count(Transaction.id)))).scalar() == 0:
             await seed_transactions(db, admin_id)
 
         if (await db.execute(select(func.count(Task.id)))).scalar() == 0:
@@ -4501,13 +5062,37 @@ async def seed_transactions(db: AsyncSession, user_id: str):
 # ---------------------------------------------------------------------------
 # App lifespan and startup
 # ---------------------------------------------------------------------------
+async def migrate_legacy_account_refs():
+    """Rewrite old 'cash'/'revolut'/'card' strings on transactions and settlements to real account ids,
+    so they count towards the right balance. Idempotent: aliases that are real ids are left alone."""
+    async with AsyncSessionLocal() as db:
+        user_ids = (await db.execute(select(Account.user_id).distinct())).scalars().all()
+        for uid in user_ids:
+            real_ids = set((await db.execute(select(Account.id).where(Account.user_id == uid))).scalars().all())
+            for alias in ("cash", "revolut", "card"):
+                if alias in real_ids:
+                    continue
+                acc = await resolve_account(db, alias, uid)
+                if not acc:
+                    continue
+                for col in (Transaction.account, Transaction.from_account, Transaction.to_account):
+                    await db.execute(update(Transaction).where(Transaction.user_id == uid, col == alias).values({col.key: acc.id}))
+                await db.execute(update(Settlement).where(Settlement.user_id == uid, Settlement.account == alias).values(account=acc.id))
+        await db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await seed()
+    await migrate_legacy_account_refs()
+    scheduler = scheduling.Scheduler(sys.modules[__name__], AsyncSessionLocal)
+    if os.environ.get("SCHEDULER_ENABLED", "true").lower() not in ("0", "false", "no"):
+        scheduler.start()
     logger.info("Life Record ready.")
     yield
+    await scheduler.stop()
     await engine.dispose()
 
 
@@ -4524,6 +5109,9 @@ async def root():
     return {"app": "Life Record", "status": "ok"}
 
 
+conversations_api.register(api_router, sys.modules[__name__])
+chat_images.register(api_router, sys.modules[__name__])
+scheduling_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------
@@ -4538,7 +5126,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_cors_origins,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
     max_age=600,
 )

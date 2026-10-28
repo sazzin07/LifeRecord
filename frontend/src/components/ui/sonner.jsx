@@ -1,24 +1,21 @@
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
+import { useSettings } from "@/context/SettingsContext"
 
-const Toaster = ({
-  ...props
-}) => {
-  const { theme = "system" } = useTheme()
+/** App-wide toasts, themed with the same tokens as cards and dialogs and following the in-app theme. */
+const Toaster = (props) => {
+  const { theme } = useSettings() || { theme: "light" }
 
   return (
     <Sonner
       theme={theme}
-      className="toaster group"
+      position="top-center"
+      richColors
+      closeButton
       toastOptions={{
         classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          toast: "!rounded-2xl !border !border-border !shadow-lg !font-sans",
+          title: "!font-semibold",
+          description: "!text-muted-foreground",
         },
       }}
       {...props} />

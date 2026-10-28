@@ -3,7 +3,7 @@ import { useFetch } from "@/lib/useFetch";
 import { Card, SectionHeading, EmptyState } from "@/components/common";
 
 export default function CalendarPage() {
-  const { data: tasks } = useFetch("/tasks");
+  const { data: tasks, loading } = useFetch("/tasks");
   const withDue = (tasks || []).filter((t) => t.due).sort((a, b) => a.due.localeCompare(b.due));
   const grouped = withDue.reduce((acc, t) => { (acc[t.due] = acc[t.due] || []).push(t); return acc; }, {});
 
@@ -14,7 +14,9 @@ export default function CalendarPage() {
         <Scale className="h-5 w-5 text-emerald-600 shrink-0" />
         <div><p className="font-medium text-sm">Weekly body check-in</p><p className="text-xs text-slate-500">Recurring every week — record your weight in the Body tab.</p></div>
       </Card>
-      {Object.keys(grouped).length === 0 ? (
+      {loading ? (
+        <div className="skeleton h-40 rounded-2xl" aria-busy="true" />
+      ) : Object.keys(grouped).length === 0 ? (
         <Card><EmptyState icon={CalIcon} title="Nothing scheduled" sub="Tasks with a due date will appear here as reminders." /></Card>
       ) : (
         <div className="space-y-4">

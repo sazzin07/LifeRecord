@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { clearCaches } from "@/lib/swrCache";
+import { setCacheUser } from "@/lib/query";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -7,6 +9,8 @@ export const useAuth = () => useContext(AuthCtx);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); // null = checking
   const [ready, setReady] = useState(false);
+  // Cached query data is keyed by user. Set during render so children never read another account's cache.
+  setCacheUser(user ? user.id : null);
 
   useEffect(() => {
     const token = localStorage.getItem("lm_token");
@@ -39,6 +43,7 @@ export function AuthProvider({ children }) {
       return data.token;
     } catch {
       clearTokens();
+      clearCaches();
       return null;
     }
   };
@@ -89,6 +94,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     clearTokens();
+    clearCaches(); // cached page data belongs to the signed-in user only
     setUser(false);
     window.location.href = "/login";
   };

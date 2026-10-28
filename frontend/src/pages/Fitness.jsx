@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Dumbbell, Timer, Plus, Trash2, Trophy, Sparkles, Play } from "lucide-react";
+import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Card, SectionHeading, EmptyState, Label } from "@/components/common";
@@ -82,16 +83,23 @@ function LogDialog({ open, setOpen }) {
 
 export default function Fitness() {
   const [logOpen, setLogOpen] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [prs, setPrs] = useState([]);
+  const [history, setHistory] = useState(() => peekQuery("/workouts") || []);
+  const [prs, setPrs] = useState(() => peekQuery("/workouts/prs") || []);
+  const [loaded, setLoaded] = useState(() => peekQuery("/workouts") != null);
   const [deleteId, setDeleteId] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    const [h, p] = await Promise.all([api.get("/workouts"), api.get("/workouts/prs")]);
-    setHistory(h.data); setPrs(p.data);
+  const load = useCallback(async ({ force = true } = {}) => {
+    const [h, p] = await Promise.all([fetchQuery("/workouts", { force }), fetchQuery("/workouts/prs", { force })]);
+    setHistory(h); setPrs(p); setLoaded(true);
   }, []);
-  useEffect(() => { load(); const fn = () => load(); window.addEventListener("lm:refresh", fn); return () => window.removeEventListener("lm:refresh", fn); }, [load]);
+  useEffect(() => {
+    const unsubs = ["/workouts", "/workouts/prs"].map(subscribeQuery);
+    load({ force: false });
+    const fn = () => load({ force: true });
+    window.addEventListener("lm:refresh", fn);
+    return () => { window.removeEventListener("lm:refresh", fn); unsubs.forEach((u) => u()); };
+  }, [load]);
 
   const del = async (id) => { await api.delete(`/workouts/${id}`); refreshAll(); };
   const workoutToDelete = history.find((w) => w.id === deleteId);
@@ -141,7 +149,9 @@ export default function Fitness() {
 
       <Card>
         <div className="p-5 pb-3"><h3 className="font-semibold">Session history</h3></div>
-        {history.length === 0 ? (
+        {!loaded ? (
+          <div className="skeleton m-5 mt-0 h-40 rounded-2xl" aria-busy="true" />
+        ) : history.length === 0 ? (
           <EmptyState icon={Dumbbell} title="Your training history starts here" sub="Log your first session to build up your personal-best records."
             action={<Button onClick={() => setLogOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Play className="h-4 w-4 mr-1" />Log session</Button>} />
         ) : (

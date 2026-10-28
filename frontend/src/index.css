@@ -115,3 +115,33 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Numeric fields: drop the browser spinners; quantities are typed or use the in-app steppers. */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Keep the layout steady when content above/below a focus target changes size. */
+html { overflow-anchor: auto; }
+
+/* Page change: a short fade, nothing that moves layout. */
+@keyframes lm-page-in { from { opacity: 0; } to { opacity: 1; } }
+.lm-page { animation: lm-page-in 0.18s ease-out both; }
+.no-anim .lm-page { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .lm-page { animation: none; } }
+
+/* ---- Assistant ---- */
+.lm-money { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 600; font-size: 0.92em; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; white-space: nowrap; }
+.lm-ai-prose > :first-child { margin-top: 0; }
+.lm-streaming .lm-ai-prose > :last-child::after { content: ""; display: inline-block; width: 0.5ch; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; border-radius: 1px; background: hsl(160 84% 39%); animation: lm-caret 1s steps(2, jump-none) infinite; }
+@keyframes lm-caret { to { visibility: hidden; } }
+.lm-typing { display: inline-flex; gap: 4px; }
+.lm-typing i { width: 6px; height: 6px; border-radius: 9999px; background: hsl(160 84% 39% / 0.7); animation: lm-dot 1.2s ease-in-out infinite; }
+.lm-typing i:nth-child(2) { animation-delay: 0.15s; }
+.lm-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes lm-dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .lm-typing i { animation: none; opacity: 0.7; }
+  .lm-streaming .lm-ai-prose > :last-child::after { animation: none; }
+}
+.no-anim .lm-typing i, .no-anim .lm-streaming .lm-ai-prose > :last-child::after { animation: none; }

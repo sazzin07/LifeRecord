@@ -21,3 +21,10 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// A two-finger scroll over a focused number field changes its value in Chrome. Release focus first so the
+// page scrolls instead (and nothing gets saved by accident).
+document.addEventListener("wheel", (e) => {
+  const el = document.activeElement;
+  if (el instanceof HTMLInputElement && el.type === "number" && e.target === el) el.blur();
+}, { passive: true });

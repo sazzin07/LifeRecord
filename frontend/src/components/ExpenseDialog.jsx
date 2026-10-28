@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { swr } from "@/lib/query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Avatar } from "@/components/common";
 import { Plus, Trash2, Users, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export function ExpenseDialog({ open, setOpen }) {
   const [cats, setCats] = useState([]);
@@ -29,9 +31,10 @@ export function ExpenseDialog({ open, setOpen }) {
 
   useEffect(() => {
     if (!open) return;
-    api.get("/categories").then((r) => setCats(r.data));
-    api.get("/people").then((r) => setPeople(r.data));
-    api.get("/accounts").then((r) => {
+    swr("/categories", (d) => setCats(d));
+    swr("/people", (d) => setPeople(d));
+    swr("/accounts", (d) => {
+      const r = { data: d };
       setAccounts(r.data);
       if (!account) {
         const cash = r.data.find((a) => a.type === "cash");
@@ -104,7 +107,7 @@ export function ExpenseDialog({ open, setOpen }) {
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</label>
-              <Input data-testid="expense-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1" />
+              <DatePicker data-testid="expense-date" value={date} onChange={setDate} clearable={false} className="mt-1" aria-label="Date" />
             </div>
           </div>
 

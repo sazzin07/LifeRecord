@@ -123,7 +123,9 @@ export default function Body() {
           </div>
         )}
 
-        {pics.length === 0 ? (
+        {photos === null ? (
+          <div className="skeleton h-40 rounded-2xl" aria-busy="true" />
+        ) : pics.length === 0 ? (
           <EmptyState icon={Camera} title="No progress photos yet" sub="Add a photo to start tracking your progress visually. Tap two photos to compare them." />
         ) : (
           <>

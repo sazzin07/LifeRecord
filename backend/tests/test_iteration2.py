@@ -84,7 +84,8 @@ class TestEditExpense:
         assert t2["reimbursable_amount"] == 30.0
         # Update payment_method
         r3 = client.put(f"{BASE_URL}/api/transactions/{t['id']}", json={"payment_method": "card"})
-        assert r3.json()["account"] == "revolut"
+        revolut_id = next(a["id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut")
+        assert r3.json()["account"] == revolut_id
         assert r3.json()["payment_method"] == "card"
         # cleanup
         client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
@@ -295,9 +296,10 @@ class TestShopping:
         assert payload["budget_summary"]["remaining"] == -5.0
 
         # Low-stock endpoint
-        client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_stock", "quantity": 0, "low_threshold": 1})
+        stock = client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_stock", "quantity": 0, "low_threshold": 1}).json()
         low = client.get(f"{BASE_URL}/api/groceries/low-stock").json()
         assert any(x["name"] == f"{TAG}_stock" and x["status"] == "out" for x in low)
+        client.delete(f"{BASE_URL}/api/groceries/{stock['id']}")  # keep the owner's inventory clean
 
         # Analytics includes grocery summary
         summary = client.get(f"{BASE_URL}/api/analytics/summary").json()
@@ -343,7 +345,7 @@ class TestRecipes:
     def test_cook_decrements_inventory(self, client):
         ingname = f"{TAG}_flour"
         g = client.post(f"{BASE_URL}/api/groceries",
-                        json={"name": ingname, "quantity": 10}).json()
+                        json={"name": ingname, "quantity": 10, "unit": "cup"}).json()
         r = client.post(f"{BASE_URL}/api/recipes", json={
             "name": f"{TAG}_cake", "servings": 2,
             "ingredients": [{"name": ingname, "quantity": 3, "unit": "cup"}],
@@ -356,6 +358,15 @@ class TestRecipes:
         gs = client.get(f"{BASE_URL}/api/groceries").json()
         upd = next(x for x in gs if x["id"] == g["id"])
         assert upd["quantity"] == 7
+        # Incompatible units are never guessed: stock counted in "unit" is left alone and flagged
+        other = client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_butter", "quantity": 4, "unit": "unit"}).json()
+        r2 = client.post(f"{BASE_URL}/api/recipes", json={"name": f"{TAG}_cake2", "servings": 1,
+                         "ingredients": [{"name": f"{TAG}_butter", "quantity": 100, "unit": "g"}]}).json()
+        c2 = client.post(f"{BASE_URL}/api/recipes/{r2['id']}/cook").json()
+        assert any("units differ" in ch for ch in c2["inventory_changes"])
+        assert next(x for x in client.get(f"{BASE_URL}/api/groceries").json() if x["id"] == other["id"])["quantity"] == 4
+        client.delete(f"{BASE_URL}/api/recipes/{r2['id']}")
+        client.delete(f"{BASE_URL}/api/groceries/{other['id']}")
         client.delete(f"{BASE_URL}/api/recipes/{rid}")
         client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
 
@@ -509,3 +520,102 @@ class TestGroceryInventoryOps:
         assert not any(x["id"] == g["id"] for x in exp_short)
 
         client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
+
+# --- Storage references stay consistent across UI / REST / AI writes ---
+class TestStorageReferences:
+    def test_storage_kind_is_canonicalised_to_space_name(self, client):
+        locs = client.get(f"{BASE_URL}/api/storage-locations").json()
+        fridge = next((l for l in locs if l["kind"] == "fridge"), None)
+        if not fridge:
+            fridge = client.post(f"{BASE_URL}/api/storage-locations", json={"name": f"{TAG}_fr", "kind": "fridge"}).json()
+        g = client.post(f"{BASE_URL}/api/groceries", json={
+            "name": f"{TAG}_canon", "quantity": 1, "storage_location": "FRIDGE"}).json()
+        assert g["storage_location"] == fridge["name"]
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+
+    def test_rename_storage_location_moves_its_items_with_it(self, client):
+        loc = client.post(f"{BASE_URL}/api/storage-locations", json={"name": f"{TAG}_old", "kind": "custom"}).json()
+        g = client.post(f"{BASE_URL}/api/groceries", json={
+            "name": f"{TAG}_renamed_item", "quantity": 1, "storage_location": f"{TAG}_old"}).json()
+        r = client.put(f"{BASE_URL}/api/storage-locations/{loc['id']}", json={"name": f"{TAG}_new"})
+        assert r.status_code == 200
+        items = {i["id"]: i for i in client.get(f"{BASE_URL}/api/groceries").json()}
+        assert items[g["id"]]["storage_location"] == f"{TAG}_new"
+        client.delete(f"{BASE_URL}/api/groceries/{g['id']}")
+        client.delete(f"{BASE_URL}/api/storage-locations/{loc['id']}")
+
+
+class TestListBudget:
+    def test_budget_can_be_zero_and_cleared(self, client):
+        lst = client.post(f"{BASE_URL}/api/shopping/lists", json={"name": f"{TAG}_budget"}).json()
+        url = f"{BASE_URL}/api/shopping/lists/{lst['id']}"
+        summary = lambda: client.get(f"{BASE_URL}/api/shopping", params={"list_id": lst["id"]}).json()["budget_summary"]
+
+        assert client.put(url, json={"budget": 25.5}).json()["budget"] == 25.5
+        assert summary()["budget"] == 25.5
+
+        # Zero is a real value, not "unset"
+        assert client.put(url, json={"budget": 0}).json()["budget"] == 0
+        assert summary()["budget"] == 0.0
+
+        # An explicit null clears it back to "no budget"
+        assert client.put(url, json={"budget": None}).json()["budget"] is None
+        s = summary()
+        assert s["budget"] is None and s["remaining"] is None
+
+        # Omitting budget leaves it untouched
+        client.put(url, json={"budget": 12})
+        client.put(url, json={"name": f"{TAG}_budget2"})
+        assert summary()["budget"] == 12.0
+        client.delete(url)
+
+
+class TestRecipeSuggestions:
+    def test_suggestions_missing_list_and_unit_aware_cook(self, client):
+        flour = client.post(f"{BASE_URL}/api/groceries", json={"name": f"{TAG}_flour", "quantity": 1, "unit": "kg"}).json()
+        rec = client.post(f"{BASE_URL}/api/recipes", json={
+            "name": f"{TAG}_bread", "servings": 2,
+            "ingredients": [{"name": f"{TAG}_flour", "quantity": 400, "unit": "g"},
+                            {"name": f"{TAG}_yeast", "quantity": 2, "unit": "pack"}]}).json()
+
+        ranked = client.get(f"{BASE_URL}/api/recipes/suggestions").json()
+        mine = next(e for e in ranked if e["recipe"]["id"] == rec["id"])
+        assert mine["can_cook_now"] is False
+        assert mine["missing"] == [{"name": f"{TAG}_yeast", "quantity": 2.0, "unit": "pack"}]
+        flour_row = next(i for i in mine["ingredients"] if i["name"] == f"{TAG}_flour")
+        assert flour_row["status"] == "ok"  # 400 g is covered by 1 kg
+
+        # Missing ingredients go on a list with edited quantities; inventory is untouched
+        r = client.post(f"{BASE_URL}/api/recipes/{rec['id']}/add-missing",
+                        json={"items": [{"name": f"{TAG}_yeast", "quantity": 3, "unit": "pack"}]})
+        assert r.status_code == 200 and r.json()["count"] == 1
+        names = {g["name"] for g in client.get(f"{BASE_URL}/api/groceries").json()}
+        assert f"{TAG}_yeast" not in names
+        listed = [i for i in client.get(f"{BASE_URL}/api/shopping").json()["items"] if i["name"] == f"{TAG}_yeast"]
+        assert listed and float(listed[0]["quantity"]) == 3
+        assert client.post(f"{BASE_URL}/api/recipes/{rec['id']}/add-missing", json={"list_id": "nope"}).status_code == 404
+
+        # Cooking subtracts 400 g from a stock held in kg
+        cook = client.post(f"{BASE_URL}/api/recipes/{rec['id']}/cook").json()
+        now = next(g for g in client.get(f"{BASE_URL}/api/groceries").json() if g["id"] == flour["id"])
+        assert abs(float(now["quantity"]) - 0.6) < 0.001, cook
+
+        for i in listed:
+            client.delete(f"{BASE_URL}/api/shopping/{i['id']}")
+        client.delete(f"{BASE_URL}/api/recipes/{rec['id']}")
+        client.delete(f"{BASE_URL}/api/groceries/{flour['id']}")
+
+
+class TestRecipeEdit:
+    def test_update_recipe_replaces_ingredients_and_totals(self, client):
+        r = client.post(f"{BASE_URL}/api/recipes", json={"name": f"{TAG}_edit", "servings": 1,
+                        "ingredients": [{"name": f"{TAG}_a", "quantity": 1, "unit": "kg"}]}).json()
+        up = client.put(f"{BASE_URL}/api/recipes/{r['id']}", json={
+            "name": f"{TAG}_edit2", "servings": 4, "calories": 800,
+            "ingredients": [{"name": f"{TAG}_b", "quantity": 2, "unit": "can"}, {"name": f"{TAG}_c", "quantity": 3, "unit": "unit"}]})
+        assert up.status_code == 200, up.text
+        body = up.json()
+        assert body["name"] == f"{TAG}_edit2" and body["servings"] == 4 and body["calories"] == 800
+        assert [i["name"] for i in body["ingredients"]] == [f"{TAG}_b", f"{TAG}_c"]
+        client.delete(f"{BASE_URL}/api/recipes/{r['id']}")

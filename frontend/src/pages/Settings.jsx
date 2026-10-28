@@ -72,6 +72,7 @@ export default function Settings() {
           <Button onClick={addCat} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="category-add"><Plus className="h-4 w-4" /></Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
+          {cats === null && [0, 1, 2, 3].map((i) => <span key={i} className="skeleton h-7 w-24 rounded-full" aria-hidden="true" />)}
           {(cats || []).map((c) => (
             <span key={c.id} className="group inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm">
               <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.name}

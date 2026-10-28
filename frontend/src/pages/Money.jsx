@@ -8,6 +8,8 @@ import {
   ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
   ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, BadgeInfo, Lock,
 } from "lucide-react";
+import { moneyPaths } from "@/lib/periods";
+import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, CATEGORY_COLORS } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import {
@@ -25,6 +27,8 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Hint } from "@/components/ui/hint";
 
 const REFUND_BADGE = {
   pending: { type: "unknown", label: "Pending" },
@@ -40,24 +44,16 @@ const SORTS = [
   { id: "merchant", label: "Merchant (A-Z)" },
 ];
 
-function periodParams(period) {
-  const now = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  if (period === "day") return { start: iso(now), end: iso(now) };
-  if (period === "week") { const s = new Date(now); s.setDate(s.getDate() - 6); return { start: iso(s), end: iso(now) }; }
-  if (period === "all") return {};
-  return { month: period };
-}
-
 function formatMonthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1).toLocaleString("default", { month: "long", year: "numeric" });
 }
 
 function exportCSV(rows) {
-  const header = ["Date", "Merchant", "Category", "Account", "Gross", "Personal", "Reimbursable", "Refund Status", "People"];
+  const header = ["Date", "Type", "Merchant", "Category", "Account", "Gross", "Personal", "Reimbursable", "Refund Status", "People"];
   const lines = rows.map((t) => [
     t.date,
+    t.type,
     `"${(t.merchant || t.description || "").replace(/"/g, "'")}"`,
     t.category,
     t.payment_method,
@@ -68,6 +64,13 @@ function exportCSV(rows) {
     (t.responsible || []).join("; "),
   ]);
   return [header, ...lines].map((l) => l.join(",")).join("\n");
+}
+
+// Effect of a transaction on the user's total money: transfers just move it around.
+function signedAmount(t) {
+  if (t.type === "income") return t.gross_amount;
+  if (t.type === "expense") return -t.gross_amount;
+  return 0;
 }
 
 function buildAccountTree(accounts) {
@@ -96,11 +99,18 @@ export default function Money() {
 
   const [period, setPeriod] = useState("week");
   const [pm, setPm] = useState("all");
-  const [sum, setSum] = useState(null);
-  const [txns, setTxns] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [accounts, setAccounts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState("all");
+  // Start from the last-seen data for the default view so the page paints instantly.
+  const seed = useMemo(() => {
+    const m = moneyPaths("week");
+    const s0 = peekQuery(m.summary);
+    return s0 ? { sum: s0, txns: peekQuery(m.transactions) || [], categories: peekQuery(m.categories) || [] } : null;
+  }, []);
+  const [sum, setSum] = useState(seed?.sum ?? null);
+  const [txns, setTxns] = useState(seed?.txns ?? []);
+  const [categories, setCategories] = useState(seed?.categories ?? []);
+  const [accounts, setAccounts] = useState(seed?.sum?.accounts ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editTxn, setEditTxn] = useState(null);
   const [deleteTxnId, setDeleteTxnId] = useState(null);
@@ -118,30 +128,33 @@ export default function Money() {
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const scrollRef = useRef(null);
 
-  const load = useCallback(async () => {
-    const p = periodParams(period);
-    const qs = new URLSearchParams(p).toString();
-    const tqs = new URLSearchParams({ ...p, ...(pm !== "all" ? { payment_method: pm } : {}) }).toString();
+  const load = useCallback(async ({ force = true } = {}) => {
+    const m = moneyPaths(period, pm);
+    // Switching filter: show that filter's last-seen data right away if we have it.
+    const cs = peekQuery(m.summary);
+    if (cs) { setSum(cs); setAccounts(cs.accounts || []); const ct = peekQuery(m.transactions); if (ct) setTxns(ct); }
+    else setLoading(true);
     try {
       const [s, t, c] = await Promise.all([
-        api.get(`/analytics/summary${qs ? `?${qs}` : ""}`),
-        api.get(`/transactions${tqs ? `?${tqs}` : ""}`),
-        api.get("/categories"),
+        fetchQuery(m.summary, { force }),
+        fetchQuery(m.transactions, { force }),
+        fetchQuery(m.categories, { force }),
       ]);
-      setSum(s.data);
-      setTxns(t.data);
-      setCategories(c.data);
-      setAccounts(s.data.accounts || []);
+      setSum(s);
+      setTxns(t);
+      setCategories(c);
+      setAccounts(s.accounts || []);
     } finally { setLoading(false); }
   }, [period, pm]);
 
   useEffect(() => {
-    setLoading(true);
-    load();
-    const h = () => load();
+    const m = moneyPaths(period, pm);
+    const unsubs = [m.summary, m.transactions, m.categories].map(subscribeQuery);
+    load({ force: false });
+    const h = () => load({ force: true });
     window.addEventListener("lm:refresh", h);
-    return () => window.removeEventListener("lm:refresh", h);
-  }, [load]);
+    return () => { window.removeEventListener("lm:refresh", h); unsubs.forEach((u) => u()); };
+  }, [load, period, pm]);
 
   const del = async (id) => {
     await api.delete(`/transactions/${id}`);
@@ -150,8 +163,8 @@ export default function Money() {
   };
   const txnToDelete = txns.find((t) => t.id === deleteTxnId);
 
-  const expenses = useMemo(() => txns.filter((t) => t.type === "expense"), [txns]);
   const { roots: accountRoots, byId: accountById } = useMemo(() => buildAccountTree(accounts), [accounts]);
+  const accountName = (id) => accountById[id]?.name || id || "";
 
   const mainAccounts = useMemo(() => {
     const find = (type) => accountRoots.find((a) => a.type === type) || null;
@@ -169,7 +182,7 @@ export default function Money() {
   }, [sum, curYM]);
 
   const filteredExpenses = useMemo(() => {
-    let rows = [...expenses];
+    let rows = typeFilter === "all" ? [...txns] : txns.filter((t) => t.type === typeFilter);
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter((t) =>
@@ -180,15 +193,16 @@ export default function Money() {
       );
     }
     if (catFilter !== "all") rows = rows.filter((t) => t.category === catFilter);
+    const label = (t) => t.merchant || t.description || "";
     rows.sort((a, b) => {
-      if (sort === "date_desc") return b.date.localeCompare(a.date) || b.created_at?.localeCompare(a.created_at);
-      if (sort === "date_asc") return a.date.localeCompare(b.date) || a.created_at?.localeCompare(b.created_at);
+      if (sort === "date_desc") return b.date.localeCompare(a.date) || (b.created_at || "").localeCompare(a.created_at || "");
+      if (sort === "date_asc") return a.date.localeCompare(b.date) || (a.created_at || "").localeCompare(b.created_at || "");
       if (sort === "amount_desc") return b.gross_amount - a.gross_amount;
       if (sort === "amount_asc") return a.gross_amount - b.gross_amount;
-      return (a.merchant || "").localeCompare(b.merchant || "");
+      return label(a).localeCompare(label(b));
     });
     return rows;
-  }, [expenses, search, catFilter, sort]);
+  }, [txns, search, catFilter, sort, typeFilter]);
 
   const groupedExpenses = useMemo(() => {
     const map = {};
@@ -237,12 +251,15 @@ export default function Money() {
       type: accountForm.type,
       parent_id: accountForm.parent_id || null,
       currency: accountForm.currency || "EUR",
-      opening_balance: parseFloat(accountForm.opening_balance || "0"),
       initial_balance: accountForm.initial_balance === "" ? null : parseFloat(accountForm.initial_balance || "0"),
       is_locked: !!accountForm.is_locked,
       sort_order: 0,
       is_active: true,
     };
+    // The form field is the current balance: when editing, let the server work out the opening balance.
+    const amount = parseFloat(accountForm.opening_balance || "0");
+    if (editingAccount) payload.balance = amount;
+    else payload.opening_balance = amount;
     try {
       if (editingAccount) {
         await api.put(`/accounts/${editingAccount.id}`, payload);
@@ -281,7 +298,7 @@ export default function Money() {
   };
 
   const openNewSubAccount = (parent) => {
-    const childType = parent.type === "cash" ? "cash_place" : "cash_place";
+    const childType = parent.type === "revolut" ? "revolut_space" : "cash_place";
     setEditingAccount(null);
     setAccountForm({ name: "", type: childType, parent_id: parent.id, opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR" });
     setAccountFormOpen(true);
@@ -293,7 +310,7 @@ export default function Money() {
       name: acc.name,
       type: acc.type,
       parent_id: acc.parent_id || "",
-      opening_balance: acc.opening_balance ?? "",
+      opening_balance: acc.balance ?? acc.opening_balance ?? "",
       initial_balance: acc.initial_balance ?? "",
       is_locked: !!acc.is_locked,
       currency: acc.currency || "EUR",
@@ -331,19 +348,19 @@ export default function Money() {
         </div>
         <div className="flex gap-1">
           {onAddSub && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onAddSub} title="Add sub-place">
+            <Hint label="Add sub-place"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onAddSub} aria-label="Add sub-place">
               <Plus className="h-4 w-4" />
-            </Button>
+            </Button></Hint>
           )}
           {onEdit && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} title="Edit">
+            <Hint label="Edit"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} aria-label="Edit">
               <Pencil className="h-4 w-4" />
-            </Button>
+            </Button></Hint>
           )}
           {onTransferIn && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onTransferIn} title="Transfer in">
+            <Hint label="Transfer in"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onTransferIn} aria-label="Transfer in">
               <ArrowRightLeft className="h-4 w-4" />
-            </Button>
+            </Button></Hint>
           )}
         </div>
       </div>
@@ -368,7 +385,7 @@ export default function Money() {
               <div key={child.id} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
                 <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
                   {child.name}
-                  {child.is_locked && <Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" title="Locked / not available" />}
+                  {child.is_locked && <Hint label="Locked / not available"><span className="inline-flex"><Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-label="Locked" /></span></Hint>}
                 </span>
                 <div className="flex items-center gap-2">
                   <span className={cn("font-medium", child.is_locked && "text-amber-700 dark:text-amber-300")}>{eur(child.balance || 0)}</span>
@@ -429,7 +446,6 @@ export default function Money() {
             const enabled = m.key <= curYM;
             return (
               <button key={m.key} data-testid={`period-${m.key}`} disabled={!enabled} onClick={() => enabled && setPeriod(m.key)}
-                title={enabled ? "" : "Available once this month is reached"}
                 className={cn("snap-start rounded-full px-4 h-9 text-sm font-medium border transition-colors shrink-0",
                   !enabled ? "border-dashed border-border text-slate-300 dark:text-slate-600 cursor-not-allowed"
                     : period === m.key ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
@@ -485,12 +501,20 @@ export default function Money() {
             <BalanceSection
               icon={Smartphone}
               label="Revolut"
-              amount={mainAccounts.revolut?.balance}
+              amount={sum?.revolut}
               color="#1964FF"
               testid="money-revolut"
               onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
+              onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
               onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}
-            />
+            >
+              {(sum?.revolut_locked || 0) > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {eur(sum.revolut_locked)} locked
+                </p>
+              )}
+              <SubPlaces account={mainAccounts.revolut} />
+            </BalanceSection>
           </div>
 
           {/* Spending summary */}
@@ -503,7 +527,7 @@ export default function Money() {
             <Card className="p-4 bg-slate-50 dark:bg-slate-800/30">
               <p className="text-xs text-slate-500">Still in hand (cash + Revolut)</p>
               <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{eur(sum?.in_hand)}</p>
-              <p className="text-xs text-slate-400">Not counted as spending</p>
+              <p className="text-xs text-slate-400">Available cash + Revolut, locked money excluded</p>
             </Card>
             <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
               <p className="text-xs text-emerald-700 dark:text-emerald-300">Actual spending</p>
@@ -518,9 +542,9 @@ export default function Money() {
               <div>
                 <p className="text-xs text-slate-500">Total available now</p>
                 <p className="text-2xl font-bold">{eur(sum?.total_available)}</p>
-                {(sum?.cash_locked || 0) > 0 && (
+                {((sum?.cash_locked || 0) + (sum?.revolut_locked || 0)) > 0 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400">
-                    + {eur(sum.cash_locked)} locked until hotel checkout
+                    + {eur((sum.cash_locked || 0) + (sum.revolut_locked || 0))} locked
                   </p>
                 )}
               </div>
@@ -669,6 +693,15 @@ export default function Money() {
                   </SelectContent>
                 </Select>
                 <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 shrink-0">
+                  {[["all", "All"], ["expense", "Expenses"], ["income", "Income"], ["transfer", "Transfers"]].map(([k, l]) => (
+                    <button key={k} data-testid={`type-${k}`} onClick={() => setTypeFilter(k)}
+                      className={cn("rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                        typeFilter === k ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500")}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 shrink-0">
                   {["all", "card", "cash"].map((m) => (
                     <button key={m} data-testid={`pm-${m}`} onClick={() => setPm(m)}
                       className={cn("rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors",
@@ -689,31 +722,45 @@ export default function Money() {
                   <div key={date}>
                     <div className="sticky top-0 z-10 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur px-5 py-1.5 text-xs font-semibold text-slate-500 flex items-center justify-between">
                       <span>{new Date(date).toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric" })}</span>
-                      <span>{eur(group.reduce((a, t) => a + t.gross_amount, 0))}</span>
+                      <span>{eur(group.reduce((a, t) => a + signedAmount(t), 0))}</span>
                     </div>
                     {group.map((t) => {
-                      const badge = REFUND_BADGE[t.refund_status];
+                      const isExpense = t.type === "expense";
+                      const isIncome = t.type === "income";
+                      const isTransfer = t.type === "transfer";
+                      const badge = isExpense ? REFUND_BADGE[t.refund_status] : null;
+                      const color = isIncome ? "#10B981" : isTransfer ? "#3B82F6" : (CATEGORY_COLORS[t.category] || "#94A3B8");
+                      const title = isTransfer
+                        ? `${accountName(t.from_account)} → ${accountName(t.to_account)}`
+                        : (t.merchant || t.description || t.category);
                       return (
                         <div key={t.id} data-testid={`txn-${t.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 group">
-                          <div className="h-9 w-9 rounded-xl grid place-items-center shrink-0" style={{ background: (CATEGORY_COLORS[t.category] || "#94A3B8") + "22" }}>
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: CATEGORY_COLORS[t.category] || "#94A3B8" }} />
+                          <div className="h-9 w-9 rounded-xl grid place-items-center shrink-0" style={{ background: color + "22" }}>
+                            {isIncome ? <ArrowDownRight className="h-4 w-4" style={{ color }} />
+                              : isTransfer ? <ArrowRightLeft className="h-4 w-4" style={{ color }} />
+                                : <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-medium text-sm truncate">{t.merchant || t.description || t.category}</p>
+                              <p className="font-medium text-sm truncate">{title}</p>
                               <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{t.payment_method}
+                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{isExpense ? t.payment_method : accountName(t.account)}
                               </span>
                               {badge && t.reimbursable_amount > 0.005 && <ConfidenceBadge type={badge.type}>{badge.label}</ConfidenceBadge>}
                             </div>
-                            <p className="text-xs text-slate-500">{t.category}{t.responsible?.length ? ` · with ${t.responsible.join(", ")}` : ""}</p>
+                            <p className="text-xs text-slate-500">
+                              {isIncome ? "Income" : isTransfer ? "Transfer" : t.category}
+                              {isIncome && t.description && t.description !== title ? ` · ${t.description}` : ""}
+                              {isTransfer && t.description ? ` · ${t.description}` : ""}
+                              {t.responsible?.length ? ` · with ${t.responsible.join(", ")}` : ""}
+                            </p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="stat-num font-semibold text-sm">{eur(t.gross_amount)}</p>
-                            {t.reimbursable_amount > 0.005 && <p className="text-xs text-amber-600 dark:text-amber-400">{eur(t.remaining_refund)} owed</p>}
+                            <p className={cn("stat-num font-semibold text-sm", isIncome && "text-emerald-600 dark:text-emerald-400")}>{isIncome ? "+" : ""}{eur(t.gross_amount)}</p>
+                            {isExpense && t.reimbursable_amount > 0.005 && <p className="text-xs text-amber-600 dark:text-amber-400">{eur(t.remaining_refund)} owed</p>}
                           </div>
                           <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                            <button data-testid={`edit-txn-${t.id}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>
+                            {isExpense && <button data-testid={`edit-txn-${t.id}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>}
                             <button data-testid={`del-txn-${t.id}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
                           </div>
                         </div>
@@ -748,12 +795,12 @@ export default function Money() {
             </div>
             {editingAccount?.type === "bank" && (
               <div>
-                <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <BadgeInfo className="h-3 w-3" title="Used to calculate money that left the bank" /></Label>
+                <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
                 <Input type="number" min={0} step="0.01" value={accountForm.initial_balance} onChange={(e) => setAccountForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" />
               </div>
             )}
             <div className="flex items-center gap-2">
-              <input id="is-locked" type="checkbox" checked={!!accountForm.is_locked} onChange={(e) => setAccountForm((f) => ({ ...f, is_locked: e.target.checked }))} />
+              <Checkbox id="is-locked" checked={!!accountForm.is_locked} onCheckedChange={(c) => setAccountForm((f) => ({ ...f, is_locked: c === true }))} />
               <Label htmlFor="is-locked" className="text-xs">Locked / not freely available</Label>
             </div>
             {!editingAccount && (
@@ -762,7 +809,7 @@ export default function Money() {
                 <Select value={accountForm.parent_id} onValueChange={(v) => setAccountForm((f) => ({ ...f, parent_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select parent" /></SelectTrigger>
                   <SelectContent>
-                    {accountRoots.filter((a) => a.type === "cash").map((a) => (
+                    {accountRoots.filter((a) => a.type === "cash" || a.type === "revolut").map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>

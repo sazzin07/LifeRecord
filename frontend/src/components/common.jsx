@@ -84,3 +84,14 @@ export function Avatar({ name, photo, size = "h-9 w-9" }) {
     </div>
   );
 }
+
+/** Shown while a page's code is still downloading. Matches the usual page shape so the swap is calm. */
+export function PageSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading page">
+      <div className="space-y-2"><div className="skeleton h-8 w-48" /><div className="skeleton h-4 w-72" /></div>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 rounded-2xl" />)}</div>
+      <div className="skeleton h-64 rounded-2xl" />
+    </div>
+  );
+}

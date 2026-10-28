@@ -47,3 +47,7 @@ tools/mysql-data-backup/
 
 # phpMyAdmin vendor (managed separately)
 tools/phpmyadmin/
+
+# Generated knowledge graph / Obsidian export (regenerate with graphify)
+graphify-out/
+LifeRecord/

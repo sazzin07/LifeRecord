@@ -11,6 +11,7 @@ import { openAI } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const TARGETS = { cal: 2700, p: 160, c: 300, f: 90 };
 
@@ -59,7 +60,7 @@ function MealDialog({ open, setOpen, editing, date, onSave }) {
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3 mt-2">
           <Input placeholder="What did you eat?" value={f.description} onChange={(e) => setF((x) => ({ ...x, description: e.target.value }))} required />
-          <Input type="date" value={f.date} onChange={(e) => setF((x) => ({ ...x, date: e.target.value }))} required />
+          <DatePicker value={f.date} onChange={(v) => setF((x) => ({ ...x, date: v }))} clearable={false} aria-label="Date" />
           <div className="grid grid-cols-2 gap-3">
             <Input type="number" min={0} step="1" placeholder="Calories" value={f.calories} onChange={(e) => setF((x) => ({ ...x, calories: e.target.value }))} />
             <Input type="number" min={0} step="0.1" placeholder="Protein (g)" value={f.protein} onChange={(e) => setF((x) => ({ ...x, protein: e.target.value }))} />
@@ -289,7 +290,9 @@ export default function Nutrition() {
             <Button size="sm" variant="outline" onClick={() => openAI("Create a recipe: ")} data-testid="recipe-ai"><Sparkles className="h-4 w-4 mr-1 text-emerald-600" />AI</Button>
           </div>
         </div>
-        {!(recipes || []).length ? (
+        {recipes === null ? (
+          <div className="skeleton h-32 rounded-2xl" aria-busy="true" />
+        ) : !recipes.length ? (
           <EmptyState icon={ChefHat} title="No recipes yet" sub="Create a recipe manually or ask the assistant." compact />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">

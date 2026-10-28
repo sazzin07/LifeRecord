@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { swr } from "@/lib/query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -12,6 +13,7 @@ import { api, eur } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { HandCoins, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export function EditExpenseDialog({ txn, open, setOpen }) {
   const [cats, setCats] = useState([]);
@@ -25,9 +27,10 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
 
   useEffect(() => {
     if (!open || !txn) return;
-    api.get("/categories").then((r) => setCats(r.data));
-    api.get("/people").then((r) => setPeople(r.data));
-    api.get("/accounts").then((r) => {
+    swr("/categories", (d) => setCats(d));
+    swr("/people", (d) => setPeople(d));
+    swr("/accounts", (d) => {
+      const r = { data: d };
       const accs = r.data.filter((a) => a.type !== "owed" && a.type !== "owed_person");
       setAccounts(accs);
       if (!refund.account && accs.length) {
@@ -121,7 +124,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</label>
-              <Input type="date" value={f.date || ""} onChange={set("date")} className="mt-1" data-testid="edit-date" />
+              <DatePicker value={f.date || ""} onChange={(v) => set("date")({ target: { value: v } })} clearable={false} className="mt-1" data-testid="edit-date" aria-label="Date" />
             </div>
             <Textarea placeholder="Notes" value={f.notes || ""} onChange={set("notes")} rows={2} data-testid="edit-notes" />
 

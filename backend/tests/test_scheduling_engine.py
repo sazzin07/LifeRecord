@@ -405,6 +405,8 @@ def sendgrid(monkeypatch):
         return httpx.Response(r[0], json=r[1])
     real = httpx.AsyncClient
     monkeypatch.setattr(email_service.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    # The transport is fake, so the reserved-domain guard (which would stop these sends first) is not needed here.
+    monkeypatch.setattr(email_service, "is_reserved_address", lambda addr: False)
     return state
 
 

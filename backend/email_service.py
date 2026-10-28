@@ -91,6 +91,18 @@ class Delivery:
         return self.status == "sent"
 
 
+# RFC 2606 / 6761 names: no real mailbox can exist there, so sending only produces bounces (which hurt the
+# sender's reputation). The test suites register accounts on these domains.
+_RESERVED_DOMAINS = ("example.com", "example.net", "example.org")
+_RESERVED_SUFFIXES = (".test", ".example", ".invalid", ".localhost")
+
+
+def is_reserved_address(addr: str) -> bool:
+    domain = (addr or "").rsplit("@", 1)[-1].strip().lower().rstrip(".")
+    return (domain == "localhost" or domain.endswith(_RESERVED_SUFFIXES)
+            or any(domain == d or domain.endswith("." + d) for d in _RESERVED_DOMAINS))
+
+
 def smtp_configured() -> bool:
     return bool(SMTP_HOST and (SMTP_USERNAME or SMTP_FROM_EMAIL))
 
@@ -152,6 +164,9 @@ async def _send_sendgrid(to_email: str, subject: str, html_body: str, text_body:
 async def deliver(to_email: str, subject: str, html_body: str, text_body: str, custom_args: Optional[dict] = None) -> Delivery:
     """Send one email and report what really happened. Unlike `send_email` it never treats a log line as a success."""
     provider = provider_name()
+    if provider and is_reserved_address(to_email):
+        logger.info("Not sending email to a reserved test domain (%s)", to_email.rsplit("@", 1)[-1])
+        return Delivery("failed", "Not sent: the address is on a reserved test domain.")
     if provider == "sendgrid":
         return await _send_sendgrid(to_email, subject, html_body, text_body, custom_args)
     if provider == "smtp":

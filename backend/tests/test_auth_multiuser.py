@@ -53,15 +53,6 @@ def admin():
     return _session(ADMIN_EMAIL, ADMIN_PASSWORD)
 
 
-TEST_USER_EMAIL = r"^(aiiso|authtest|catiso|expired|invalid|isolation|refresh|reset|reused|unverified)_[0-9a-f]+@example[.]com$"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _remove_test_users():
-    # Every account these tests register is removed afterwards (their data goes with them: user FKs cascade).
-    yield
-    _db_execute("DELETE FROM users WHERE role = 'user' AND email REGEXP %s", (TEST_USER_EMAIL,))
-
 
 class TestAuthLifecycle:
     def test_register_verify_login(self):

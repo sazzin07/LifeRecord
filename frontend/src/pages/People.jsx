@@ -335,7 +335,7 @@ export default function People() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {singleDeleteName || "this person"}?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the person and remove their splits and payments from your ledger. This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription>This permanently deletes the person with their shared-expense splits and payment records. Money they already paid you stays in your accounts. This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="person-delete-cancel" onClick={() => setSingleDeleteOpen(false)}>Cancel</AlertDialogCancel>
@@ -350,7 +350,7 @@ export default function People() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {selectedIds.size} people?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the selected people and remove their splits and payments from your ledger. This action cannot be undone.
+              This permanently deletes the selected people with their shared-expense splits and payment records. Money they already paid you stays in your accounts. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

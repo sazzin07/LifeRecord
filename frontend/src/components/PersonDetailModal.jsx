@@ -311,7 +311,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {data?.person?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the person and remove their splits and payments from your ledger. This action cannot be undone.
+              This permanently deletes the person with their shared-expense splits and payment records. Money they already paid you stays in your accounts. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

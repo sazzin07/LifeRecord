@@ -625,7 +625,7 @@ Use the IDs below to track progress. Update the status column as work is complet
 | AI-004 | AI tool for price query | Medium | Completed |
 | AI-005 | Confirmation for destructive AI grocery actions | High | Partial (submit_purchase & delete_shopping_item confirm) |
 | AI-006 | Improve AI action undo | Medium | Not started |
-| AI-007 | Load chat history in UI | Medium | Not started |
+| AI-007 | Load chat history in UI | Medium | Completed (verified 2026-10-28: done in the 2026-10-23 assistant overhaul; checklist was stale) |
 
 ### Dashboard & Cross-Module
 
@@ -640,12 +640,12 @@ Use the IDs below to track progress. Update the status column as work is complet
 | NUTR-002 | Add manual recipe form | High | Completed |
 | NUTR-003 | Add recipe edit/delete backend | Medium | Completed |
 | NUTR-004 | Add meal edit backend | Medium | Completed |
-| TASK-001 | Add task edit/priority/due UI | High | Not started |
-| FIT-001 | Add workout edit/delete UI | Medium | Not started |
-| FIT-002 | Add workout edit backend | Medium | Not started |
-| BODY-001 | Add weight/photo edit UI | Low | Not started |
-| BODY-002 | Add weight edit backend | Low | Not started |
-| QUICK-001 | Replace QuickAdd workout placeholder | Medium | Not started |
+| TASK-001 | Add task edit/priority/due UI | High | Completed (2026-10-28, Batch 1) |
+| FIT-001 | Add workout edit/delete UI | Medium | Completed (2026-10-28, Batch 1) |
+| FIT-002 | Add workout edit backend | Medium | Completed (2026-10-28, Batch 1) |
+| BODY-001 | Add weight/photo edit UI | Low | Completed (2026-10-28, Batch 1) |
+| BODY-002 | Add weight edit backend | Low | Completed (2026-10-28, Batch 1; also `PUT /photos/{id}`) |
+| QUICK-001 | Replace QuickAdd workout placeholder | Medium | Completed (2026-10-28, Batch 1) |
 | ACCT-001 | Add account management UI | Medium | Partial (Money tab supports add/edit/delete/transfer; Settings still missing) |
 | ACCT-002 | Add account CRUD backend | Medium | Completed |
 | MONEY-001 | Use fetched accounts in expense dialogs | Medium | Completed |
@@ -656,10 +656,10 @@ Use the IDs below to track progress. Update the status column as work is complet
 | ID | Task | Priority | Status |
 |----|------|----------|--------|
 | TEST-001 | Backend tests for Groceries lists/budget | High | Completed (list/item CRUD, partial purchase, generate list, budget fields covered) |
-| TEST-002 | Playwright tests for Groceries | High | Not started |
+| TEST-002 | Playwright tests for Groceries | High | Completed (verified 2026-10-28: `e2e/groceries.spec.js` exists, 9 tests per the 2026-10-22 log; checklist was stale) |
 | TEST-003 | Playwright tests for Nutrition manual forms | Medium | Not started |
 | TEST-004 | Backend unit tests for helpers | Medium | Not started |
-| TEST-005 | Externalize test credentials | Low | Not started |
+| TEST-005 | Externalize test credentials | Low | In Progress (e2e fixtures read `TEST_EMAIL`/`TEST_PASSWORD`; backend `tests/support_auth.py` added in Batch 1, older modules still define their own constants) |
 | DOC-001 | Update README.md with Groceries features | High | Completed |
 | DOC-002 | Update README.md with testing instructions | Medium | Completed |
 
@@ -683,12 +683,12 @@ Use the IDs below to track progress. Update the status column as work is complet
 | BUG-002 | Fix PersonDetail route edit/delete | Critical | Completed |
 | BUG-003 | Use fetched accounts in ExpenseDialog | Medium | Completed |
 | BUG-004 | Remove dead fetch logic in PersonDetailModal | Low | Not started |
-| BUG-005 | Fix or remove sonner next-themes wrapper | Low | Not started |
+| BUG-005 | Fix or remove sonner next-themes wrapper | Low | Completed (verified 2026-10-28: `sonner.jsx` uses `useSettings`, no `next-themes` import) |
 | DEBT-001 | Consider splitting monolithic server.py | Medium | Not started |
 | DEBT-002 | Remove unused dependencies | Low | Not started |
 | DEBT-003 | Adopt Alembic | Medium | Completed |
 | DEBT-004 | Persist AI pending confirmations | High | Not started |
-| DEBT-005 | Reduce test dependency on running backend | Medium | Not started |
+| DEBT-005 | Reduce test dependency on running backend | Medium | In Progress (Batch 1: one cached login per account per run, fixing the rate-limit 429 errors; tests still need the live backend) |
 | DEBT-006 | Improve error logging in catch blocks | Low | Not started |
 
 ---
@@ -869,3 +869,21 @@ The Groceries backend redesign, data seeding, AI tools, and tests are complete. 
 - **Email verified live:** `SENDGRID_FROM_EMAIL=tiagosa743@gmail.com` configured in the git-ignored `backend/.env`; one test email sent through the app's own delivery code to that address was accepted by SendGrid (HTTP 202). Acceptance is not inbox delivery: check the inbox and spam folder. A repo-wide scan found no key in any tracked or untracked file. The SendGrid key was pasted into a chat, so rotating it in SendGrid is still recommended.
 - **Chat images:** pictures attached to a chat message are validated by file content, stored under `STORAGE_DIR/chat_images/<user>/<chat>/`, shown again when the chat is reopened (fetched with the user's login), served only to the owner, kept on archive and deleted with the chat; a storage failure never loses the chat. Backend tests (14: types, spoofed MIME, size limits, isolation, deletion, path safety) and browser tests with the real assistant (it described the picture's colour correctly, the picture reappeared after a reload, and it was removed on delete).
 
+---
+
+## 15. Work Log — Roadmap completion (2026-10-28)
+
+**Branch:** `feature/roadmap-completion`. Pre-existing uncommitted work from earlier sessions was committed first as `c03b379`; generated `graphify-out/` and the Obsidian export `LifeRecord/` are now git-ignored.
+
+**Context sources:** Graphify graph (`graphify-out/graph.json`, built at `d12bfa3`) was queried by reading the JSON (the `graphify` CLI is not installed); the Obsidian vault `LifeRecord/` is the graphify export only. Every finding was re-checked against the code because 41 files had changed since the graph was built.
+
+**Decisions taken with the owner (2026-10-28):** secrets move to a DPAPI-encrypted file outside the project (`%LOCALAPPDATA%\LifeRecord\`); security scope = "every session private, every account and its credentials only available to the user"; heavy hardening tasks at the implementer's judgement; tests may run everything except specs that call the live AI model; commit per batch on the branch.
+
+**Baseline before changes:** backend 234 passed + 2 errors (both `TestMultiUserIsolation` setup hitting the auth rate limit, 429), pre-existing.
+
+### Batch 1 — Edit flows (TASK-001, FIT-001, FIT-002, BODY-001, BODY-002, QUICK-001) — Completed
+- **Backend (`server.py`):** `PUT /workouts/{id}`, `PUT /weight/{id}`, `PUT /photos/{id}` (note + date; deleted photos are not editable), all scoped to the signed-in user and 404 for anything else. Dates on weight/workout/photo/task bodies must be `YYYY-MM-DD` (they are stored as text and sorted as text). `TaskBody` now only accepts priority `low|normal|high` and recurring `daily|weekly|monthly` (blank = none); existing rows were checked first and all conform. Completing a repeating task that has a due date creates the next one (daily +1 day, weekly +7, monthly same day clamped to month end) — only on the not-done → done transition, so re-saving a completed task does not duplicate it. The AI `update_task` tool can now set `recurring` and goes through the same code path.
+- **Frontend:** new shared `components/WorkoutDialog.jsx` (log + edit, date and notes fields; uneven sets such as 8, 6 are shown and kept unless the numbers are changed). Fitness history rows have Edit/Delete; Tasks has an edit dialog (title, priority, due with quick picks, repeat — disabled until a due date exists), repeat icon and overdue colouring; Body has an edit dialog for check-ins (weight, date, note) and photos (date, note), and shows check-in notes. QuickAdd "Workout" opens the workout form instead of the "coming soon" toast. Row actions that were hover-only are now always visible on small screens and on keyboard focus, with accessible labels.
+- **Tests:** new `backend/tests/test_body_fitness_edit.py` (7) and `test_tasks_edit.py` (6, incl. month-end and no-duplicate cases) written first and seen failing (405) before the endpoints existed. New `tests/support_auth.py` + `tests/conftest.py`: one login per account per run, cached in a temp file shared by the xdist workers, re-validated with `/auth/me`, deleted at the end of the run; 8 modules switched to it. Fixed an invalid-escape `DeprecationWarning` in `test_conversations.py`. New `frontend/e2e/edit-flows.spec.js` (4 tests).
+- **Verified:** backend **249 passed, 0 errors, 0 warnings** (`pytest tests -q`); new e2e 4/4; regression e2e smoke + pages-smooth + people 10/10; `craco build` "Compiled successfully" with no ESLint warnings; scripted browser pass over Tasks/Fitness/Body/QuickAdd with every new dialog opened: no console warnings or errors.
+- **Remaining / notes:** the `fs.F_OK` deprecation printed by the build comes from build tooling on Node 24 (pre-existing). Checklist rows that were stale (AI-007, TEST-002, BUG-005) were corrected after checking the code.

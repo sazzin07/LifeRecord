@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
+import { WorkoutDialog } from "@/components/WorkoutDialog";
 import { swr } from "@/lib/query";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
@@ -25,6 +26,7 @@ const OPTIONS = [
 export function QuickAdd({ open, setOpen }) {
   const [mode, setMode] = useState(null);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [workoutOpen, setWorkoutOpen] = useState(false);
   const [form, setForm] = useState({});
   const [people, setPeople] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -39,7 +41,7 @@ export function QuickAdd({ open, setOpen }) {
 
   const choose = (key) => {
     if (key === "expense") { setOpen(false); setExpenseOpen(true); return; }
-    if (key === "workout") { toast.info("Workout tracking is coming — use the AI or Fitness tab"); return; }
+    if (key === "workout") { setOpen(false); setWorkoutOpen(true); return; }
     setMode(key);
   };
 
@@ -142,6 +144,7 @@ export function QuickAdd({ open, setOpen }) {
         </DialogContent>
       </Dialog>
       <ExpenseDialog open={expenseOpen} setOpen={setExpenseOpen} />
+      <WorkoutDialog open={workoutOpen} setOpen={setWorkoutOpen} />
     </>
   );
 }

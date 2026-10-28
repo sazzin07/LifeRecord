@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
+from support_auth import login
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -24,10 +25,7 @@ TAG = f"TEST2_{uuid.uuid4().hex[:6]}"
 @pytest.fixture(scope="session")
 def client():
     s = requests.Session()
-    r = requests.post(f"{BASE_URL}/api/auth/login",
-                      json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD}, timeout=15)
-    assert r.status_code == 200, r.text
-    tok = r.json()["token"]
+    tok = login(OWNER_EMAIL, OWNER_PASSWORD)["token"]
     s.headers.update({"Authorization": f"Bearer {tok}", "Content-Type": "application/json"})
     return s
 

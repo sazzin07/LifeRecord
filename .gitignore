@@ -51,3 +51,6 @@ tools/phpmyadmin/
 # Generated knowledge graph / Obsidian export (regenerate with graphify)
 graphify-out/
 LifeRecord/
+
+# User uploads (progress photos, chat images) - private, never commit
+backend/storage/

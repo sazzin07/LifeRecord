@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
-import { Plus, Trash2, Scale, Camera, GitCompare, X } from "lucide-react";
+import { Plus, Trash2, Scale, Camera, GitCompare, X, Pencil } from "lucide-react";
 import { api, API } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, Label } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -35,6 +37,51 @@ function SecurePhoto({ src, alt, className }) {
 
 const photoSrc = (p) => `${API}/photos/file/${p.storage_path}`;
 
+/** Edit a weight check-in (`kind` "weight") or a progress photo's date and note (`kind` "photo"). */
+function EditEntryDialog({ entry, kind, onClose }) {
+  const [form, setForm] = useState({ weight: "", date: "", note: "" });
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (entry) setForm({ weight: entry.weight != null ? String(entry.weight) : "", date: entry.date || "", note: entry.note || "" });
+  }, [entry]);
+
+  const save = async () => {
+    const weight = parseFloat(form.weight);
+    if (kind === "weight" && !(weight > 0)) { toast.error("Enter a weight in kg"); return; }
+    setSaving(true);
+    try {
+      if (kind === "weight") await api.put(`/weight/${entry.id}`, { weight, date: form.date, note: form.note });
+      else await api.put(`/photos/${entry.id}`, { date: form.date, note: form.note });
+      toast.success(kind === "weight" ? "Check-in updated" : "Photo updated");
+      refreshAll();
+      onClose();
+    } catch {
+      toast.error("Could not save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!entry} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-sm" data-testid="body-edit-dialog">
+        <DialogHeader>
+          <DialogTitle>{kind === "weight" ? "Edit check-in" : "Edit photo"}</DialogTitle>
+          <DialogDescription className="sr-only">{kind === "weight" ? "Change the weight, date or note" : "Change the photo's date or note"}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {kind === "weight" && (
+            <div><Label>Weight (kg)</Label><Input type="number" step="0.1" value={form.weight} onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} className="mt-1" data-testid="body-edit-weight" /></div>
+          )}
+          <div><Label>Date</Label><DatePicker value={form.date} onChange={(v) => v && setForm((f) => ({ ...f, date: v }))} clearable={false} className="mt-1" aria-label="Date" /></div>
+          <div><Label>Note</Label><Input value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} placeholder="Optional" className="mt-1" data-testid="body-edit-note" /></div>
+          <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="body-edit-save">Save changes</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Body() {
   const { data: weight, loading } = useFetch("/weight");
   const { data: photos } = useFetch("/photos");
@@ -45,6 +92,7 @@ export default function Body() {
   const [deletePhotoId, setDeletePhotoId] = useState(null);
   const [deleteWeightOpen, setDeleteWeightOpen] = useState(false);
   const [deletePhotoOpen, setDeletePhotoOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const fileRef = useRef(null);
 
   const add = async () => { if (!parseFloat(w)) return; await api.post("/weight", { weight: parseFloat(w) }); setW(""); toast.success("Weight recorded"); refreshAll(); };
@@ -137,7 +185,8 @@ export default function Body() {
                     <SecurePhoto src={photoSrc(p)} alt={p.date} className="w-full aspect-[3/4] object-cover" />
                   </button>
                   <span className="absolute bottom-1 left-1 right-1 text-[10px] text-white bg-black/50 rounded px-1 text-center">{p.date}</span>
-                  <button onClick={() => { setDeletePhotoId(p.id); setDeletePhotoOpen(true); }} className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100" data-testid={`photo-del-${p.id}`}><X className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => setEditing({ kind: "photo", entry: p })} aria-label={`Edit photo from ${p.date}`} className="absolute top-1 left-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100" data-testid={`photo-edit-${p.id}`}><Pencil className="h-3 w-3" /></button>
+                  <button onClick={() => { setDeletePhotoId(p.id); setDeletePhotoOpen(true); }} aria-label={`Delete photo from ${p.date}`} className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/50 text-white sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100" data-testid={`photo-del-${p.id}`}><X className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
             </div>
@@ -149,15 +198,19 @@ export default function Body() {
         <Card>
           <div className="divide-y divide-border">
             {[...arr].reverse().map((e) => (
-              <div key={e.id} className="flex items-center gap-3 px-5 py-3 group">
+              <div key={e.id} data-testid={`weight-${e.id}`} className="flex items-center gap-3 px-5 py-3 group">
                 <span className="stat-num font-semibold">{e.weight} kg</span>
-                <span className="text-sm text-slate-500 flex-1">{e.date}</span>
-                <button onClick={() => { setDeleteWeightId(e.id); setDeleteWeightOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                <span className="text-sm text-slate-500">{e.date}</span>
+                <span className="text-xs text-slate-400 flex-1 truncate">{e.note}</span>
+                <button onClick={() => setEditing({ kind: "weight", entry: e })} aria-label={`Edit check-in from ${e.date}`} data-testid={`weight-edit-${e.id}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-emerald-600"><Pencil className="h-4 w-4" /></button>
+                <button onClick={() => { setDeleteWeightId(e.id); setDeleteWeightOpen(true); }} aria-label={`Delete check-in from ${e.date}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
           </div>
         </Card>
       )}
+
+      <EditEntryDialog entry={editing?.entry} kind={editing?.kind} onClose={() => setEditing(null)} />
 
       <ConfirmDialog
         open={deleteWeightOpen}

@@ -3,6 +3,7 @@ import os
 import uuid
 from pathlib import Path
 import requests
+from support_auth import login
 import pymysql
 import pytest
 
@@ -42,9 +43,7 @@ def _db_execute(sql, params=()):
 
 def _session(email, password):
     s = requests.Session()
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": password}, timeout=15)
-    assert r.status_code == 200, r.text
-    tok = r.json()["token"]
+    tok = login(email, password)["token"]
     s.headers.update({"Authorization": f"Bearer {tok}", "Content-Type": "application/json"})
     return s
 

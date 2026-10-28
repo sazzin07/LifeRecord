@@ -1,88 +1,18 @@
 import { useState, useCallback, useEffect } from "react";
-import { Dumbbell, Timer, Plus, Trash2, Trophy, Sparkles, Play } from "lucide-react";
+import { Dumbbell, Trash2, Trophy, Sparkles, Play, Pencil } from "lucide-react";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
-import { Card, SectionHeading, EmptyState, Label } from "@/components/common";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Card, SectionHeading, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WorkoutDialog, WORKOUT_TEMPLATES as TEMPLATES } from "@/components/WorkoutDialog";
 import { openAI } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-
-const TEMPLATES = {
-  Push: { color: "#10B981", exercises: [
-    { name: "Dips", sets: 3, reps: 12, weight: 0 }, { name: "Pike push-ups", sets: 3, reps: 10, weight: 0 },
-    { name: "Push-ups", sets: 3, reps: 15, weight: 0 }, { name: "Pseudo planche", sets: 3, reps: 8, weight: 0 },
-    { name: "Planche lean", is_isometric: true, duration: 30 }] },
-  Pull: { color: "#6366F1", exercises: [
-    { name: "Pull-ups", sets: 3, reps: 8, weight: 0 }, { name: "Rows", sets: 3, reps: 10, weight: 20 },
-    { name: "Chin-ups", sets: 3, reps: 8, weight: 0 }, { name: "Face pulls", sets: 3, reps: 15, weight: 10 },
-    { name: "Dead hang", is_isometric: true, duration: 45 }] },
-  Legs: { color: "#F59E0B", exercises: [
-    { name: "Pistol squats", sets: 3, reps: 6, weight: 0 }, { name: "Nordic curls", sets: 3, reps: 6, weight: 0 },
-    { name: "Calf raises", sets: 3, reps: 20, weight: 0 }, { name: "Lunges", sets: 3, reps: 12, weight: 0 },
-    { name: "Wall sit", is_isometric: true, duration: 60 }] },
-};
-
-function LogDialog({ open, setOpen }) {
-  const [type, setType] = useState("Push");
-  const [exs, setExs] = useState([]);
-  useEffect(() => { if (open) { setExs(TEMPLATES[type].exercises.map((e) => ({ ...e }))); } }, [open, type]);
-
-  const setEx = (i, k, v) => setExs((a) => a.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
-
-  const save = async () => {
-    const exercises = exs.map((e) => e.is_isometric
-      ? { name: e.name, is_isometric: true, duration: parseInt(e.duration) || 0, sets: [] }
-      : { name: e.name, is_isometric: false, sets: Array.from({ length: parseInt(e.sets) || 1 }).map(() => ({ reps: parseInt(e.reps) || 0, weight: parseFloat(e.weight) || 0 })) });
-    try { await api.post("/workouts", { type, exercises }); toast.success(`${type} session logged`); refreshAll(); setOpen(false); }
-    catch { toast.error("Could not save session"); }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="workout-log-dialog">
-        <DialogHeader><DialogTitle>Log workout</DialogTitle>
-          <DialogDescription className="sr-only">Record a completed workout session</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger data-testid="workout-type"><SelectValue /></SelectTrigger>
-            <SelectContent>{Object.keys(TEMPLATES).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-          </Select>
-          <div className="space-y-2">
-            {exs.map((e, i) => (
-              <div key={i} className="rounded-xl border border-border p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Input value={e.name} onChange={(ev) => setEx(i, "name", ev.target.value)} className="h-8 font-medium" />
-                  <button onClick={() => setExs((a) => a.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-                </div>
-                {e.is_isometric ? (
-                  <div className="flex items-center gap-2 text-sm"><Timer className="h-4 w-4 text-emerald-600" /><Input type="number" value={e.duration} onChange={(ev) => setEx(i, "duration", ev.target.value)} className="h-8 w-24" /> seconds</div>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div><Label>Sets</Label><Input type="number" value={e.sets} onChange={(ev) => setEx(i, "sets", ev.target.value)} className="h-8 mt-1" /></div>
-                    <div><Label>Reps</Label><Input type="number" value={e.reps} onChange={(ev) => setEx(i, "reps", ev.target.value)} className="h-8 mt-1" /></div>
-                    <div><Label>Weight (kg)</Label><Input type="number" value={e.weight} onChange={(ev) => setEx(i, "weight", ev.target.value)} className="h-8 mt-1" /></div>
-                  </div>
-                )}
-              </div>
-            ))}
-            <Button variant="outline" size="sm" className="w-full" onClick={() => setExs((a) => [...a, { name: "New exercise", sets: 3, reps: 10, weight: 0 }])}><Plus className="h-4 w-4 mr-1" />Add exercise</Button>
-          </div>
-          <Button onClick={save} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="workout-save">Save session</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export default function Fitness() {
   const [logOpen, setLogOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [history, setHistory] = useState(() => peekQuery("/workouts") || []);
   const [prs, setPrs] = useState(() => peekQuery("/workouts/prs") || []);
   const [loaded, setLoaded] = useState(() => peekQuery("/workouts") != null);
@@ -161,18 +91,21 @@ export default function Fitness() {
                 <div className="flex items-center gap-3">
                   <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full")} style={{ background: (TEMPLATES[w.type]?.color || "#94A3B8") + "22", color: TEMPLATES[w.type]?.color || "#64748B" }}>{w.type}</span>
                   <span className="text-sm text-slate-500 flex-1">{w.date}</span>
-                  <button onClick={() => { setDeleteId(w.id); setDeleteOpen(true); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                  <button onClick={() => setEditing(w)} aria-label={`Edit ${w.type} session from ${w.date}`} data-testid={`workout-edit-${w.id}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-emerald-600"><Pencil className="h-4 w-4" /></button>
+                  <button onClick={() => { setDeleteId(w.id); setDeleteOpen(true); }} aria-label={`Delete ${w.type} session from ${w.date}`} data-testid={`workout-delete-${w.id}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                 </div>
                 <p className="text-xs text-slate-500 mt-1.5">
                   {w.exercises.map((e) => e.is_isometric ? `${e.name} ${e.duration}s` : `${e.name} ${e.sets.length}×${e.sets[0]?.reps || 0}${e.sets[0]?.weight ? `@${e.sets[0].weight}kg` : ""}`).join(" · ")}
                 </p>
+                {w.notes && <p className="text-xs text-slate-400 mt-1">{w.notes}</p>}
               </div>
             ))}
           </div>
         )}
       </Card>
 
-      <LogDialog open={logOpen} setOpen={setLogOpen} />
+      <WorkoutDialog open={logOpen} setOpen={setLogOpen} />
+      <WorkoutDialog open={!!editing} setOpen={(o) => { if (!o) setEditing(null); }} workout={editing} />
 
       <ConfirmDialog
         open={deleteOpen}

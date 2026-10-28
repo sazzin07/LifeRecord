@@ -3,6 +3,7 @@ import os
 import uuid
 from pathlib import Path
 import requests
+from support_auth import login
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -23,10 +24,7 @@ TAG = f"TEST_{uuid.uuid4().hex[:6]}"
 
 @pytest.fixture(scope="session")
 def token():
-    r = requests.post(f"{BASE_URL}/api/auth/login",
-                      json={"email": OWNER_EMAIL, "password": OWNER_PASSWORD}, timeout=15)
-    assert r.status_code == 200, f"Login failed: {r.status_code} {r.text}"
-    data = r.json()
+    data = login(OWNER_EMAIL, OWNER_PASSWORD)
     assert "token" in data and data["user"]["email"] == OWNER_EMAIL
     return data["token"]
 

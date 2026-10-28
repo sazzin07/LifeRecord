@@ -47,9 +47,11 @@ EXTRA_TOOLS = [
         "List tasks and calendar reminders (a task's due date is its calendar entry). status: open, done, overdue or all. "
         "Optional due-date range and text search.",
         {"status": {"type": "string", "enum": ["open", "done", "overdue", "all"]}, "start": _S, "end": _S, "search": _S}),
-    _fn("update_task", "Edit a task: rename, change priority (low, normal, high), set or clear the due date, or mark done / not done. "
+    _fn("update_task", "Edit a task: rename, change priority (low, normal, high), set or clear the due date, set how it repeats, "
+        "or mark done / not done. Completing a repeating task with a due date creates the next one. "
         "Identify it by task_id or by a title match.",
         {"task_id": _S, "match": _S, "title": _S, "priority": _S, "due": {"type": "string", "description": "YYYY-MM-DD, or empty string to clear"},
+         "recurring": {"type": "string", "enum": ["", "daily", "weekly", "monthly"], "description": "Empty string = does not repeat"},
          "done": _B}),
     _fn("delete_task", "Delete a task (preview first, then confirm).", {"task_id": _S, "match": _S, "confirm": _CONFIRM}),
     _fn("get_people", "List people with what each owes the user or is owed (positive = they owe the user)."),
@@ -206,7 +208,8 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         if not t:
             return {"error": "No task found. Use get_tasks to find the task id."}
         body = srv.TaskBody(title=args.get("title") or t.title, priority=args.get("priority") or t.priority,
-                            due=(args["due"] or None) if "due" in args else t.due, recurring=t.recurring,
+                            due=(args["due"] or None) if "due" in args else t.due,
+                            recurring=(args["recurring"] or None) if "recurring" in args else t.recurring,
                             done=args["done"] if "done" in args else t.done)
         return {"updated": await srv.update_task(t.id, body, user, db)}
     if name == "delete_task":

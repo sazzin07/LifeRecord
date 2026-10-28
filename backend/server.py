@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import asyncio
+import calendar
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
@@ -18,7 +19,7 @@ import jwt
 from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File, Query, Response
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, delete, update, func, desc, asc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -353,17 +354,37 @@ class IncomeBody(BaseModel):
     date: Optional[str] = None
 
 
+ISO_DATE = r"^\d{4}-\d{2}-\d{2}$"
+TASK_REPEATS = ("daily", "weekly", "monthly")
+
+
 class TaskBody(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
-    priority: str = Field(default="normal", max_length=50)
-    due: Optional[str] = None
-    recurring: Optional[str] = Field(default=None, max_length=50)
+    priority: str = Field(default="normal", pattern=r"^(low|normal|high)$")
+    due: Optional[str] = Field(default=None, pattern=ISO_DATE)
+    recurring: Optional[str] = Field(default=None, pattern=r"^(daily|weekly|monthly)$")
     done: bool = False
+
+    @field_validator("due", "recurring", mode="before")
+    @classmethod
+    def _blank_is_none(cls, v):
+        return None if v == "" else v
+
+
+def next_due(due: str, repeat: str) -> str:
+    """Next occurrence of a recurring task. Monthly keeps the day, clamped to the month's last day."""
+    d = datetime.strptime(due, "%Y-%m-%d")
+    if repeat == "daily":
+        return (d + timedelta(days=1)).strftime("%Y-%m-%d")
+    if repeat == "weekly":
+        return (d + timedelta(weeks=1)).strftime("%Y-%m-%d")
+    year, month = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+    return datetime(year, month, min(d.day, calendar.monthrange(year, month)[1])).strftime("%Y-%m-%d")
 
 
 class WeightBody(BaseModel):
     weight: float = Field(..., ge=0, le=1000)
-    date: Optional[str] = None
+    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
     note: str = Field(default="", max_length=1000)
 
 
@@ -640,13 +661,14 @@ class WorkoutExercise(BaseModel):
 
 class WorkoutBody(BaseModel):
     type: str = Field(default="Push", max_length=50)
-    date: Optional[str] = None
+    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
     exercises: List[WorkoutExercise] = []
     notes: str = Field(default="", max_length=2000)
 
 
 class PhotoNote(BaseModel):
     note: str = Field(default="", max_length=2000)
+    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
 
 
 # ---------------------------------------------------------------------------
@@ -2311,7 +2333,12 @@ async def update_task(tid: str, body: TaskBody, user: dict = Depends(get_current
     )).scalar_one_or_none()
     if not task:
         raise HTTPException(404, "Task not found")
+    completing = body.done and not task.done
     await db.execute(update(Task).where(Task.id == tid, Task.user_id == user["_id"]).values(**body.model_dump()))
+    if completing and body.recurring in TASK_REPEATS and body.due:
+        # Completing a repeating task schedules the next one; only on the not-done -> done transition.
+        db.add(Task(id=new_id(), user_id=user["_id"], title=body.title, priority=body.priority,
+                    due=next_due(body.due, body.recurring), recurring=body.recurring, done=False, created_at=now_iso()))
     await db.commit()
     await db.refresh(task)
     return to_dict(task)
@@ -2341,6 +2368,22 @@ async def add_weight(body: WeightBody, user: dict = Depends(get_current_user), d
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     w = WeightEntry(id=new_id(), user_id=user["_id"], weight=body.weight, date=date, note=body.note, created_at=now_iso())
     db.add(w)
+    await db.commit()
+    await db.refresh(w)
+    return to_dict(w)
+
+
+@api_router.put("/weight/{wid}")
+async def update_weight(wid: str, body: WeightBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    w = (await db.execute(
+        select(WeightEntry).where(WeightEntry.id == wid, WeightEntry.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not w:
+        raise HTTPException(404, "Weight entry not found")
+    w.weight = body.weight
+    w.note = body.note
+    if body.date:
+        w.date = body.date
     await db.commit()
     await db.refresh(w)
     return to_dict(w)
@@ -2378,6 +2421,23 @@ async def create_workout(db: AsyncSession, body: WorkoutBody, user_id: str) -> d
 @api_router.post("/workouts")
 async def post_workout(body: WorkoutBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await create_workout(db, body, user["_id"])
+
+
+@api_router.put("/workouts/{wid}")
+async def update_workout(wid: str, body: WorkoutBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    w = (await db.execute(
+        select(Workout).where(Workout.id == wid, Workout.user_id == user["_id"])
+    )).scalar_one_or_none()
+    if not w:
+        raise HTTPException(404, "Workout not found")
+    w.type = body.type
+    w.notes = body.notes
+    w.exercises = [e.model_dump() for e in body.exercises]
+    if body.date:
+        w.date = body.date
+    await db.commit()
+    await db.refresh(w)
+    return to_dict(w)
 
 
 @api_router.delete("/workouts/{wid}")
@@ -2474,6 +2534,23 @@ async def delete_photo(pid: str, user: dict = Depends(get_current_user), db: Asy
     await db.execute(update(Photo).where(Photo.id == pid, Photo.user_id == user["_id"]).values(is_deleted=True))
     await db.commit()
     return {"ok": True}
+
+
+@api_router.put("/photos/{pid}")
+async def update_photo(pid: str, body: PhotoNote, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    photo = (await db.execute(
+        select(Photo).where(Photo.id == pid, Photo.user_id == user["_id"], Photo.is_deleted == False)
+    )).scalar_one_or_none()
+    if not photo:
+        raise HTTPException(404, "Photo not found")
+    photo.note = body.note
+    if body.date:
+        photo.date = body.date
+    await db.commit()
+    await db.refresh(photo)
+    d = to_dict(photo)
+    d["url"] = f"/api/photos/file/{photo.storage_path}"
+    return d
 
 
 @api_router.get("/photos/file/{path:path}")

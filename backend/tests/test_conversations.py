@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from support_auth import login
 from sqlalchemy import delete, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -38,10 +39,8 @@ def run(coro):
 
 
 def _login(email, password):
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": password}, timeout=20)
-    assert r.status_code == 200, r.text
     s = requests.Session()
-    s.headers["Authorization"] = f"Bearer {r.json()['token']}"
+    s.headers["Authorization"] = f"Bearer {login(email, password)['token']}"
     return s
 
 
@@ -73,7 +72,7 @@ def tidy_conversations():
 
     async def drop():
         async with AsyncSessionLocal() as db:
-            ids = (await db.execute(select(AIConversation.id).where(AIConversation.title.like("%CONV\_%", escape="\\")))).scalars().all()
+            ids = (await db.execute(select(AIConversation.id).where(AIConversation.title.like(r"%CONV\_%", escape="\\")))).scalars().all()
             await db.execute(delete(AIMessage).where(AIMessage.session_id.in_(ids)))
             await db.execute(delete(AIConversation).where(AIConversation.id.in_(ids)))
             await db.commit()

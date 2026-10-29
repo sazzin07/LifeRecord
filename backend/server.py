@@ -46,6 +46,8 @@ import chat_images
 import scheduling
 import scheduling_api
 import calendar_api
+import nutrition_api
+import nutrition_calc
 from starlette.responses import StreamingResponse
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS,
@@ -3140,9 +3142,11 @@ async def get_meals(date: Optional[str] = None, user: dict = Depends(get_current
 @api_router.post("/meals")
 async def add_meal(body: MealBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    quick = nutrition_calc.quick_nutrients(body.calories, body.protein, body.carbs, body.fat)
     m = Meal(id=new_id(), user_id=user["_id"], description=body.description, date=date,
              calories=body.calories, protein=body.protein, carbs=body.carbs,
-             fat=body.fat, created_at=now_iso())
+             fat=body.fat, created_at=now_iso(), updated_at=now_iso(), meal_type="other",
+             nutrients=quick or None, quality="user", entry_source="quick")
     db.add(m)
     await db.commit()
     await db.refresh(m)
@@ -3156,6 +3160,9 @@ async def update_meal(mid: str, body: MealBody, user: dict = Depends(get_current
         raise HTTPException(404, "Meal not found")
     updates = body.model_dump()
     updates["date"] = updates.get("date") or meal.date
+    # This older endpoint edits the four typed numbers, so the entry becomes a quick entry (detached from any food).
+    updates["nutrients"] = nutrition_calc.quick_nutrients(body.calories, body.protein, body.carbs, body.fat) or None
+    updates.update(food_id=None, recipe_id=None, quantity=None, unit=None, grams=None, quality="user", entry_source="quick", updated_at=now_iso())
     await db.execute(update(Meal).where(Meal.id == mid, Meal.user_id == user["_id"]).values(**updates))
     await db.commit()
     await db.refresh(meal)
@@ -5358,6 +5365,7 @@ conversations_api.register(api_router, sys.modules[__name__])
 chat_images.register(api_router, sys.modules[__name__])
 scheduling_api.register(api_router, sys.modules[__name__])
 calendar_api.register(api_router, sys.modules[__name__])
+nutrition_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------

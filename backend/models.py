@@ -300,6 +300,20 @@ class Meal(Base):
     carbs = Column(DECIMAL(8, 1), nullable=True)
     fat = Column(DECIMAL(8, 1), nullable=True)
     created_at = Column(String(32), nullable=False)
+    # --- food diary fields (older rows are quick entries with only the four numbers above) ---
+    meal_type = Column(String(20), nullable=False, default="other", server_default="other")  # breakfast|lunch|dinner|snack|other
+    meal_label = Column(String(100), nullable=True)  # a custom meal name, e.g. "Post-workout"
+    eaten_at = Column(String(5), nullable=True)  # local time HH:MM
+    food_id = Column(String(36), nullable=True, index=True)
+    recipe_id = Column(String(36), nullable=True)
+    quantity = Column(DECIMAL(10, 2), nullable=True)
+    unit = Column(String(50), nullable=True)
+    grams = Column(DECIMAL(10, 2), nullable=True)
+    nutrients = Column(JSON, nullable=True)  # absolute amounts for this entry, snapshotted when logged
+    quality = Column(String(16), nullable=True)  # verified | estimated | user | mixed
+    entry_source = Column(String(16), nullable=True)  # food | recipe | manual | quick | ai
+    updated_at = Column(String(32), nullable=True)
+    client_ref = Column(String(64), nullable=True)  # idempotency key from the client
 
 
 class Recipe(Base):
@@ -315,6 +329,8 @@ class Recipe(Base):
     fat = Column(DECIMAL(8, 1), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(String(32), nullable=False)
+    nutrients = Column(JSON, nullable=True)  # per serving, calculated from the ingredients when they are linked to foods
+    quality = Column(String(16), nullable=True)
 
 
 class AIAction(Base):
@@ -460,3 +476,65 @@ class EmailEvent(Base):
     attempts = Column(Integer, nullable=False, default=1)
     detail = Column(String(255), nullable=False, default="")
     created_at = Column(String(32), nullable=False)
+
+
+class Food(Base):
+    """A food with nutrient values per 100 g. user_id NULL = shared reference data (USDA, Open Food Facts);
+    a user_id marks a food that person created. Values are never invented: a nutrient that was not reported is absent."""
+    __tablename__ = "foods"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    source = Column(String(24), nullable=False, index=True)  # usda_foundation | usda_sr_legacy | open_food_facts | user
+    source_id = Column(String(64), nullable=True)  # FoodData Central id, or the barcode
+    name = Column(String(500), nullable=False)
+    name_lower = Column(String(255), nullable=False, index=True)
+    brand = Column(String(255), nullable=True)
+    barcode = Column(String(32), nullable=True, index=True)
+    category = Column(String(150), nullable=True)
+    quality = Column(String(16), nullable=False, default="verified")  # verified | estimated | user
+    nutrients = Column(JSON, nullable=False)  # {key: amount per 100 g}
+    portions = Column(JSON, nullable=True)  # [{"label": "1 cup, chopped", "grams": 89.0}]
+    data_version = Column(String(80), nullable=True)  # e.g. "USDA Foundation Foods 2025-12-18"
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=True)
+
+    __table_args__ = (Index("ux_foods_source", "source", "source_id", "user_id"),)
+
+
+class FoodFavorite(Base):
+    __tablename__ = "food_favorites"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    food_id = Column(String(36), ForeignKey("foods.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(String(32), nullable=False)
+    __table_args__ = (Index("ux_food_favorites", "user_id", "food_id", unique=True),)
+
+
+class NutritionProfile(Base):
+    """Optional, minimal, entered by the user. Without it the app shows general adult reference values."""
+    __tablename__ = "nutrition_profiles"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    birth_year = Column(Integer, nullable=True)
+    sex = Column(String(1), nullable=True)  # F | M (the reference tables are defined for these)
+    height_cm = Column(DECIMAL(5, 1), nullable=True)
+    weight_kg = Column(DECIMAL(5, 1), nullable=True)  # falls back to the latest Body weigh-in
+    activity = Column(String(16), nullable=True)  # sedentary | moderate | active | very_active
+    pregnancy = Column(String(20), nullable=True)  # pregnant_t1..t3 | lactating_0_6 | lactating_6plus
+    diet_tags = Column(JSON, nullable=True)  # vegan, vegetarian, gluten-free, lactose-free
+    allergies = Column(JSON, nullable=True)  # free-text words to avoid
+    target_overrides = Column(JSON, nullable=True)  # {nutrient_key: {"min":..,"target":..,"max":..}} always win over suggestions
+    timezone = Column(String(64), nullable=True)
+    updated_at = Column(String(32), nullable=True)
+
+
+class HydrationEntry(Base):
+    __tablename__ = "hydration_entries"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(String(10), nullable=False, index=True)
+    eaten_at = Column(String(5), nullable=True)
+    amount_ml = Column(Integer, nullable=False)
+    beverage = Column(String(24), nullable=False, default="water")  # water | tea | coffee | other
+    created_at = Column(String(32), nullable=False)
+

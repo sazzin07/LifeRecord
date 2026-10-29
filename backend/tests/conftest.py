@@ -29,6 +29,7 @@ def pytest_sessionfinish(session, exitstatus):
         try:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM users WHERE role = 'user' AND email REGEXP %s", (TEST_USER_EMAIL,))
+                cur.execute("DELETE FROM email_events WHERE recipient_domain IN ('example.com', 'example.test')")
             conn.commit()
         finally:
             conn.close()

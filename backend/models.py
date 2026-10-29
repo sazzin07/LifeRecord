@@ -444,3 +444,18 @@ class RateLimitEvent(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     bucket = Column(String(64), nullable=False, index=True)
     at_ms = Column(BigInteger, nullable=False, index=True)
+
+
+class EmailEvent(Base):
+    """What happened to each account email (verification, reset, security notice). No address is stored: a hash
+    to correlate repeated problems for one recipient, and the domain to spot provider-level trouble."""
+    __tablename__ = "email_events"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    purpose = Column(String(32), nullable=False, index=True)
+    recipient_hash = Column(String(64), nullable=False, index=True)
+    recipient_domain = Column(String(255), nullable=False)
+    provider = Column(String(16), nullable=False, default="")
+    status = Column(String(16), nullable=False)  # sent, failed, skipped, not_configured
+    attempts = Column(Integer, nullable=False, default=1)
+    detail = Column(String(255), nullable=False, default="")
+    created_at = Column(String(32), nullable=False)

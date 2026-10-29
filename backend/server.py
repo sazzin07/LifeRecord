@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 
 import jwt
-from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File, Query, Response
+from fastapi import FastAPI, APIRouter, BackgroundTasks, Request, HTTPException, Depends, UploadFile, File, Query, Response
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -52,7 +52,7 @@ from security_utils import (
     create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
     is_valid_email, is_strong_password,
 )
-from email_service import send_verification_code, send_password_reset
+from email_service import send_verification_code, send_password_reset, send_security_notice
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -1215,7 +1215,7 @@ async def cook_recipe_doc(db: AsyncSession, recipe: dict, user_id: str) -> dict:
 # Auth routes
 # ---------------------------------------------------------------------------
 @api_router.post("/auth/register")
-async def register(body: SignupBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def register(body: SignupBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     name = body.name.strip()
 
@@ -1228,7 +1228,8 @@ async def register(body: SignupBody, request: Request, db: AsyncSession = Depend
 
     existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing:
-        # Never disclose whether an email is registered
+        # Never disclose whether an email is registered: same message, and the same amount of work as a new signup.
+        hash_password(body.password)
         return {"message": "If this email is not registered, you will receive a verification code shortly."}
 
     await check_rate_limit(request, email)
@@ -1245,14 +1246,15 @@ async def register(body: SignupBody, request: Request, db: AsyncSession = Depend
     db.add(user)
     await db.commit()
 
-    # Fire-and-forget email ( awaited so we log failures )
-    await send_verification_code(email, code, name)
+    # Sent after the response (with retries; the outcome is recorded in email_events), so a slow mail server never
+    # slows signup and response time does not depend on whether the address was already registered.
+    background.add_task(send_verification_code, email, code, name)
 
     return {"message": "If this email is not registered, you will receive a verification code shortly."}
 
 
 @api_router.post("/auth/resend-verification")
-async def resend_verification(body: ResendCodeBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def resend_verification(body: ResendCodeBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not user:
@@ -1276,10 +1278,11 @@ async def resend_verification(body: ResendCodeBody, request: Request, db: AsyncS
     code = generate_six_digit_code()
     user.verification_code = code
     user.verification_code_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    user.verification_attempts = 0  # a fresh code gets a fresh set of tries; otherwise 5 typos lock the account for good
     user.last_verification_sent_at = now_iso()
     await db.commit()
 
-    await send_verification_code(email, code, user.name)
+    background.add_task(send_verification_code, email, code, user.name)
     return {"message": "If this email is registered, a new code will be sent."}
 
 
@@ -1350,7 +1353,7 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
 
 
 @api_router.post("/auth/forgot-password")
-async def forgot_password(body: ForgotPasswordBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def forgot_password(body: ForgotPasswordBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
@@ -1360,13 +1363,13 @@ async def forgot_password(body: ForgotPasswordBody, request: Request, db: AsyncS
         user.password_reset_token = hash_token(token)  # only the hash is stored; the emailed link carries the token
         user.password_reset_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
         await db.commit()
-        await send_password_reset(email, token, user.name)
+        background.add_task(send_password_reset, email, token, user.name)
     # Always return the same message
     return {"message": "If this email is registered, you will receive password reset instructions."}
 
 
 @api_router.post("/auth/reset-password")
-async def reset_password(body: ResetPasswordBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def reset_password(body: ResetPasswordBody, request: Request, response: Response, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     await check_rate_limit(request, f"reset:{body.token[:8]}")
     try:
         payload = decode_token(body.token, token_type="password_reset")
@@ -1393,6 +1396,7 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     user.password_reset_expires_at = None
     user.token_version = int(user.token_version or 0) + 1  # a reset ends every existing session
     await db.commit()
+    background.add_task(send_security_notice, user.email, user.name, "password_reset")
 
     return _issue_session(request, response, user,
                           {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
@@ -1432,7 +1436,7 @@ async def logout(response: Response):
 
 
 @api_router.post("/auth/change-password")
-async def change_password(body: ChangePasswordBody, request: Request, response: Response, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def change_password(body: ChangePasswordBody, request: Request, response: Response, background: BackgroundTasks, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Limits guessing the current password with a stolen session.
     await check_rate_limit(request, f"{user['_id']}:change-password")
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
@@ -1446,18 +1450,20 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     db_user.password_hash = hash_password(body.new_password)
     db_user.token_version = int(db_user.token_version or 0) + 1  # every other device is signed out
     await db.commit()
+    background.add_task(send_security_notice, db_user.email, db_user.name, "password_changed")
     # This device gets a fresh session so the user is not signed out of the tab they are using.
     return _issue_session(request, response, db_user, {"message": "Password updated successfully"})
 
 
 @api_router.post("/auth/logout-all")
-async def logout_all(response: Response, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def logout_all(response: Response, background: BackgroundTasks, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Sign out everywhere: every access and refresh token issued so far stops working, including this one."""
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
     if not db_user:
         raise HTTPException(status_code=401, detail="User not found")
     db_user.token_version = int(db_user.token_version or 0) + 1
     await db.commit()
+    background.add_task(send_security_notice, db_user.email, db_user.name, "signed_out_everywhere")
     response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
     return {"message": "Signed out on all devices"}
 

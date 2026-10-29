@@ -392,6 +392,7 @@ def test_a_preview_never_emails_and_does_not_touch_the_task(monkeypatch):
 # ------------------------------------------------------------------ SendGrid
 @pytest.fixture
 def sendgrid(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "sendgrid")  # the real settings use the SMTP relay; these tests cover the HTTP API
     monkeypatch.setenv("SENDGRID_API_KEY", "SG.test-secret-key")
     monkeypatch.setenv("SENDGRID_FROM_EMAIL", "reports@example.test")
     monkeypatch.delenv("SENDGRID_EU", raising=False)
@@ -445,6 +446,7 @@ def test_eu_residency_uses_the_eu_host(sendgrid, monkeypatch):
 
 
 def test_without_a_sender_or_key_delivery_says_not_configured(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "")
     monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
     monkeypatch.setattr(email_service, "SMTP_HOST", "")
     out = run(email_service.deliver("me@example.test", "S", "<p>x</p>", "x"))

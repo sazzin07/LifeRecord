@@ -4,6 +4,7 @@ Everything is scoped to the signed-in user. Creating or editing a task never mak
 only runs after the owner confirms it explicitly (and again after any change to what it reads or who receives it).
 """
 import asyncio
+import html
 import json
 import re
 import secrets
@@ -168,7 +169,8 @@ def register(router, srv):
             db.add(row)
         code = f"{secrets.randbelow(1_000_000):06d}"
         row.code_hash, row.code_expires_at, row.attempts, row.last_sent_at = sch.code_hash(code, row.id), sch.iso(now + timedelta(minutes=15)), 0, sch.iso(now)
-        html_body = (f"<p>{me.name or 'Someone'} wants to email scheduled Life Record reports to this address.</p>"
+        who = html.escape(me.name or "Someone")  # the name is user-chosen text: never let it become markup in our email
+        html_body = (f"<p>{who} wants to email scheduled Life Record reports to this address.</p>"
                      f"<p>Your verification code is <strong style=\"font-size:24px;letter-spacing:3px\">{code}</strong>. It expires in 15 minutes.</p>"
                      f"<p>If you do not know this person, ignore this email and nothing will be sent.</p>")
         text = f"{me.name or 'Someone'} wants to email scheduled Life Record reports to this address.\nVerification code: {code} (expires in 15 minutes).\nIf you do not know this person, ignore this email."

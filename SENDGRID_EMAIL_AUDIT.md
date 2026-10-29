@@ -251,3 +251,23 @@ Current configuration (names and non-secret facts only): key present in the encr
 ## 13. Conclusion
 
 The **code** for sending mail through SendGrid is sound and honestly reports failures for scheduled reports. The **account-verification path** around it has one real bug that locks users out (P1-1) and does not surface delivery failures (P1-2). The **deployment side** (domain, DNS, SendGrid account state) is unproven and, with a `@gmail.com` sender, very likely unreliable. Until a domain is authenticated and a real send has been inspected, email verification and delivery stay **Not Completed** in the roadmap.
+
+---
+
+## 14. Update: fixes implemented (2026-10-29, after the owner authorized email changes)
+
+The owner asked for the `tiagosa743@gmail.com` sender for now, SendGrid's **SMTP relay** as the transport, and working email without errors. Done:
+
+| Audit item | Result |
+|------------|--------|
+| P1-1 verification lock-out | **Fixed**: a resent code resets the attempt counter (`server.py` resend). Test: 5 wrong codes → resend → new code verifies (`test_email_flows.py`). |
+| P1-2 invisible failures, inline sends, no retries, plaintext logging | **Fixed**: emails are sent after the response with up to 3 tries on temporary failures; every outcome is stored in `email_events` (hash + domain, never the address); with no provider nothing is logged unless `EMAIL_LOG_BODIES=true`; SMTP errors map to clear messages (wrong key, unverified sender, refused recipient, temporary trouble). |
+| P2-2 unescaped name | **Fixed**: escaped in the recipient-confirmation email (the global hourly cap is still open). |
+| P2-3 tracking/categories | **Fixed** for SMTP (`X-SMTPAPI`: click/open tracking off, category) and for the HTTP API payload. |
+| P2-4 security notices | **Added**: "password changed", "password reset", "signed out everywhere" emails. |
+| P3-1 timing | **Improved**: sending no longer affects response time; registering an existing address does the same hashing work as a new signup. Forgot-password still does one extra DB write for known accounts. |
+| Transport | `EMAIL_PROVIDER=smtp`, `smtp.sendgrid.net:587`, user `apikey`, password = the SendGrid API key (copied inside the encrypted store as `SMTP_PASSWORD`). |
+
+**Real send:** one test message to `tiagosa743@gmail.com` was accepted by SendGrid's relay on the first attempt (so the key is valid and SendGrid accepts the sender address). It did **not** appear in the inbox, archive or trash when searched through the Gmail connector (which cannot see Spam). Acceptance is not delivery: the owner must look in Spam and in SendGrid → Email Activity. This is the `@gmail.com`-sender risk from §4; the permanent fix is an authenticated domain (P0-1), which remains **not done**.
+
+Still open from this audit: P0-1 (domain), P0-2 (dashboard check), P1-3 (rotate the key), P2-1 (bounce webhook), P3-2/P3-3.

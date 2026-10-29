@@ -228,7 +228,20 @@ Security details:
 
 ### Email configuration
 
-In development, if `SMTP_HOST` is not set, the backend logs the email content to the console instead of sending it. For production, set the SMTP variables listed above. Gmail example:
+Account emails (verification code, password reset, "password changed" notices) and scheduled reports are sent through **SendGrid's SMTP relay**:
+
+```env
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USERNAME=apikey                 # literally the word apikey
+SMTP_FROM_NAME=Life Record
+SMTP_FROM_EMAIL=you@yourdomain.com   # must be verified in SendGrid (Settings > Sender Authentication)
+# SMTP_PASSWORD = a SendGrid API key with Mail Send permission, kept in the encrypted store:
+#   python local_secrets.py set SMTP_PASSWORD
+```
+
+Emails are sent after the HTTP response, with up to 3 tries when the failure looks temporary. Each outcome (sent / failed / skipped / not configured, attempts, a safe reason) is recorded in the `email_events` table with a hash and the domain of the recipient, never the address. Click and open tracking are switched off for these messages. Without a provider nothing is sent and the message is **not** logged (set `EMAIL_LOG_BODIES=true` in development to see codes in the log). `EMAIL_PROVIDER=sendgrid` selects the HTTP API instead (`SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL`). A `@gmail.com` sender is accepted by SendGrid but cannot be domain-authenticated, so mail may land in spam; use your own domain for real use (see `SENDGRID_EMAIL_AUDIT.md`). Generic SMTP example (Gmail):
 
 ```env
 SMTP_HOST=smtp.gmail.com

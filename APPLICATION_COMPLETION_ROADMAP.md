@@ -96,7 +96,7 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 - Body: weight tracking, progress photos (secure upload/serve), photo comparison.
 - Fitness: workout logging, PRs, session history.
 - Groceries (backend): inventory CRUD with storage locations, low-stock/expiring alerts, product catalog, shopping lists with budgets/progress, recurring lists, price intelligence, partial-purchase submit, inventory move/consume/discard, AI tools for catalog/storage/recipes.
-- Nutrition (basic): macro rings, meal list, recipe list, cook recipe.
+- Nutrition: redesigned 2026-10-29 (food database, diary with portions, nutrients, hydration, trends, goals); see §17.
 - AI assistant: chat, receipt scan, voice transcription, action history/undo, tool calling for many domains.
 - Dashboard: summary stats, widgets for nutrition, people, groceries, tasks.
 
@@ -106,7 +106,7 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 - **Groceries data:** realistic inventory and one shopping list seeded; old random test records removed.
 - **Calendar:** task list only, no calendar grid.
 - **Tasks:** no edit, due date, priority, or recurring UI.
-- **Nutrition:** no manual add-meal or add-recipe forms.
+- **Nutrition:** manual forms existed from 2026-10-22; the whole page was rebuilt on 2026-10-29 (§17).
 - **PersonDetail route:** edit/delete callbacks just navigate away.
 - **QuickAdd workout:** placeholder toast only.
 - **Accounts:** CRUD + transfers implemented in Money tab; Settings account management still missing.
@@ -162,10 +162,10 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 
 | Aspect | State | Notes |
 |--------|-------|-------|
-| Current state | Read-only macros + lists | `frontend/src/pages/Nutrition.jsx` |
-| Existing functionality | Macro rings vs fixed targets, meal list, recipe list, cook recipe. | |
-| Remaining work | Manual "Add meal" form; manual "Add recipe" form; edit/delete recipes. | NUTR-001, NUTR-002 |
-| Acceptance criteria | User can add/edit/delete meals and recipes without using AI. | |
+| Current state | **Redesigned 2026-10-29** (see §17): five tabs, USDA food database, EFSA/WHO references | `frontend/src/pages/Nutrition.jsx`, `frontend/src/pages/nutrition/*`, `backend/nutrition_api.py` |
+| Existing functionality | Today (day ledger, diary by meal, hydration, insights), Nutrients (41 nutrients with completeness), Trends (7/30/90 days, CSV), Foods (database search, own foods, favourites, barcode, recipes), Goals (profile, targets with overrides, sources). | Old fixed targets (2700 kcal / 160 / 300 / 90 g) are gone. |
+| Remaining work | AI tools for the new food search/diary/targets, meal planning, shopping-list integration, ingredient-level recipe nutrients, camera barcode scanning, reminders (all NUTR-NEW rows below). | |
+| Acceptance criteria | Original: add/edit/delete meals and recipes without AI (met). New criteria are listed per row in §17. | |
 
 ### 4.6 Fitness
 
@@ -311,7 +311,7 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 
 | Endpoint | Status | Notes |
 |----------|--------|-------|
-| GET/POST/DELETE `/meals` | Working | No PUT. | NUTR-004 |
+| GET/POST/PUT/DELETE `/meals` | Working | Older endpoints, kept for Home, Calendar and the AI; they now write the diary fields too. The Nutrition page uses `/api/nutrition/*` (§17). |
 
 ### 5.9 AI (`/api/ai`)
 
@@ -660,7 +660,7 @@ Use the IDs below to track progress. Update the status column as work is complet
 |----|------|----------|--------|
 | TEST-001 | Backend tests for Groceries lists/budget | High | Completed (list/item CRUD, partial purchase, generate list, budget fields covered) |
 | TEST-002 | Playwright tests for Groceries | High | Completed (verified 2026-10-28: `e2e/groceries.spec.js` exists, 9 tests per the 2026-10-22 log; checklist was stale) |
-| TEST-003 | Playwright tests for Nutrition manual forms | Medium | Completed (2026-10-29, Batch 5: `e2e/nutrition.spec.js`, 3 tests) |
+| TEST-003 | Playwright tests for Nutrition manual forms | Medium | Completed (2026-10-29, Batch 5), then rewritten for the redesigned page: `e2e/nutrition.spec.js`, 9 tests (§17) |
 | TEST-004 | Backend unit tests for helpers | Medium | Completed (2026-10-29, Batch 5: `tests/test_helpers.py`, 18 tests) |
 | TEST-005 | Externalize test credentials | Low | In Progress (2026-10-29, Batch 5: every backend module and e2e spec now takes the owner login from one place — `tests/support_auth.py` / `e2e/fixtures.js` — which reads `TEST_EMAIL`/`TEST_PASSWORD`. Not complete: both still fall back to the old dev password in code; that fallback is removed with SEC-002 once the owner password is rotated) |
 | DOC-001 | Update README.md with Groceries features | High | Completed |
@@ -1024,4 +1024,41 @@ Verification code, resend, login-before-verify, forgot password, reset-link page
 - **Verified as John:** backend **373 passed**. Browser suite **48 passed, 4 failed**: all in `e2e/groceries.spec.js` (Overview jump, delete single item, no-empty-state flash, sign-out clears cache); the specs expect items from the old account's kitchen (e.g. "Hummus") and the other two followed a 30 s timeout. They need adapting to John's data (**not done, not Completed**). Not verified: permission isolation beyond the existing isolation tests, error-handling sweep by hand.
 - **Graphify / Obsidian: NOT refreshed.** The `graphify` command is broken on this machine and no Obsidian app is installed; no notes were written. Next steps: fix the graphify install, rebuild the graph, add vault notes (no secrets).
 - **Next:** adapt `groceries.spec.js` to John's seed, re-run the browser suite, refresh Graphify/Obsidian, then mark this item Completed.
+
+---
+
+## 17. Nutrition redesign (2026-10-29)
+
+**Scope agreed with the owner:** food data = USDA bulk import + Open Food Facts (no API key); standard = EFSA (European); optional minimal profile; deliver stages 1-4 first (data, calculations, diary, redesigned page); AI tools, meal planning and shopping-list integration as a second delivery.
+
+### Status by requirement
+| ID | Requirement | Status | Evidence |
+|----|-------------|--------|----------|
+| NUTR-NEW-01 | Food database with provenance (source, version, quality), no invented values | **Completed** | 8,170 shared foods (USDA Foundation Foods 2025-12-18: 377; SR Legacy April 2018: 7,793); a nutrient the source did not report is absent and shown as "not reported". Idempotent importer `backend/import_usda.py`. Spot-checked against known USDA values. Coverage is stated honestly: iodine is reported for 1% of foods, biotin for none. |
+| NUTR-NEW-02 | Diary: meals (breakfast/lunch/dinner/snacks/other), time, search, units and portions, add/edit/duplicate/move/delete, recents and favourites, retries and concurrent edits handled | **Completed** | `/api/nutrition/diary*`; nutrient snapshot per entry; `client_ref` prevents duplicates; `if_updated_at` returns 409 on a stale edit. |
+| NUTR-NEW-03 | Macronutrients and energy: grams, % of energy, per meal, totals, energy cross-check | **Completed** | Energy bar by meal, macro range gauges; list/calculated energy differences are reported (not hidden). Fibre, sugars, saturated, mono/poly, trans, cholesterol, alcohol, omega-3/6 tracked where the source has them. |
+| NUTR-NEW-04 | Micronutrients: 14 vitamins and 10 minerals, role text, food sources, progress, trends | **Completed**, with limits | Nutrients tab (41 values), per-nutrient explanation, biggest sources today, foods rich in it (Foundation Foods only), data completeness dots. Biotin unavailable in the source; iodine mostly missing; vitamin A is RAE vs EFSA RE and niacin excludes tryptophan (both stated in the UI). |
+| NUTR-NEW-05 | Personalised references with documented standards; user targets never silently overridden; unsafe targets flagged | **Completed**, adults only | `backend/nutrition_data.py`: EFSA 2017 (doi 10.2903/sp.efsa.2017.e15121) for energy (age, sex, PAL), macronutrient ranges, fibre, water, protein per kg, 19 vitamins/minerals incl. pregnancy and lactation; WHO (26 Jan 2026) limits for free sugars, saturated and trans fat, sodium; EU 1169/2011 general adult values only when no profile. PRI / AI / RI / limit kinds are labelled. Under-18s get no personalised values (tables not encoded). No upper limits, no medical conditions. Energy below 1,200 kcal is saved but flagged (an app safety rule, not an EFSA value). |
+| NUTR-NEW-06 | Hydration | **Completed** | Drinks recorded separately; EFSA total-water reference counts drinks plus water in food. |
+| NUTR-NEW-07 | Trends and reports | **Completed**, partly | 7/30/90-day series, averages over logged days only (a day with no data is not zero), per-nutrient averages vs reference, contributors endpoint, CSV download. No weekly/monthly narrative report, no shareable page. |
+| NUTR-NEW-08 | Packaged foods and barcodes | **Partly** | Barcode typed in and looked up in Open Food Facts (macros, sugars, fibre, saturated fat, sodium only; marked "estimated"). Camera scanning not built. |
+| NUTR-NEW-09 | Recipes with ingredient-level nutrient aggregation | **Partly** | Recipes log servings correctly (whole-recipe numbers divided by servings; a fix made during this work). Ingredients are not yet linked to foods, so recipe nutrients are typed in by the user; the calculation function `recipe_totals` exists and is tested but is not wired to a screen. |
+| NUTR-NEW-10 | Meal planning, shopping-list integration, substitutions, reminders, shareable summaries | **Not Started** | Second delivery. |
+| NUTR-NEW-11 | AI assistant: full secure access to Nutrition | **Not Started** (existing tools unchanged) | The existing tools `log_meal`, `get_meals`, `update_meal`, `delete_meal`, `get_recipes`, `create_recipe`, `cook_recipe` still work (they write quick entries). New tools for food search, portions, nutrient gaps, trends, targets, contributors are not built, so requests like "log 150 g of chicken breast for lunch" still create a typed-in entry without nutrients. |
+| NUTR-NEW-12 | Redesign: distinctive, responsive, accessible | **Completed** | Five tabs; day ledger (energy bar segmented by meal plus macro range gauges); skeleton, empty, error and success states; keyboard-operable dialogs and tabs, labelled controls, `aria` on gauges and progress bars; `motion-safe` transitions; no horizontal scroll at 375 px (tested). Not done: automated accessibility audit (axe), visual-regression snapshots; the global assistant button still overlaps content at the bottom right (pre-existing). |
+
+### Data model and migrations (applied with `alembic upgrade head`)
+`f3b5c7d9e1a2` adds `foods`, `food_favorites`, `nutrition_profiles`, `hydration_entries`, diary columns on `meals` (meal type, label, time, food/recipe link, quantity, unit, grams, nutrient snapshot, quality, source) and `nutrients`/`quality` on `recipes`; `a4c6e8f0b2d3` adds `meals.client_ref`. Existing meals are untouched: they read as quick entries with only the four numbers they had. Run the food import once: `python backend/import_usda.py` (downloads about 10 MB to `%LOCALAPPDATA%\LifeRecord\datasets\usda`, outside the project).
+
+### Files
+Backend: `nutrition_data.py` (registry, EFSA/WHO/EU values), `nutrition_calc.py` (portions, totals, progress, recipes), `nutrition_api.py` (routes under `/api/nutrition`), `import_usda.py`, `models.py`, two migrations, `server.py` (module registered; `/meals` endpoints kept in step). Frontend: `pages/Nutrition.jsx`, `pages/nutrition/{shared,TodayTab,NutrientsTab,TrendsTab,FoodsTab,GoalsTab,FoodDialog}.jsx`, `lib/routes.js` prefetch. Tests: `tests/test_nutrition_calc.py` (23), `tests/test_nutrition_api.py` (19), `e2e/nutrition.spec.js` (9); `e2e/groceries.spec.js` adapted to John's kitchen.
+
+### Bugs found by the tests and fixed in this work
+Navigating to a day whose data was still loading crashed the page; a mobile layout overflow (grid columns could not shrink); food dialog wider than its frame on phones; USDA carbohydrate-by-difference stored negative for some meats (now 0); `ml` accepted for any watery food such as spinach (now only real liquids); recipe servings logged the whole recipe instead of one serving; suggestions drawing on by-products (now Foundation Foods only); energy labelled "Reached" (now neutral wording); trend averages treated a day with no data as zero.
+
+### Verification (run 2026-10-29, as the standard test account)
+Backend **414 passed** (also in parallel); frontend unit tests 9 passed; production build compiled with ESLint warnings treated as errors; browser suite (everything except the live-AI specs) **58 passed, 0 failed** (4.9 min) after the Groceries specs were adapted to John's kitchen data, which also closes the four Groceries failures left open earlier on 2026-10-29. Visual review: desktop and 390 px screenshots of all five tabs and the food dialog; browser console empty. **Not verified:** real Open Food Facts lookups in automated tests (the mapping is unit-tested; the live call was not run), screen-reader use, Safari/Firefox, a profile with pregnancy/breastfeeding in the browser (covered in API tests), large histories (the trends query reads up to 366 days of entries in one request).
+
+### Known limitations
+Reference values cover adults only; EFSA has revised some values since 2017 (sodium and potassium in 2019), so sodium uses the WHO limit and potassium the 2017 AI. Food data is US-centred (USDA); European brands and dishes are better served by barcode lookup or your own foods. Search ranks by name length and source, not popularity. Allergy and diet flags work from food names and categories only, never from ingredient lists.
 

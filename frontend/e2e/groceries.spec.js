@@ -69,7 +69,7 @@ test.describe("Groceries kitchen", () => {
   });
 
   test("Overview jumps straight into the zoomed space", async ({ authenticatedPage: page }) => {
-    await page.getByRole("button", { name: /^Hummus/ }).first().click();
+    await page.getByRole("button", { name: /^Greek yoghurt/ }).first().click();
     await expect(page.getByRole("tab", { name: "Storage" })).toHaveAttribute("data-state", "active");
     await expect(page.getByTestId("unit-fridge")).toHaveAttribute("data-mode", "hero");
     // The zoomed state survives a trip to another tab
@@ -295,7 +295,10 @@ test.describe("Groceries kitchen", () => {
 
   test("shopping: delete a single item from the list (BUG-006)", async ({ authenticatedPage: page, apiContext }) => {
     const name = uniqueName();
-    const item = await (await apiContext.post("/api/shopping", { data: { name } })).json();
+    // The page opens the first list that is not archived: put the item there (the account has several lists).
+    const lists = (await (await apiContext.get("/api/shopping")).json()).lists;
+    const shown = lists.find((l) => !l.archived) || lists[0];
+    const item = await (await apiContext.post("/api/shopping", { data: { name, list_id: shown.id } })).json();
     try {
       await page.reload();
       await page.getByRole("tab", { name: "Shopping" }).click();
@@ -335,7 +338,7 @@ test.describe("Groceries kitchen", () => {
     // Leave and come back: the last-seen data is there immediately, long before the 1.5s responses arrive
     await page.getByTestId("nav-tasks").click();
     await page.getByTestId("nav-groceries").click();
-    await expect(page.getByRole("button", { name: /^Hummus/ }).first()).toBeVisible({ timeout: 800 });
+    await expect(page.getByRole("button", { name: /^Greek yoghurt/ }).first()).toBeVisible({ timeout: 800 });
     await page.getByRole("tab", { name: "Catalog" }).click();
     await expect(page.getByTestId("product-card").first()).toBeVisible({ timeout: 800 });
     await page.getByRole("tab", { name: "Kitchen" }).click();
@@ -350,6 +353,7 @@ test.describe("Groceries kitchen", () => {
     expect(await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")))).toBe(true);
     await page.getByTestId("logout-btn").click();
     await page.waitForURL(/login/);
-    expect(await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")))).toBe(false);
+    // the page may still be settling after the redirect, so retry until the cache is gone
+    await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:"))).catch(() => true)).toBe(false);
   });
 });

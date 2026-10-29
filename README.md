@@ -342,8 +342,15 @@ See [Testing](#testing-1) below.
 - Realistic demo data: `cd backend && .venv\Scripts\python.exe seed_groceries.py --reset` (expiry dates are relative to today).
 
 ### Nutrition
-- Meal logging with macro tracking.
-- Recipe catalog with ingredients; cook a recipe to update grocery inventory.
+A food diary backed by real reference data (details and limits in `APPLICATION_COMPLETION_ROADMAP.md` §17).
+- **Today:** the day as one energy bar split by meal, macronutrient range gauges, meals with add/edit/duplicate/move/delete, hydration, and insights that say why something is shown.
+- **Foods:** about 8,000 USDA reference foods (public domain) with portions, plus your own foods, favourites, recents and packaged foods by barcode (Open Food Facts, marked estimated). A nutrient a source does not report shows "not reported", never zero.
+- **Nutrients:** 41 vitamins, minerals, fats and other values with how many entries reported each, biggest sources and foods rich in it.
+- **Trends:** 7/30/90 days, averages over logged days only, CSV download.
+- **Goals:** optional profile (birth year, sex, weight, activity, pregnancy/breastfeeding, diet, allergies) gives EFSA 2017 reference values for adults (with WHO limits); your own targets always win; very low energy targets are flagged. Sources and publication dates are shown in the app.
+- Recipes: log a serving to the diary (a recipe's numbers are for the whole recipe), or cook it to update grocery inventory.
+
+Setup: `alembic upgrade head`, then once `python import_usda.py` (downloads the USDA data to `%LOCALAPPDATA%\LifeRecord\datasets\usda`). Not medical advice: a low recorded intake is not a diagnosis of deficiency.
 
 ### Home dashboard
 - Summary stats, tasks, people balances, nutrition rings, and today's transactions.

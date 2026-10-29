@@ -1,3 +1,4 @@
+import hashlib
 import os
 import secrets
 import re
@@ -33,10 +34,17 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ---------------------------------------------------------------------------
 # JWT tokens
 # ---------------------------------------------------------------------------
-def create_access_token(user_id: str, email: str) -> str:
+def hash_token(token: str) -> str:
+    """One-way fingerprint for tokens kept in the database (reset links): a leaked row cannot be replayed."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
+    """`tv` ties the token to the user's current token_version; bumping it ends every earlier session."""
     payload = {
         "sub": user_id,
         "email": email,
+        "tv": token_version,
         "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
         "iat": datetime.now(timezone.utc),
@@ -44,9 +52,10 @@ def create_access_token(user_id: str, email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
+        "tv": token_version,
         "type": "refresh",
         "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         "iat": datetime.now(timezone.utc),

@@ -245,13 +245,15 @@ FRONTEND_URL=https://liferecord.example.com
 
 - Access tokens expire after `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`.
 - Refresh tokens expire after `JWT_REFRESH_TOKEN_EXPIRE_DAYS`.
-- Tokens are signed with `JWT_SECRET` using HS256.
+- Tokens are signed with `JWT_SECRET` using HS256 and carry the user's `token_version`. Changing or resetting the password, or **Settings → Sign out on all devices** (`POST /api/auth/logout-all`), raises that version, so every earlier access and refresh token stops working at once; the device that changed the password receives fresh tokens and stays signed in.
+- Refresh refuses unverified accounts. Password-reset tokens are stored only as a SHA-256 hash and are single use.
+- Login takes the same time for unknown emails as for wrong passwords (no account enumeration by timing).
 - The frontend stores both tokens in `localStorage`. The access token is sent as `Authorization: Bearer <token>`.
 - On 401, the frontend automatically calls `/api/auth/refresh` to obtain a new access token and retries the original request.
 - CORS is restricted to `CORS_ORIGINS`; credentials are never sent to `*`.
 - `TrustedHostMiddleware` validates the `Host` header when `ALLOWED_HOSTS` is set.
 - Response security headers are added by middleware: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), microphone=(), camera=()`.
-- Auth endpoints are rate-limited per IP + identifier.
+- Auth endpoints are rate-limited per IP + identifier. The counters are rows in `rate_limit_events` (hashed key, no emails), so limits survive restarts and are shared by every backend process.
 - Progress photos enforce extension, content-type, and size limits; files are saved inside `STORAGE_DIR` with path-traversal checks.
 
 ## Admin account initialization

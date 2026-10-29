@@ -104,9 +104,10 @@ class TestAuthLifecycle:
         r = requests.post(f"{BASE_URL}/api/auth/forgot-password", json={"email": email})
         assert r.status_code == 200
 
-        rows = _db_query("SELECT password_reset_token FROM users WHERE email=%s", (email,))
-        token = rows[0]["password_reset_token"]
-        assert token
+        # The database holds only a hash of the emailed token, never the token itself.
+        stored = _db_query("SELECT password_reset_token FROM users WHERE email=%s", (email,))[0]["password_reset_token"]
+        assert stored and len(stored) == 64 and not stored.startswith("eyJ")
+        token = support_db.issue_reset_token(email)
 
         r = requests.post(f"{BASE_URL}/api/auth/reset-password", json={"token": token, "password": "NewPass123"})
         assert r.status_code == 200
@@ -122,7 +123,7 @@ class TestAuthLifecycle:
         requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
 
         requests.post(f"{BASE_URL}/api/auth/forgot-password", json={"email": email})
-        token = _db_query("SELECT password_reset_token FROM users WHERE email=%s", (email,))[0]["password_reset_token"]
+        token = support_db.issue_reset_token(email)
         requests.post(f"{BASE_URL}/api/auth/reset-password", json={"token": token, "password": "NewPass123"})
 
         r = requests.post(f"{BASE_URL}/api/auth/reset-password", json={"token": token, "password": "AnotherPass123"})

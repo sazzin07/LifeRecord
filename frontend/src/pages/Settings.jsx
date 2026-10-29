@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Sun, Moon, Monitor, Sparkles, Plus, Trash2, LogOut, Pencil, Lock, KeyRound, Eye, EyeOff } from "lucide-react";
-import { api, eur } from "@/lib/api";
+import { api, eur, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useFetch, refreshAll } from "@/lib/useFetch";
@@ -30,8 +30,11 @@ function ChangePassword() {
     if (!ready) return;
     setSaving(true);
     try {
-      await api.post("/auth/change-password", { current_password: f.current, new_password: f.next });
-      toast.success("Password changed");
+      const { data } = await api.post("/auth/change-password", { current_password: f.current, new_password: f.next });
+      // Changing the password ends every other session; this device continues on the fresh tokens.
+      if (data.token) localStorage.setItem("lm_token", data.token);
+      if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
+      toast.success("Password changed", { description: "Other devices were signed out." });
       setF({ current: "", next: "", confirm: "" });
     } catch (err) {
       toast.error(err.response?.status === 429 ? "Too many attempts. Wait a minute and try again." : err.response?.data?.detail || "Could not change password");
@@ -125,6 +128,17 @@ export default function Settings() {
   const [newCat, setNewCat] = useState("");
   const [deleteCatId, setDeleteCatId] = useState(null);
   const [deleteCatOpen, setDeleteCatOpen] = useState(false);
+  const [signOutAllOpen, setSignOutAllOpen] = useState(false);
+
+  const signOutEverywhere = async () => {
+    try {
+      await api.post("/auth/logout-all");
+      logout();
+    } catch (err) {
+      setSignOutAllOpen(false);
+      toast.error(errorMessage(err, "Could not sign out on all devices"));
+    }
+  };
 
   const addCat = async () => { if (!newCat.trim()) return; await api.post("/categories", { name: newCat }); setNewCat(""); refreshAll(); toast.success("Category added"); };
   const delCat = async (id) => { await api.delete(`/categories/${id}`); refreshAll(); };
@@ -139,8 +153,21 @@ export default function Settings() {
       <Card className="p-5 flex items-center gap-4">
         <Avatar name={user?.name || "?"} size="h-12 w-12" />
         <div className="flex-1"><p className="font-semibold">{user?.name || "User"}</p><p className="text-sm text-slate-500">{user?.email}</p></div>
-        <Button variant="outline" onClick={logout} data-testid="settings-logout"><LogOut className="h-4 w-4 mr-1" />Sign out</Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={logout} data-testid="settings-logout"><LogOut className="h-4 w-4 mr-1" />Sign out</Button>
+          <Button variant="ghost" onClick={() => setSignOutAllOpen(true)} data-testid="settings-logout-all" className="text-slate-500">Sign out on all devices</Button>
+        </div>
       </Card>
+
+      <ConfirmDialog
+        open={signOutAllOpen}
+        onOpenChange={setSignOutAllOpen}
+        title="Sign out on all devices?"
+        description="Every phone, tablet and browser signed in to your account, including this one, will have to sign in again. Use this if you lost a device or think someone else had access."
+        onConfirm={signOutEverywhere}
+        confirmText="Sign out everywhere"
+        variant="danger"
+      />
 
       <Card className="p-5">
         <Label>Appearance</Label>

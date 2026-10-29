@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, String, Text, DECIMAL, Integer, Boolean, ForeignKey, Index, JSON
+    Column, String, Text, DECIMAL, Integer, BigInteger, Boolean, ForeignKey, Index, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -20,6 +20,8 @@ class User(Base):
     last_verification_sent_at = Column(String(32), nullable=True)
     password_reset_token = Column(String(255), nullable=True, unique=True)
     password_reset_expires_at = Column(String(32), nullable=True)
+    # Raised on password change/reset and "sign out everywhere"; tokens carry the value they were issued with.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(String(32), nullable=False)
 
 
@@ -434,3 +436,11 @@ class ReportRecipient(Base):
     __table_args__ = (
         Index("uq_report_recipient", "user_id", "email", unique=True),
     )
+
+
+class RateLimitEvent(Base):
+    """One row per rate-limited attempt. `bucket` is a SHA-256 of client + identifier (no emails stored)."""
+    __tablename__ = "rate_limit_events"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    bucket = Column(String(64), nullable=False, index=True)
+    at_ms = Column(BigInteger, nullable=False, index=True)

@@ -5,7 +5,9 @@ import local_secrets
 local_secrets.load_into_environ()  # encrypted secrets outside the project; real env vars still win
 load_dotenv(ROOT_DIR / '.env')
 
+import hashlib
 import os
+import secrets
 import sys
 import uuid
 import json
@@ -33,7 +35,7 @@ from models import (
     Base, User, Account, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
-    Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage,
+    Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
 )
 import kitchen_logic
 import ai_tools_extra
@@ -46,7 +48,7 @@ import calendar_api
 from starlette.responses import StreamingResponse
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
-    create_password_reset_token, decode_token, generate_six_digit_code,
+    create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
     is_valid_email, is_strong_password,
 )
 from email_service import send_verification_code, send_password_reset
@@ -82,36 +84,27 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000').rstrip('/
 AUTH_RATE_LIMIT_WINDOW = int(os.environ.get("RATE_LIMIT_AUTH_WINDOW_SECONDS", "60"))
 AUTH_RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_AUTH_MAX_ATTEMPTS", "10"))
 
-# In-memory rate-limit store: key -> list of timestamps
-_rate_limit_store: Dict[str, List[float]] = {}
-
-
-def _rate_limit_key(request: Request, identifier: str) -> str:
+def _rate_limit_bucket(request: Request, identifier: str) -> str:
+    """Hash of client + identifier: the table never holds an email address."""
     client = request.client.host if request.client else "unknown"
-    return f"{client}:{identifier.lower().strip()}"
+    return hashlib.sha256(f"{client}:{identifier.lower().strip()}".encode()).hexdigest()
 
 
-def _cleanup_rate_limit_store(now: float) -> None:
-    """Remove stale rate-limit entries to prevent unbounded memory growth."""
-    cutoff = now - (AUTH_RATE_LIMIT_WINDOW * 2)
-    keys_to_remove = [k for k, v in _rate_limit_store.items() if not v or v[-1] < cutoff]
-    for k in keys_to_remove:
-        del _rate_limit_store[k]
-
-
-def check_rate_limit(request: Request, identifier: str) -> None:
-    now = datetime.now(timezone.utc).timestamp()
-    key = _rate_limit_key(request, identifier)
-    window = _rate_limit_store.setdefault(key, [])
-    # Trim old entries
-    cutoff = now - AUTH_RATE_LIMIT_WINDOW
-    window[:] = [t for t in window if t > cutoff]
-    if len(window) >= AUTH_RATE_LIMIT_MAX:
-        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
-    window.append(now)
-    # Periodic full cleanup (cheap: only when the store grows)
-    if len(_rate_limit_store) % 100 == 0:
-        _cleanup_rate_limit_store(now)
+async def check_rate_limit(request: Request, identifier: str) -> None:
+    """Sliding window kept in the database, so limits survive restarts and are shared by every process."""
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    bucket = _rate_limit_bucket(request, identifier)
+    cutoff = now_ms - AUTH_RATE_LIMIT_WINDOW * 1000
+    async with AsyncSessionLocal() as db:
+        recent = (await db.execute(
+            select(func.count(RateLimitEvent.id)).where(RateLimitEvent.bucket == bucket, RateLimitEvent.at_ms > cutoff)
+        )).scalar() or 0
+        if recent >= AUTH_RATE_LIMIT_MAX:
+            raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+        db.add(RateLimitEvent(bucket=bucket, at_ms=now_ms))
+        if secrets.randbelow(50) == 0:  # occasional cleanup of events older than two windows
+            await db.execute(delete(RateLimitEvent).where(RateLimitEvent.at_ms < now_ms - AUTH_RATE_LIMIT_WINDOW * 2000))
+        await db.commit()
 
 
 def _user_owned_query(model, user: dict):
@@ -208,6 +201,21 @@ def row_to_dict(row) -> dict:
 # ---------------------------------------------------------------------------
 # Password hashing, token creation, and validation now live in security_utils.py
 
+def _check_token_version(payload: dict, user: User) -> None:
+    """A token issued before the last password change / sign-out-everywhere is no longer a session."""
+    if int(payload.get("tv", 0)) != int(user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Session ended, please sign in again")
+
+
+def _session_tokens(user: User) -> dict:
+    v = int(user.token_version or 0)
+    return {"token": create_access_token(user.id, user.email, v), "refresh_token": create_refresh_token(user.id, v)}
+
+
+# Verified against when the email is unknown, so a missing account takes as long as a wrong password.
+_DUMMY_HASH = hash_password("not-a-real-password")
+
+
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     token = None
     auth = request.headers.get("Authorization", "")
@@ -225,6 +233,7 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        _check_token_version(payload, user)
         if not user.email_verified:
             raise HTTPException(status_code=403, detail="Email not verified")
         return {"_id": user.id, "email": user.email, "name": user.name, "role": user.role}
@@ -250,6 +259,7 @@ async def get_current_user_optional_unverified(request: Request, db: AsyncSessio
         user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        _check_token_version(payload, user)
         return {"_id": user.id, "email": user.email, "name": user.name, "role": user.role, "email_verified": user.email_verified}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -1186,7 +1196,7 @@ async def register(body: SignupBody, request: Request, db: AsyncSession = Depend
         # Never disclose whether an email is registered
         return {"message": "If this email is not registered, you will receive a verification code shortly."}
 
-    check_rate_limit(request, email)
+    await check_rate_limit(request, email)
 
     code = generate_six_digit_code()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
@@ -1217,7 +1227,7 @@ async def resend_verification(body: ResendCodeBody, request: Request, db: AsyncS
     if user.email_verified:
         return {"message": "If this email is registered, a new code will be sent."}
 
-    check_rate_limit(request, email)
+    await check_rate_limit(request, email)
 
     # Enforce 90-second cooldown between resends
     if user.last_verification_sent_at:
@@ -1246,7 +1256,7 @@ async def verify_code(body: VerifyCodeBody, request: Request, db: AsyncSession =
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
-    check_rate_limit(request, f"{email}:verify")
+    await check_rate_limit(request, f"{email}:verify")
 
     if user.email_verified:
         raise HTTPException(status_code=400, detail="Account already verified")
@@ -1276,11 +1286,8 @@ async def verify_code(body: VerifyCodeBody, request: Request, db: AsyncSession =
     user.verification_attempts = 0
     await db.commit()
 
-    access_token = create_access_token(user.id, user.email)
-    refresh_token = create_refresh_token(user.id)
     return {
-        "token": access_token,
-        "refresh_token": refresh_token,
+        **_session_tokens(user),
         "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True},
     }
 
@@ -1288,25 +1295,25 @@ async def verify_code(body: VerifyCodeBody, request: Request, db: AsyncSession =
 @api_router.post("/auth/login")
 async def login(body: LoginBody, request: Request, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
-    check_rate_limit(request, email)
+    await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user:
+        verify_password(body.password, _DUMMY_HASH)  # same work as a real check, so timing does not reveal who has an account
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not user.email_verified:
         # Return a special token that only works for verification/resend endpoints
-        token = create_access_token(user.id, user.email)
+        token = create_access_token(user.id, user.email, int(user.token_version or 0))
         return {
             "requires_verification": True,
             "token": token,
             "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": False},
         }
 
-    access_token = create_access_token(user.id, email)
-    refresh_token = create_refresh_token(user.id)
     return {
-        "token": access_token,
-        "refresh_token": refresh_token,
+        **_session_tokens(user),
         "user": {"id": user.id, "email": email, "name": user.name, "email_verified": True},
     }
 
@@ -1314,12 +1321,12 @@ async def login(body: LoginBody, request: Request, db: AsyncSession = Depends(ge
 @api_router.post("/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordBody, request: Request, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
-    check_rate_limit(request, email)
+    await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user:
         # Single-use, expiring token
         token = create_password_reset_token(user.id)
-        user.password_reset_token = token
+        user.password_reset_token = hash_token(token)  # only the hash is stored; the emailed link carries the token
         user.password_reset_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
         await db.commit()
         await send_password_reset(email, token, user.name)
@@ -1329,7 +1336,7 @@ async def forgot_password(body: ForgotPasswordBody, request: Request, db: AsyncS
 
 @api_router.post("/auth/reset-password")
 async def reset_password(body: ResetPasswordBody, request: Request, db: AsyncSession = Depends(get_db)):
-    check_rate_limit(request, f"reset:{body.token[:8]}")
+    await check_rate_limit(request, f"reset:{body.token[:8]}")
     try:
         payload = decode_token(body.token, token_type="password_reset")
     except Exception:
@@ -1337,7 +1344,7 @@ async def reset_password(body: ResetPasswordBody, request: Request, db: AsyncSes
 
     user_id = payload.get("sub")
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if not user or user.password_reset_token != body.token:
+    if not user or not user.password_reset_token or not secrets.compare_digest(user.password_reset_token, hash_token(body.token)):
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
     try:
@@ -1353,13 +1360,11 @@ async def reset_password(body: ResetPasswordBody, request: Request, db: AsyncSes
     user.password_hash = hash_password(body.password)
     user.password_reset_token = None
     user.password_reset_expires_at = None
+    user.token_version = int(user.token_version or 0) + 1  # a reset ends every existing session
     await db.commit()
 
-    access_token = create_access_token(user.id, user.email)
-    refresh_token = create_refresh_token(user.id)
     return {
-        "token": access_token,
-        "refresh_token": refresh_token,
+        **_session_tokens(user),
         "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified},
     }
 
@@ -1376,16 +1381,16 @@ async def refresh_token(body: RefreshBody, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-
-    access_token = create_access_token(user.id, user.email)
-    new_refresh_token = create_refresh_token(user.id)
-    return {"token": access_token, "refresh_token": new_refresh_token}
+    _check_token_version(payload, user)
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+    return _session_tokens(user)
 
 
 @api_router.post("/auth/change-password")
 async def change_password(body: ChangePasswordBody, request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Limits guessing the current password with a stolen session.
-    check_rate_limit(request, f"{user['_id']}:change-password")
+    await check_rate_limit(request, f"{user['_id']}:change-password")
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
     # 400, not 401: the session is valid, and a 401 makes the app sign the user out over a typo.
     if not db_user or not verify_password(body.current_password, db_user.password_hash):
@@ -1395,8 +1400,21 @@ async def change_password(body: ChangePasswordBody, request: Request, user: dict
     if body.new_password == body.current_password:
         raise HTTPException(status_code=400, detail="Choose a password different from the current one")
     db_user.password_hash = hash_password(body.new_password)
+    db_user.token_version = int(db_user.token_version or 0) + 1  # every other device is signed out
     await db.commit()
-    return {"message": "Password updated successfully"}
+    # This device gets a fresh session so the user is not signed out of the tab they are using.
+    return {"message": "Password updated successfully", **_session_tokens(db_user)}
+
+
+@api_router.post("/auth/logout-all")
+async def logout_all(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Sign out everywhere: every access and refresh token issued so far stops working, including this one."""
+    db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(status_code=401, detail="User not found")
+    db_user.token_version = int(db_user.token_version or 0) + 1
+    await db.commit()
+    return {"message": "Signed out on all devices"}
 
 
 @api_router.get("/auth/me")

@@ -62,3 +62,20 @@ test("change password: checks the new password and a wrong current password keep
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 });
+
+test("sign out on all devices asks first, calls the server, then returns to the login page", async ({ authenticatedPage: page }) => {
+  // The endpoint is answered by the test: calling the real one would end the owner's own session for the whole suite.
+  let called = 0;
+  await page.route("**/api/auth/logout-all", (route) => { called += 1; route.fulfill({ status: 200, json: { message: "Signed out on all devices" } }); });
+  await page.goto("/settings");
+  await page.getByTestId("settings-logout-all").click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("Sign out on all devices?");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(called).toBe(0);
+  await page.getByTestId("settings-logout-all").click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Sign out everywhere" }).click();
+  await expect(page).toHaveURL(/\/login/);
+  expect(called).toBe(1);
+  expect(await page.evaluate(() => localStorage.getItem("lm_token"))).toBeNull();
+});

@@ -14,7 +14,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const token = localStorage.getItem("lm_token");
-    if (!token) { setUser(false); setReady(true); return; }
+    // Signed out means no cached account data either, even if a background refresh wrote some during sign-out.
+    if (!token) { clearCaches(); setUser(false); setReady(true); return; }
     api.get("/auth/me")
       .then((r) => setUser(r.data))
       .catch(() => setUser(false))

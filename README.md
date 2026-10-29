@@ -387,6 +387,7 @@ cd backend
 Most tests call the running backend (start it first with `start-all.ps1`) and work in the owner account; every record they create is tagged (`TEST_…`, `E2E-…`) and removed again. Some tests (AI tools, confirmations, undo, scheduling) run in-process against the same MySQL database. There is no separate test database.
 
 - Credentials: `TEST_EMAIL` (default: the owner email) and `TEST_PASSWORD` (from the secrets store or the environment; there is no default in code). Direct database access in tests uses the admin login from the same store. `REACT_APP_BACKEND_URL` overrides the API address (default from `frontend/.env`, with `localhost` replaced by `127.0.0.1` — on Windows `localhost` costs ~2 s per request).
+- Modules that change the owner's money balances hold `shared_money_lock` (`tests/support_auth.py`) for their whole run, so the two parallel workers never see each other's transactions.
 - `tests/support_auth.py` logs in once per account per run (the login rate limit is 10/minute); `tests/conftest.py` removes the login cache and the accounts the auth tests register when the run ends.
 - Email is never sent to reserved test domains (`example.com`, `*.test`, …), so the auth tests do not use the SendGrid quota.
 - New tables come from `alembic upgrade head` (the server also creates missing tables at startup; in-process tests need the migration).

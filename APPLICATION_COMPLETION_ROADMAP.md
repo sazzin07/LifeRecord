@@ -3,6 +3,7 @@
 **Project:** `C:\Projects\LifeRecord`  
 **Audit date:** 2026-10-19  
 **Scope:** Full-stack audit of the LifeRecord application covering frontend, backend, database, AI integration, tests, configuration, and documentation.
+**Current status (2026-10-29): see [§16](#16-final-status-2026-10-29). The sections below are the original audit and a chronological log; where they disagree with §16, §16 is right.**
 
 ---
 
@@ -22,6 +23,8 @@
 12. [Master Checklist](#12-master-checklist)
 13. [Previous Work Log](#13-work-log--stopping-point)
 14. [Current Work Log](#14-work-log--stopping-point)
+15. [Work Log: roadmap completion (2026-10-28 / 29)](#15-work-log--roadmap-completion-2026-10-28)
+16. [Final status and SendGrid audit](#16-final-status-2026-10-29)
 
 ---
 
@@ -554,7 +557,7 @@ LifeRecord is a multi-user personal-life management application built with a Fas
 | TEST-002 | Add Playwright tests for Groceries | `frontend/e2e/groceries.spec.js` | Create list, add item, complete item, delete list, budget visible. | GROC-011–GROC-014 | Tests pass. | High |
 | TEST-003 | Add Playwright tests for Nutrition manual forms | `frontend/e2e/nutrition.spec.js` | Add meal/recipe. | NUTR-001, NUTR-002 | Tests pass. | Medium |
 | TEST-004 | Add backend unit tests for helpers | `backend/tests/test_helpers.py` | Test `compute_shares`, `serialize_txn`, `cheapest_store`, etc. | None | Tests pass. | Medium |
-| TEST-005 | Externalize test credentials | `frontend/e2e/fixtures.js`, `backend/tests/*.py` | Read from env with fallback; document for CI. | None | Tests run without hardcoded secrets in CI. | Low |
+| TEST-005 | Externalize test credentials | Low | Completed (2026-10-29, Batches 5 + 6a: one source for the owner login in the backend (`tests/support_auth.py`) and e2e (`e2e/fixtures.js`), `TEST_PASSWORD` comes from the encrypted store or the environment and there is no default in code; the missing-password case fails with an explicit message) |
 | DOC-001 | Update README.md with Groceries features | `README.md` | Document multiple lists, shopping mode, budget, AI tools, config. | GROC phases | README accurate and complete. | High |
 | DOC-002 | Update README.md with testing instructions | `README.md` | Document backend tests, e2e tests, lint commands. | TEST phases | README accurate. | Medium |
 
@@ -961,9 +964,47 @@ The Groceries backend redesign, data seeding, AI tools, and tests are complete. 
 - **Verified:** backend **345 passed** (57 s); e2e session-cookie + smoke + settings **6/6**; `csp.test.js` 3/3; production build under CSP checked in a browser against a second backend on :8001 (since removed): 0 violations.
 - **Residual risks (honest list):** stolen refresh tokens are not detected on reuse; the access token is readable by page scripts; the verification code is stored in plain text; `0.0.0.0:8000` exposure; uploads' key shares a single point of failure with the DPAPI store; the CSP header is not enforced anywhere until the build is served by something that sets it (the `<meta>` copy covers scripts and connections but not `frame-ancestors`).
 
-### Final status (2026-10-28, session ended at the owner's request)
+### Status at the end of the 2026-10-28 session (historical; superseded by §16)
 - **Completed this session:** TASK-001, FIT-001, FIT-002, BODY-001, BODY-002, QUICK-001, CAL-001, CAL-002, ACCT-001, AUTH-001, AI-005, AI-006, DEBT-004, BUG-004, BUG-007 (decision), DEBT-002, DEBT-006, and newly found BUG-006, BUG-008, BUG-009, BUG-010, BUG-011. Stale rows corrected: AI-007, TEST-002, BUG-005.
-- **In Progress:** TEST-005 (backend `support_auth.py` + e2e fixtures read `TEST_EMAIL`/`TEST_PASSWORD`; older backend modules still define their own owner constants), DEBT-005 (shared login, IPv4, cleanup; tests still need the live backend), DEBT-001 (new code in separate modules only).
-- **Not Started:** SEC-001 … SEC-007. (TEST-003 and TEST-004 were completed on 2026-10-29, see Batch 5.)
-- **Agreed scope for the security batch (not implemented):** secrets (JWT secret, DB password, Gemini/OpenCode/SendGrid keys) out of `backend/.env` into a DPAPI-encrypted file under `%LOCALAPPDATA%\LifeRecord\` (owner's choice); per-user token revocation (password change / "sign out everywhere"); httpOnly cookie tokens instead of localStorage; hashed refresh/reset tokens; encrypted uploads; DB-backed rate limiter; CSP header; dedicated least-privilege DB user. Key rotation (Gemini, OpenCode, SendGrid — keys were pasted into chats earlier) needs the owner.
-- **Known, not fixed:** the build prints a Node 24 `fs.F_OK` deprecation from build tooling; `testuser1@example.com` (origin unknown) left in the database; the tests and `start-all.ps1` still use MySQL `root` without a password (local dev).
+- **In Progress:** DEBT-005 (shared login, IPv4, cleanup; tests still need the live backend), DEBT-001 (new code in separate modules only).
+- **Not Started (then):** SEC-001 … SEC-007, TEST-003, TEST-004: all handled on 2026-10-29, see Batches 5 and 6 and §16.
+- **Agreed scope for the security batch (implemented on 2026-10-29):** secrets (JWT secret, DB password, Gemini/OpenCode/SendGrid keys) out of `backend/.env` into a DPAPI-encrypted file under `%LOCALAPPDATA%\LifeRecord\` (owner's choice); per-user token revocation (password change / "sign out everywhere"); httpOnly cookie tokens instead of localStorage; hashed refresh/reset tokens; encrypted uploads; DB-backed rate limiter; CSP header; dedicated least-privilege DB user. Key rotation (Gemini, OpenCode, SendGrid — keys were pasted into chats earlier) needs the owner.
+- **Known, not fixed:** the build prints a Node 24 `fs.F_OK` deprecation from build tooling; `testuser1@example.com` (origin unknown) left in the database; (the MySQL `root` without a password was fixed on 2026-10-29, Batch 6a).
+
+---
+
+## 16. Final status (2026-10-29)
+
+**Branch:** `feature/roadmap-completion` (Batches 5, 6a, 6b, 6c committed; this document and `SENDGRID_EMAIL_AUDIT.md` committed with the final batch).
+
+### Task status
+| Group | Tasks | Status |
+|-------|-------|--------|
+| Completed this session | TEST-003, TEST-004, TEST-005, SEC-001, SEC-004, SEC-005, SEC-007 | Completed with the evidence in Batches 5-6c |
+| Partly done | SEC-002 (code done; **owner must change the real owner password**), SEC-006 (refresh token in an HttpOnly cookie; **access token still in `localStorage`**) | In Progress |
+| Blocked on the owner | SEC-003 (create new Gemini / OpenCode / SendGrid keys and store them with `local_secrets.py set …`) | Blocked |
+| Open by decision | DEBT-001 (split `server.py`: only new code lives in separate modules; a wholesale move of ~5,400 lines was not attempted because it adds regression risk without changing behaviour), DEBT-005 (tests still need the running backend) | In Progress |
+| Extra problems found and fixed | owner password reset on every startup, MySQL reachable on all interfaces with empty root password, README printed the owner password, unrevocable refresh tokens, plaintext reset tokens, unauthenticated-timing login, in-memory rate limiter | Fixed (Batches 6a-6b) |
+| Found, **not** fixed (email, awaiting your go-ahead) | verification lock-out after 5 wrong codes, invisible account-mail failures, unescaped name in recipient email, gmail.com sender | See `SENDGRID_EMAIL_AUDIT.md` |
+
+**The application is not fully complete:** SEC-002, SEC-003, SEC-006, DEBT-001 and DEBT-005 are open, and email verification/delivery is **Not Completed** (see below).
+
+### Final verification (run on 2026-10-29, after the last code change)
+| Check | Result |
+|-------|--------|
+| Backend `pytest tests` (live backend + in-process) | **345 passed, three consecutive parallel runs (about 60 s each)** |
+| Frontend unit tests (`craco test`) | 9 passed (2 suites) |
+| Production build `CI=true npm run build` (ESLint warnings fail it) + CSP step | Compiled successfully; policy injected |
+| Playwright e2e, every spec except those that call the live AI model (owner's instruction) | **49 passed (clean full run, 4.7 min); after the last frontend change (AuthContext hardening) groceries + pages-smooth + settings + session-cookie + smoke re-run: 22 passed** |
+| `alembic current` | `c9d4e6f2a815 (head)` |
+| Console/CSP check of a production build in a browser | 0 errors, 0 violations (Batch 6c) |
+| Not run | e2e specs that call the live AI provider (`saved-chats`, `chat-images`, "real model"/"real assistant" cases); real email delivery; a deployed environment |
+| Pre-existing / environmental | Node 24 `fs.F_OK` deprecation printed by the build tooling; `testuser1@example.com` (origin unknown) still in the database |
+| Flakes met and handled | (1) `test_people_delete_keeps_payments` failed twice when new test modules changed which modules ran side by side: four modules change the owner's Revolut balance and it asserts an exact value; serial run 345/345 proved the cause. Fixed with a cross-worker lock (`shared_money_lock` in `tests/support_auth.py`, held by those four modules), then 3 consecutive parallel runs passed. (2) One e2e failure of "signing out clears the cached page data" while other scripts were hitting the backend; it passed alone and in two later runs. The cause was not proven; as a precaution `AuthContext` now clears cached data whenever the app starts without a token. |
+
+### SendGrid email verification and delivery audit
+Full findings: **[SENDGRID_EMAIL_AUDIT.md](SENDGRID_EMAIL_AUDIT.md)**. Nothing was sent or changed. Headlines:
+- **Email authentication and delivery are NOT completed.** The sender is a `@gmail.com` address (DMARC `p=none`, no alignment possible); the SendGrid account state could not be read with the app's least-privilege key and must be checked in the dashboard.
+- **Bug (confirmed by probe):** five wrong verification codes lock an account out for good; "send a new code" does not reset the counter.
+- Account-mail failures are ignored by the callers; no retries, no bounce/block webhook, no password-changed notification, unescaped user name in the recipient-confirmation email.
+- Your actions: a domain you control + DNS records from SendGrid, domain authentication, tracking settings check, new restricted API key, approval for one test send. The code items are listed with priorities and tests in §10-12 of the audit.

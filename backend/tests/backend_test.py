@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 import requests
-from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD
+from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD, shared_money_lock
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -18,6 +18,12 @@ if not BASE_URL:
 
 
 TAG = f"TEST_{uuid.uuid4().hex[:6]}"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _exclusive_money():
+    with shared_money_lock():
+        yield
 
 
 @pytest.fixture(scope="session")

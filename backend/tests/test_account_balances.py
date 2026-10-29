@@ -4,7 +4,7 @@ import os
 import uuid
 from pathlib import Path
 import requests
-from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD
+from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD, shared_money_lock
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -16,6 +16,11 @@ if not BASE_URL:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _exclusive_money():
+    with shared_money_lock():
+        yield
 
 
 @pytest.fixture(scope="module")

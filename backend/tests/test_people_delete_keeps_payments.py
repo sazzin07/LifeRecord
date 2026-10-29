@@ -4,7 +4,13 @@ import uuid
 
 import pytest
 
-from support_auth import BASE_URL, session
+from support_auth import BASE_URL, session, shared_money_lock
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _exclusive_money():
+    with shared_money_lock():
+        yield
 
 
 @pytest.fixture(scope="module")

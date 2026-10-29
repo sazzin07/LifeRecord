@@ -7,6 +7,7 @@ the response is cached in a temp file shared by the xdist workers and re-checked
 Credentials come from TEST_EMAIL / TEST_PASSWORD. TEST_PASSWORD lives in the encrypted secrets store
 (`python local_secrets.py set TEST_PASSWORD`) or the environment; there is no default in code.
 """
+import contextlib
 import hashlib
 import json
 import os
@@ -72,3 +73,33 @@ def session(email: str = OWNER_EMAIL, password: str = OWNER_PASSWORD) -> request
     s = requests.Session()
     s.headers.update({"Authorization": f"Bearer {login(email, password)['token']}"})
     return s
+
+
+@contextlib.contextmanager
+def shared_money_lock(timeout: float = 180.0):
+    """Exclusive access to the owner's money balances across xdist workers.
+
+    Several modules post transactions to the same account and some assert exact balances; run side by side they
+    see each other's changes. Modules that touch balances hold this lock for their whole run (use it from a
+    module-scoped autouse fixture)."""
+    path = Path(tempfile.gettempdir()) / "liferecord-test-money.lock"
+    deadline = time.time() + timeout
+    while True:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            try:  # a lock left behind by a crashed run
+                if time.time() - path.stat().st_mtime > 600:
+                    path.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                raise TimeoutError("another test module is holding the shared money lock")
+            time.sleep(0.2)
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)

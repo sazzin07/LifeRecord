@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, refreshSession } from "@/lib/api";
 import { clearCaches } from "@/lib/swrCache";
 import { setCacheUser } from "@/lib/query";
 
@@ -34,13 +34,8 @@ export function AuthProvider({ children }) {
   };
 
   const refreshAccessToken = async () => {
-    const refreshToken = localStorage.getItem("lm_refresh_token");
-    if (!refreshToken) return null;
     try {
-      const { data } = await api.post("/auth/refresh", { token: refreshToken });
-      if (data.token) localStorage.setItem("lm_token", data.token);
-      if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
-      return data.token;
+      return await refreshSession();
     } catch {
       clearTokens();
       clearCaches();
@@ -93,10 +88,14 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    clearTokens();
-    clearCaches(); // cached page data belongs to the signed-in user only
-    setUser(false);
-    window.location.href = "/login";
+    const finish = () => {
+      clearTokens();
+      clearCaches(); // cached page data belongs to the signed-in user only
+      setUser(false);
+      window.location.href = "/login";
+    };
+    // Ask the server to drop this browser's refresh cookie; sign out locally whatever the answer.
+    api.post("/auth/logout", null, { timeout: 3000 }).then(finish, finish);
   };
 
   return (

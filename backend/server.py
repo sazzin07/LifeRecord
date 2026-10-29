@@ -37,6 +37,7 @@ from models import (
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
 )
+import file_crypto
 import kitchen_logic
 import ai_tools_extra
 import ai_opencode
@@ -47,7 +48,7 @@ import scheduling_api
 import calendar_api
 from starlette.responses import StreamingResponse
 from security_utils import (
-    hash_password, verify_password, create_access_token, create_refresh_token,
+    hash_password, verify_password, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS,
     create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
     is_valid_email, is_strong_password,
 )
@@ -144,12 +145,16 @@ def _safe_storage_path(path: str) -> Path:
 def save_object(path: str, data: bytes) -> str:
     full = _safe_storage_path(path)
     full.parent.mkdir(parents=True, exist_ok=True)
-    full.write_bytes(data)
+    full.write_bytes(file_crypto.encrypt(data))  # encrypted at rest when UPLOAD_ENCRYPTION_KEY is set
     return path
 
 
 def read_object(path: str) -> bytes:
-    return _safe_storage_path(path).read_bytes()
+    try:
+        return file_crypto.decrypt(_safe_storage_path(path).read_bytes())
+    except file_crypto.FileCryptoError:
+        logger.exception("could not decrypt %s", path)
+        raise HTTPException(status_code=500, detail="This file could not be read")
 
 
 def delete_object(path: str) -> None:
@@ -210,6 +215,36 @@ def _check_token_version(payload: dict, user: User) -> None:
 def _session_tokens(user: User) -> dict:
     v = int(user.token_version or 0)
     return {"token": create_access_token(user.id, user.email, v), "refresh_token": create_refresh_token(user.id, v)}
+
+
+REFRESH_COOKIE = "lr_refresh"
+COOKIE_SAMESITE = os.environ.get("COOKIE_SAMESITE", "lax").lower()  # "strict", "lax"; "none" only for a cross-site API
+
+
+def refresh_cookie_secure(frontend_url: str = None) -> bool:
+    """HTTPS deployments get the Secure flag automatically; COOKIE_SECURE=true/false overrides."""
+    forced = os.environ.get("COOKIE_SECURE", "").lower()
+    if forced in ("1", "true", "yes"):
+        return True
+    if forced in ("0", "false", "no"):
+        return False
+    return (frontend_url if frontend_url is not None else FRONTEND_URL).lower().startswith("https://")
+
+
+def _wants_cookie(request: Request) -> bool:
+    return request.headers.get("X-Auth-Mode", "").lower() == "cookie"
+
+
+def _issue_session(request: Request, response: Response, user: User, extra: dict = None) -> dict:
+    """Tokens for a response. With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and is
+    left out of the JSON, so page scripts (and anything injected into the page) cannot read it."""
+    tokens = _session_tokens(user)
+    if _wants_cookie(request):
+        response.set_cookie(
+            REFRESH_COOKIE, tokens.pop("refresh_token"), max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+            httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE, path="/api/auth",
+        )
+    return {**tokens, **(extra or {})}
 
 
 # Verified against when the email is unknown, so a missing account takes as long as a wrong password.
@@ -300,7 +335,7 @@ class ResetPasswordBody(BaseModel):
 
 
 class RefreshBody(BaseModel):
-    token: str = Field(..., max_length=2048)
+    token: Optional[str] = Field(None, max_length=2048)  # omitted when the refresh token is in the HttpOnly cookie
 
 
 class ChangePasswordBody(BaseModel):
@@ -1249,7 +1284,7 @@ async def resend_verification(body: ResendCodeBody, request: Request, db: AsyncS
 
 
 @api_router.post("/auth/verify")
-async def verify_code(body: VerifyCodeBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def verify_code(body: VerifyCodeBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     code = body.code.strip()
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
@@ -1286,14 +1321,12 @@ async def verify_code(body: VerifyCodeBody, request: Request, db: AsyncSession =
     user.verification_attempts = 0
     await db.commit()
 
-    return {
-        **_session_tokens(user),
-        "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True},
-    }
+    return _issue_session(request, response, user,
+                          {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True}})
 
 
 @api_router.post("/auth/login")
-async def login(body: LoginBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
@@ -1312,10 +1345,8 @@ async def login(body: LoginBody, request: Request, db: AsyncSession = Depends(ge
             "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": False},
         }
 
-    return {
-        **_session_tokens(user),
-        "user": {"id": user.id, "email": email, "name": user.name, "email_verified": True},
-    }
+    return _issue_session(request, response, user,
+                          {"user": {"id": user.id, "email": email, "name": user.name, "email_verified": True}})
 
 
 @api_router.post("/auth/forgot-password")
@@ -1335,7 +1366,7 @@ async def forgot_password(body: ForgotPasswordBody, request: Request, db: AsyncS
 
 
 @api_router.post("/auth/reset-password")
-async def reset_password(body: ResetPasswordBody, request: Request, db: AsyncSession = Depends(get_db)):
+async def reset_password(body: ResetPasswordBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     await check_rate_limit(request, f"reset:{body.token[:8]}")
     try:
         payload = decode_token(body.token, token_type="password_reset")
@@ -1363,17 +1394,23 @@ async def reset_password(body: ResetPasswordBody, request: Request, db: AsyncSes
     user.token_version = int(user.token_version or 0) + 1  # a reset ends every existing session
     await db.commit()
 
-    return {
-        **_session_tokens(user),
-        "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified},
-    }
+    return _issue_session(request, response, user,
+                          {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
 
 
 @api_router.post("/auth/refresh")
-async def refresh_token(body: RefreshBody, db: AsyncSession = Depends(get_db)):
-    """Exchange a valid refresh token for a new access token."""
+async def refresh_token(body: RefreshBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Exchange a valid refresh token (request body, or the HttpOnly cookie) for a new session."""
+    token = body.token
+    if not token:
+        token = request.cookies.get(REFRESH_COOKIE)
+        if token and not _wants_cookie(request):
+            # A cookie is sent by the browser on its own; requiring a custom header means a cross-site page cannot trigger this.
+            raise HTTPException(status_code=403, detail="Missing X-Auth-Mode header")
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     try:
-        payload = decode_token(body.token, token_type="refresh")
+        payload = decode_token(token, token_type="refresh")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -1384,11 +1421,18 @@ async def refresh_token(body: RefreshBody, db: AsyncSession = Depends(get_db)):
     _check_token_version(payload, user)
     if not user.email_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
-    return _session_tokens(user)
+    return _issue_session(request, response, user)
+
+
+@api_router.post("/auth/logout")
+async def logout(response: Response):
+    """Forget this browser's refresh cookie. (Use /auth/logout-all to invalidate copies of a token.)"""
+    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
+    return {"message": "Signed out"}
 
 
 @api_router.post("/auth/change-password")
-async def change_password(body: ChangePasswordBody, request: Request, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def change_password(body: ChangePasswordBody, request: Request, response: Response, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Limits guessing the current password with a stolen session.
     await check_rate_limit(request, f"{user['_id']}:change-password")
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
@@ -1403,17 +1447,18 @@ async def change_password(body: ChangePasswordBody, request: Request, user: dict
     db_user.token_version = int(db_user.token_version or 0) + 1  # every other device is signed out
     await db.commit()
     # This device gets a fresh session so the user is not signed out of the tab they are using.
-    return {"message": "Password updated successfully", **_session_tokens(db_user)}
+    return _issue_session(request, response, db_user, {"message": "Password updated successfully"})
 
 
 @api_router.post("/auth/logout-all")
-async def logout_all(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def logout_all(response: Response, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Sign out everywhere: every access and refresh token issued so far stops working, including this one."""
     db_user = (await db.execute(select(User).where(User.id == user["_id"]))).scalar_one_or_none()
     if not db_user:
         raise HTTPException(status_code=401, detail="User not found")
     db_user.token_version = int(db_user.token_version or 0) + 1
     await db.commit()
+    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
     return {"message": "Signed out on all devices"}
 
 
@@ -5306,7 +5351,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_origins=_cors_origins,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode"],
     max_age=600,
 )
 

@@ -3,7 +3,9 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
-export const api = axios.create({ baseURL: API });
+// "cookie" mode: the server keeps the long-lived refresh token in an HttpOnly cookie that page scripts cannot read.
+const AUTH_MODE = { "X-Auth-Mode": "cookie" };
+export const api = axios.create({ baseURL: API, withCredentials: true, headers: AUTH_MODE });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("lm_token");
@@ -23,12 +25,13 @@ function subscribeTokenRefresh(cb) {
   refreshSubscribers.push(cb);
 }
 
-async function doRefresh() {
-  const refreshToken = localStorage.getItem("lm_refresh_token");
-  if (!refreshToken) throw new Error("No refresh token");
-  const { data } = await axios.post(`${API}/auth/refresh`, { token: refreshToken });
+/** Exchange the refresh cookie for a new access token. A refresh token still in localStorage (from before cookies
+ *  existed) is sent once; the server answers with a cookie and the stored copy is removed. */
+export async function refreshSession() {
+  const legacy = localStorage.getItem("lm_refresh_token");
+  const { data } = await axios.post(`${API}/auth/refresh`, legacy ? { token: legacy } : {}, { withCredentials: true, headers: AUTH_MODE });
   if (data.token) localStorage.setItem("lm_token", data.token);
-  if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
+  localStorage.removeItem("lm_refresh_token");
   return data.token;
 }
 
@@ -64,7 +67,7 @@ api.interceptors.response.use(
 
     isRefreshing = true;
     try {
-      const newToken = await doRefresh();
+      const newToken = await refreshSession();
       isRefreshing = false;
       onRefreshed(newToken);
       originalRequest.headers.Authorization = `Bearer ${newToken}`;

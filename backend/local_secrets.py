@@ -11,6 +11,8 @@ On other systems there is no store; provide the same names as real environment v
     python local_secrets.py names              # list stored names (never values)
     python local_secrets.py rotate-jwt         # new random JWT secret (signs every user out)
     python local_secrets.py run -- CMD ...     # run CMD with the stored secrets as environment variables
+    python local_secrets.py init-upload-key    # create the key that encrypts uploaded files (once)
+    python local_secrets.py reveal NAME        # print one value, e.g. to back up UPLOAD_ENCRYPTION_KEY
 """
 import argparse
 import ctypes
@@ -27,7 +29,7 @@ from typing import List, Optional
 # Names that are moved out of backend/.env. Everything else in .env is plain configuration.
 SECRET_KEYS = (
     "JWT_SECRET", "DATABASE_PASSWORD", "ADMIN_PASSWORD", "ADMIN_DATABASE_PASSWORD",
-    "GEMINI_API_KEY", "OPENCODE_API_KEY", "SENDGRID_API_KEY", "SMTP_PASSWORD",
+    "GEMINI_API_KEY", "OPENCODE_API_KEY", "SENDGRID_API_KEY", "SMTP_PASSWORD", "UPLOAD_ENCRYPTION_KEY",
 )
 _ENTROPY = b"LifeRecord/secrets/v1"
 
@@ -132,7 +134,7 @@ def rotate_jwt_secret(store: Optional[Path] = None) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["migrate", "set", "names", "rotate-jwt", "run"])
+    parser.add_argument("command", choices=["migrate", "set", "names", "rotate-jwt", "run", "init-upload-key", "reveal"])
     parser.add_argument("name", nargs="?")
     parser.add_argument("--store", type=Path)
     parser.add_argument("--env-file", type=Path, default=Path(__file__).parent / ".env")
@@ -153,6 +155,20 @@ def main(argv=None) -> int:
             parser.error("empty value; nothing stored")
         write_store({**read_store(args.store), args.name: value}, args.store)
         print(f"Stored {args.name}.")
+    elif args.command == "init-upload-key":
+        values = read_store(args.store)
+        if "UPLOAD_ENCRYPTION_KEY" in values:
+            print("UPLOAD_ENCRYPTION_KEY already exists; not replaced (replacing it would make encrypted files unreadable).")
+        else:
+            from cryptography.fernet import Fernet
+            write_store({**values, "UPLOAD_ENCRYPTION_KEY": Fernet.generate_key().decode()}, args.store)
+            print("Created UPLOAD_ENCRYPTION_KEY. Back it up: `python local_secrets.py reveal UPLOAD_ENCRYPTION_KEY`; "
+                  "without it, encrypted files cannot be read.")
+    elif args.command == "reveal":
+        value = read_store(args.store).get(args.name or "")
+        if value is None:
+            parser.error(f"{args.name!r} is not in the store")
+        print(value)
     elif args.command == "run":
         if not child:
             parser.error("run needs a command after --")

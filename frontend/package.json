@@ -60,7 +60,7 @@
   },
   "scripts": {
     "start": "craco start",
-    "build": "craco build",
+    "build": "craco build && node scripts/csp.js",
     "test": "craco test",
     "test:e2e": "playwright test"
   },

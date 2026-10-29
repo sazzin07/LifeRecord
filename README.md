@@ -248,13 +248,15 @@ FRONTEND_URL=https://liferecord.example.com
 - Tokens are signed with `JWT_SECRET` using HS256 and carry the user's `token_version`. Changing or resetting the password, or **Settings → Sign out on all devices** (`POST /api/auth/logout-all`), raises that version, so every earlier access and refresh token stops working at once; the device that changed the password receives fresh tokens and stays signed in.
 - Refresh refuses unverified accounts. Password-reset tokens are stored only as a SHA-256 hash and are single use.
 - Login takes the same time for unknown emails as for wrong passwords (no account enumeration by timing).
-- The frontend stores both tokens in `localStorage`. The access token is sent as `Authorization: Bearer <token>`.
+- The browser app asks for **cookie mode** (`X-Auth-Mode: cookie`): the refresh token travels only in the `lr_refresh` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/api/auth`, `Secure` automatically when `FRONTEND_URL` is https; override with `COOKIE_SECURE` / `COOKIE_SAMESITE`), so page scripts cannot read it. A cookie refresh also needs that header, which a cross-site form post cannot send (CSRF protection). `POST /api/auth/logout` clears the cookie. API clients that do not send the header still get `refresh_token` in the JSON.
+- The short-lived (30 min) access token is still kept in `localStorage` and sent as `Authorization: Bearer <token>`; moving it into memory is tracked as the remainder of SEC-006.
 - On 401, the frontend automatically calls `/api/auth/refresh` to obtain a new access token and retries the original request.
 - CORS is restricted to `CORS_ORIGINS`; credentials are never sent to `*`.
 - `TrustedHostMiddleware` validates the `Host` header when `ALLOWED_HOSTS` is set.
 - Response security headers are added by middleware: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), microphone=(), camera=()`.
 - Auth endpoints are rate-limited per IP + identifier. The counters are rows in `rate_limit_events` (hashed key, no emails), so limits survive restarts and are shared by every backend process.
-- Progress photos enforce extension, content-type, and size limits; files are saved inside `STORAGE_DIR` with path-traversal checks.
+- Progress photos and chat pictures enforce extension, content-type, and size limits; files are saved inside `STORAGE_DIR` with path-traversal checks and are **encrypted at rest** (Fernet, key `UPLOAD_ENCRYPTION_KEY` in the secrets store; files from before encryption stay readable, `python file_crypto.py encrypt-existing` converts them). Create the key once with `python local_secrets.py init-upload-key` and **back it up** (`python local_secrets.py reveal UPLOAD_ENCRYPTION_KEY` into a password manager): without it the encrypted files cannot be read.
+- **Content-Security-Policy:** `yarn build` runs `scripts/csp.js`, which puts a strict policy in `build/index.html` (own scripts only, no inline scripts, API origin from `REACT_APP_BACKEND_URL` as the only extra `connect-src`, Google Fonts for styles/fonts) and writes the same policy as a header, plus `frame-ancestors 'none'`, to `build/security-headers.txt` for the web server in front. Dev mode (`yarn start`) is not restricted because hot reload needs inline scripts. `e2e/csp-check.mjs` is a manual browser check of a production build under the policy.
 
 ## Admin account initialization
 

@@ -79,12 +79,24 @@ php -S localhost:8080
 
 ### Login
 
-```
-Email:    tiagosa743@gmail.com
-Password: LifeRecord
+Sign in with the owner email (`ADMIN_EMAIL` in `backend/.env`) and your password. The owner account is created once, on the first startup with an empty database, from `ADMIN_EMAIL` / `ADMIN_PASSWORD`; after that the password is whatever you chose (change it in **Settings → Password**). It is stored as a salted bcrypt hash only. If you lose it: `cd backend; .venv\Scripts\python.exe owner_admin.py reset-password`.
+
+### Where the secrets live
+
+On Windows the secrets (JWT secret, database passwords, SendGrid/Gemini/OpenCode keys, the owner's seed and test password) are **not** in `backend/.env`. They are in `%LOCALAPPDATA%\LifeRecord\secrets.dpapi`, encrypted with Windows DPAPI for your Windows user, outside the project folder. The backend, Alembic, `ensure_db.py` and the tests read them automatically. Order of precedence: real environment variable, then the store, then `backend/.env`.
+
+```powershell
+cd backend
+.venv\Scripts\python.exe local_secrets.py names                 # which names are stored (never the values)
+.venv\Scripts\python.exe local_secrets.py set SENDGRID_API_KEY  # store or replace a value (prompted, hidden)
+.venv\Scripts\python.exe local_secrets.py rotate-jwt            # new JWT secret; signs everyone out
+.venv\Scripts\python.exe local_secrets.py migrate               # move secrets still in .env into the store
+.venv\Scripts\python.exe local_secrets.py run -- npx playwright test   # run a command with the secrets as env vars
 ```
 
-This owner account is created automatically on first startup from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`. The password is stored as a salted bcrypt hash only.
+If you change the owner password, also run `local_secrets.py set TEST_PASSWORD` so the tests can log in. On Linux/production there is no store: provide the same names as environment variables or from your secret manager.
+
+The app connects to MySQL as `liferecord_app`, which can read and write the `liferecord` database only (no DROP/ALTER, no other databases, no account management). `root` has a password and is used only for migrations, setup and test cleanup. `tools/provision_db.py` sets this up (safe to re-run). MySQL listens on `127.0.0.1` only (`tools/mysql-data/my.cnf` contains `bind-address=127.0.0.1` and `mysqlx=OFF`; that file is git-ignored, so repeat those two lines on a new machine). Use `DATABASE_HOST=127.0.0.1`, not `localhost`: on Windows `localhost` tries IPv6 first and every connection waits for a timeout.
 
 ## Quick start
 
@@ -160,7 +172,7 @@ Required backend environment variables:
 
 ### 3. phpMyAdmin (optional)
 
-A local phpMyAdmin 5.2.3 is bundled in `tools/phpmyadmin` and pre-configured for `localhost:3306` as `root` with no password. Start it with PHP's built-in server:
+A local phpMyAdmin 5.2.3 is bundled in `tools/phpmyadmin` and configured for `127.0.0.1:3306` and asks for a login (use `root` or `liferecord_app` with the password from the secrets store: `python -c "import local_secrets as l; print(l.read_store()['ADMIN_DATABASE_PASSWORD'])"` from `backend/`; nothing is saved in the config). Start it with PHP's built-in server:
 
 ```bash
 cd tools/phpmyadmin
@@ -244,7 +256,7 @@ FRONTEND_URL=https://liferecord.example.com
 
 ## Admin account initialization
 
-On startup the backend ensures an `owner` role account exists with the credentials from `ADMIN_EMAIL` and `ADMIN_PASSWORD`. The password is hashed with bcrypt. Changing `ADMIN_PASSWORD` in `.env` and restarting updates the stored hash. Never commit `.env`; it is ignored by Git.
+On startup the backend ensures an `owner` role account exists. It is created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` only when no owner exists; afterwards only the email and name are kept in step with `ADMIN_EMAIL` / `OWNER_NAME`, and **the password is never overwritten** (earlier versions reset it at every start). Use **Settings → Password** or `owner_admin.py reset-password` to change it. Never commit `.env`; it is ignored by Git.
 
 ## Database migrations
 
@@ -370,7 +382,7 @@ cd backend
 
 Most tests call the running backend (start it first with `start-all.ps1`) and work in the owner account; every record they create is tagged (`TEST_…`, `E2E-…`) and removed again. Some tests (AI tools, confirmations, undo, scheduling) run in-process against the same MySQL database. There is no separate test database.
 
-- Credentials: `TEST_EMAIL` / `TEST_PASSWORD` (default: the local dev owner account). `REACT_APP_BACKEND_URL` overrides the API address (default from `frontend/.env`, with `localhost` replaced by `127.0.0.1` — on Windows `localhost` costs ~2 s per request).
+- Credentials: `TEST_EMAIL` (default: the owner email) and `TEST_PASSWORD` (from the secrets store or the environment; there is no default in code). Direct database access in tests uses the admin login from the same store. `REACT_APP_BACKEND_URL` overrides the API address (default from `frontend/.env`, with `localhost` replaced by `127.0.0.1` — on Windows `localhost` costs ~2 s per request).
 - `tests/support_auth.py` logs in once per account per run (the login rate limit is 10/minute); `tests/conftest.py` removes the login cache and the accounts the auth tests register when the run ends.
 - Email is never sent to reserved test domains (`example.com`, `*.test`, …), so the auth tests do not use the SendGrid quota.
 - New tables come from `alembic upgrade head` (the server also creates missing tables at startup; in-process tests need the migration).
@@ -382,10 +394,10 @@ cd frontend
 yarn build
 ```
 
-The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `yarn test:e2e` after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
+The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `python ..ackend\local_secrets.py run -- npx playwright test` (the store supplies `TEST_PASSWORD`) after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
 
 ```powershell
-npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
+python ..ackend\local_secrets.py run -- npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/nutrition.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
 ```
 
 ## Production deployment checklist
@@ -395,7 +407,7 @@ npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.s
 3. Set a strong `ADMIN_PASSWORD`.
 4. Configure real SMTP credentials.
 5. Use HTTPS and set `FRONTEND_URL` to the HTTPS URL.
-6. Run MySQL/MariaDB with TLS and a non-root application user.
+6. Run MySQL/MariaDB with TLS and a non-root application user (see `tools/provision_db.py` for the privileges the app needs).
 7. Restrict `CORS_ORIGINS` to the production frontend domain.
 8. Set `ALLOWED_HOSTS` to the production domain(s).
 9. Serve the frontend `build/` folder with a production web server or reverse proxy.

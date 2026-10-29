@@ -1,6 +1,8 @@
 from dotenv import load_dotenv
 from pathlib import Path
 ROOT_DIR = Path(__file__).parent
+import local_secrets
+local_secrets.load_into_environ()  # encrypted secrets outside the project; real env vars still win
 load_dotenv(ROOT_DIR / '.env')
 
 import os
@@ -5045,12 +5047,19 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
 # ---------------------------------------------------------------------------
 # Seed
 # ---------------------------------------------------------------------------
+def sync_existing_owner(owner: User, admin_email: str) -> None:
+    """Keep the owner's email/name in step with the environment. The password is never touched here: it is
+    whatever the owner chose, and resetting it on every start would undo a password change."""
+    owner.email = admin_email
+    owner.name = OWNER_NAME
+    owner.email_verified = True
+
+
 async def seed():
     admin_email = os.environ["ADMIN_EMAIL"].lower()
-    admin_pw = os.environ["ADMIN_PASSWORD"]
+    admin_pw = os.environ["ADMIN_PASSWORD"]  # only used to create the owner when none exists yet
 
     async with AsyncSessionLocal() as db:
-        # Always keep the single owner account in sync with environment variables.
         existing = (await db.execute(select(User).where(User.role == "owner"))).scalar_one_or_none()
         if not existing:
             admin_id = new_id()
@@ -5059,11 +5068,7 @@ async def seed():
                         created_at=now_iso()))
         else:
             admin_id = existing.id
-            existing.email = admin_email
-            existing.name = OWNER_NAME
-            existing.email_verified = True
-            if not verify_password(admin_pw, existing.password_hash):
-                existing.password_hash = hash_password(admin_pw)
+            sync_existing_owner(existing, admin_email)
 
         if (await db.execute(select(func.count(Category.id)))).scalar() == 0:
             cats = [

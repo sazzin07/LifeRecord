@@ -4,16 +4,23 @@ Logins are rate limited (RATE_LIMIT_AUTH_MAX_ATTEMPTS per minute, per IP and ema
 need the owner account, so a full run used to trip the limit. `login()` signs in once per account per run:
 the response is cached in a temp file shared by the xdist workers and re-checked with /auth/me before reuse.
 
-Credentials come from TEST_EMAIL / TEST_PASSWORD (falling back to the local dev owner account).
+Credentials come from TEST_EMAIL / TEST_PASSWORD. TEST_PASSWORD lives in the encrypted secrets store
+(`python local_secrets.py set TEST_PASSWORD`) or the environment; there is no default in code.
 """
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import local_secrets  # noqa: E402
+
+local_secrets.load_into_environ()
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
@@ -25,7 +32,10 @@ if not BASE_URL:
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
 OWNER_EMAIL = os.environ.get("TEST_EMAIL", "tiagosa743@gmail.com")
-OWNER_PASSWORD = os.environ.get("TEST_PASSWORD", "LifeRecord")
+OWNER_PASSWORD = os.environ.get("TEST_PASSWORD", "")
+if not OWNER_PASSWORD:
+    raise RuntimeError("TEST_PASSWORD is not set. Store it with `python local_secrets.py set TEST_PASSWORD` "
+                       "(it is the owner account's password) or export it for this run.")
 
 _MAX_AGE = 600  # seconds; well inside the access-token lifetime
 

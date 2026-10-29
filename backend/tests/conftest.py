@@ -24,8 +24,8 @@ def pytest_sessionfinish(session, exitstatus):
     for f in Path(tempfile.gettempdir()).glob("liferecord-test-login-*.json"):
         f.unlink(missing_ok=True)
     try:
-        import pymysql
-        conn = pymysql.connect(host="localhost", port=3306, user="root", password="", database="liferecord")
+        import support_db
+        conn = support_db.connect()
         try:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM users WHERE role = 'user' AND email REGEXP %s", (TEST_USER_EMAIL,))

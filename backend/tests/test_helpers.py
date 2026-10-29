@@ -118,3 +118,14 @@ def test_payment_method_follows_the_account_type_when_known():
     # unknown account id falls back to the legacy rule
     assert serialize_txn(expense(account="cash"), {}, types)["payment_method"] == "cash"
     assert serialize_txn(expense(account=None), {}, types)["payment_method"] == "card"
+
+
+# ---- owner seed (SEC-002) ----
+
+def test_existing_owner_keeps_the_password_they_chose():
+    from models import User
+    owner = User(id="o1", email="old@example.com", password_hash="HASH-CHOSEN-IN-SETTINGS", name="Old",
+                 role="owner", email_verified=False, created_at="2026-01-01")
+    server.sync_existing_owner(owner, "new@example.com")
+    assert owner.password_hash == "HASH-CHOSEN-IN-SETTINGS"
+    assert (owner.email, owner.name, owner.email_verified) == ("new@example.com", server.OWNER_NAME, True)

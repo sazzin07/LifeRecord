@@ -5,6 +5,7 @@ from pathlib import Path
 import requests
 from support_auth import login, OWNER_EMAIL as ADMIN_EMAIL, OWNER_PASSWORD as ADMIN_PASSWORD
 import pymysql
+import support_db
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -19,8 +20,7 @@ if not BASE_URL:
 
 
 def _db_query(sql, params=()):
-    conn = pymysql.connect(host="localhost", port=3306, user="root", password="", database="liferecord",
-                           cursorclass=pymysql.cursors.DictCursor)
+    conn = support_db.connect(cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)
@@ -30,7 +30,7 @@ def _db_query(sql, params=()):
 
 
 def _db_execute(sql, params=()):
-    conn = pymysql.connect(host="localhost", port=3306, user="root", password="", database="liferecord")
+    conn = support_db.connect()
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)

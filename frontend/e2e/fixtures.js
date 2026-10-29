@@ -1,10 +1,14 @@
 import { test as base, expect, request } from "@playwright/test";
 
-// Owner account used by the e2e suite; override with TEST_EMAIL / TEST_PASSWORD.
+// Owner account used by the e2e suite. TEST_PASSWORD comes from the encrypted secrets store; run the suite with
+//   python backend/local_secrets.py run -- npx playwright test
 export const credentials = {
   email: process.env.TEST_EMAIL || "tiagosa743@gmail.com",
-  password: process.env.TEST_PASSWORD || "LifeRecord",
+  password: process.env.TEST_PASSWORD,
 };
+if (!credentials.password) {
+  throw new Error("TEST_PASSWORD is not set. Run the e2e suite through `python backend/local_secrets.py run -- ...` or export it.");
+}
 
 let sessionPromise = null;
 function getSession() {

@@ -3,6 +3,7 @@ by conftest.py)."""
 import uuid
 
 import pymysql
+import support_db
 import pytest
 import requests
 
@@ -14,8 +15,7 @@ OLD, NEW = "OldPass123", "NewPass456"
 def _verified_user():
     email = f"pwchange_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": OLD, "name": "pw"}).status_code == 200
-    conn = pymysql.connect(host="localhost", port=3306, user="root", password="", database="liferecord",
-                           cursorclass=pymysql.cursors.DictCursor)
+    conn = support_db.connect(cursorclass=pymysql.cursors.DictCursor)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT verification_code FROM users WHERE email=%s", (email,))

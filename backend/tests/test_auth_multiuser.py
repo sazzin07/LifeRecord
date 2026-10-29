@@ -219,19 +219,19 @@ class TestMultiUserIsolation:
 
 class TestAdminInitialization:
     def test_admin_exists_and_verified(self):
-        rows = _db_query("SELECT email, email_verified, role FROM users WHERE email=%s", (ADMIN_EMAIL,))
+        # The owner account is whoever holds the owner role (not necessarily the account the tests log in with).
+        rows = _db_query("SELECT email, email_verified, role FROM users WHERE role='owner'")
         assert len(rows) == 1
         assert rows[0]["email_verified"] == 1
-        assert rows[0]["role"] == "owner"
 
     def test_admin_password_is_hashed(self):
-        rows = _db_query("SELECT password_hash FROM users WHERE email=%s", (ADMIN_EMAIL,))
+        rows = _db_query("SELECT password_hash FROM users WHERE role='owner'")
         assert len(rows) == 1
         ph = rows[0]["password_hash"]
         assert not ph.startswith("LifeRecord")
         assert ph.startswith("$2")
 
-    def test_admin_can_login(self):
+    def test_the_standard_test_account_can_login(self):
         r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
         assert r.status_code == 200
 

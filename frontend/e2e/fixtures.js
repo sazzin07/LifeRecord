@@ -2,12 +2,21 @@ import { test as base, expect, request } from "@playwright/test";
 
 // Owner account used by the e2e suite. TEST_PASSWORD comes from the encrypted secrets store; run the suite with
 //   python backend/local_secrets.py run -- npx playwright test
+// Standard testing account: John (a39791@aesancho.pt), created by `python backend/seed_john.py`.
 export const credentials = {
-  email: process.env.TEST_EMAIL || "tiagosa743@gmail.com",
+  email: process.env.TEST_EMAIL || "a39791@aesancho.pt",
   password: process.env.TEST_PASSWORD,
 };
 if (!credentials.password) {
   throw new Error("TEST_PASSWORD is not set. Run the e2e suite through `python backend/local_secrets.py run -- ...` or export it.");
+}
+
+// The suite creates and deletes data: it only runs against a local app.
+for (const url of [process.env.API_URL || "http://localhost:8000", process.env.BASE_URL || "http://localhost:3000"]) {
+  const host = new URL(url).hostname;
+  if (!["localhost", "127.0.0.1"].includes(host) && process.env.ALLOW_REMOTE_TESTS !== "1") {
+    throw new Error(`Refusing to run the e2e suite against ${url}: only a local app is accepted.`);
+  }
 }
 
 let sessionPromise = null;

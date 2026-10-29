@@ -187,10 +187,11 @@ class Grocery(Base):
 
 
 class Product(Base):
-    """Reusable food catalog shared by user (or global seed per user)."""
+    """Reusable food catalog. user_id NULL = the shared built-in catalog, visible to every account and read-only;
+    a user_id marks a product that person added or edited, visible only to them."""
     __tablename__ = "products"
     id = Column(String(36), primary_key=True)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     name_lower = Column(String(255), nullable=False, index=True)
     category = Column(String(255), nullable=True)

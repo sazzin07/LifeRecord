@@ -4,8 +4,9 @@ Logins are rate limited (RATE_LIMIT_AUTH_MAX_ATTEMPTS per minute, per IP and ema
 need the owner account, so a full run used to trip the limit. `login()` signs in once per account per run:
 the response is cached in a temp file shared by the xdist workers and re-checked with /auth/me before reuse.
 
-Credentials come from TEST_EMAIL / TEST_PASSWORD. TEST_PASSWORD lives in the encrypted secrets store
-(`python local_secrets.py set TEST_PASSWORD`) or the environment; there is no default in code.
+The standard testing account is John (a39791@aesancho.pt, seeded by `seed_john.py`). Override with TEST_EMAIL.
+TEST_PASSWORD comes from the environment or the encrypted secrets store (`python local_secrets.py set TEST_PASSWORD`);
+there is no default in code. Tests only run against a local backend.
 """
 import contextlib
 import hashlib
@@ -13,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+from urllib.parse import urlparse
 import time
 from pathlib import Path
 
@@ -32,7 +34,12 @@ if not BASE_URL:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-OWNER_EMAIL = os.environ.get("TEST_EMAIL", "tiagosa743@gmail.com")
+if BASE_URL and (urlparse(BASE_URL).hostname not in ("127.0.0.1", "localhost")) and os.environ.get("ALLOW_REMOTE_TESTS") != "1":
+    raise RuntimeError(f"Refusing to run the tests against {BASE_URL}: they create and delete data. Only a local backend is "
+                       "accepted (set ALLOW_REMOTE_TESTS=1 to override, never for production).")
+
+# "OWNER" is kept as the name for the primary test account used throughout the suite.
+OWNER_EMAIL = os.environ.get("TEST_EMAIL", "a39791@aesancho.pt")
 OWNER_PASSWORD = os.environ.get("TEST_PASSWORD", "")
 if not OWNER_PASSWORD:
     raise RuntimeError("TEST_PASSWORD is not set. Store it with `python local_secrets.py set TEST_PASSWORD` "

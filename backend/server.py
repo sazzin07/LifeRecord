@@ -2908,11 +2908,44 @@ async def get_expiring_groceries(days: int = 7, user: dict = Depends(get_current
 # ---------------------------------------------------------------------------
 # Product catalog
 # ---------------------------------------------------------------------------
+async def ensure_shared_catalog() -> int:
+    """Make sure every item of the built-in library exists once as a shared (ownerless) product. Idempotent;
+    existing shared rows are left as they are. Returns how many were added."""
+    from catalog_data import LIBRARY
+    async with AsyncSessionLocal() as db:
+        have = set((await db.execute(select(Product.name_lower).where(Product.user_id.is_(None)))).scalars().all())
+        added = 0
+        for item in LIBRARY:
+            key = item["name"].lower()
+            if key in have:
+                continue
+            db.add(Product(
+                id=new_id(), user_id=None, name=item["name"], name_lower=key, category=item["category"],
+                subcategory=item["subcategory"], default_unit=item["default_unit"],
+                typical_quantity=item["typical_quantity"], synonyms=item["synonyms"], nutrition=item["nutrition"],
+                tags=item["tags"], icon=item["icon"], is_favorite=False, created_at=now_iso()))
+            have.add(key)
+            added += 1
+        await db.commit()
+    return added
+
+
+async def visible_products(db: AsyncSession, user: dict) -> List[Product]:
+    """The shared catalog plus this person's own products. Where they have their own version of a shared item
+    (same name), theirs is shown instead, so the list never has duplicates."""
+    rows = (await db.execute(
+        select(Product).where((Product.user_id == user["_id"]) | (Product.user_id.is_(None))).order_by(Product.name)
+    )).scalars().all()
+    chosen = {}
+    for p in rows:
+        if p.name_lower not in chosen or p.user_id is not None:
+            chosen[p.name_lower] = p
+    return sorted(chosen.values(), key=lambda p: p.name)
+
+
 @api_router.get("/products")
 async def get_products(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return [to_dict(p) for p in (await db.execute(
-        _user_owned_query(Product, user).order_by(Product.name)
-    )).scalars().all()]
+    return [to_dict(p) for p in await visible_products(db, user)]
 
 
 @api_router.get("/products/search")
@@ -2920,7 +2953,7 @@ async def search_products(q: str, user: dict = Depends(get_current_user), db: As
     term = (q or "").strip().lower()
     if not term:
         return []
-    rows = (await db.execute(_user_owned_query(Product, user).order_by(Product.name))).scalars().all()
+    rows = await visible_products(db, user)
 
     def matches(p: Product) -> bool:
         haystack = [p.name_lower, (p.category or "").lower(), (p.subcategory or "").lower()]
@@ -2946,52 +2979,31 @@ async def create_product(body: ProductBody, user: dict = Depends(get_current_use
 
 @api_router.post("/products/import-library")
 async def import_product_library(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Add the built-in starter catalog. Products you already have are kept as they are: only their
-    empty subcategory, icon, tags, nutrition and alternative names are filled in. Safe to run repeatedly."""
+    """Kept for older clients. The built-in catalog is now shared by every account and always present, so there is
+    nothing to import."""
     from catalog_data import LIBRARY
-    valid = {"Meat", "Fish", "Eggs", "Dairy", "Carbohydrates", "Fruit", "Vegetables", "Frozen", "Pantry", "Snacks", "Drinks", "Other"}
-    rows = (await db.execute(_user_owned_query(Product, user))).scalars().all()
-    by_name = {p.name_lower: p for p in rows}
-    by_synonym = {str(s).lower(): p for p in rows for s in (p.synonyms or [])}
-    added = enriched = 0
-    for item in LIBRARY:
-        key = item["name"].lower()
-        existing = by_name.get(key) or by_synonym.get(key)
-        if existing is None:
-            p = Product(
-                id=new_id(), user_id=user["_id"], name=item["name"], name_lower=key, category=item["category"],
-                subcategory=item["subcategory"], default_unit=item["default_unit"],
-                typical_quantity=item["typical_quantity"], synonyms=item["synonyms"], nutrition=item["nutrition"],
-                tags=item["tags"], icon=item["icon"], is_favorite=False, created_at=now_iso())
-            db.add(p)
-            by_name[key] = p
-            added += 1
-            continue
-        changed = False
-        if existing.category not in valid:  # an alias such as "Produce"; adopt the app's own category
-            existing.category, changed = item["category"], True
-        if existing.category == item["category"] and not existing.subcategory:
-            existing.subcategory, changed = item["subcategory"], True
-        if not existing.icon and item["icon"]:
-            existing.icon, changed = item["icon"], True
-        if not existing.tags and item["tags"]:
-            existing.tags, changed = item["tags"], True
-        if not existing.nutrition and item["nutrition"]:
-            existing.nutrition, changed = item["nutrition"], True
-        if not existing.synonyms and item["synonyms"]:
-            existing.synonyms, changed = item["synonyms"], True
-        enriched += 1 if changed else 0
-    await db.commit()
-    return {"added": added, "enriched": enriched, "library_size": len(LIBRARY)}
+    return {"added": 0, "enriched": 0, "library_size": len(LIBRARY)}
 
 
 @api_router.put("/products/{pid}")
 async def update_product(pid: str, body: ProductUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     p = (await db.execute(
-        select(Product).where(Product.id == pid, Product.user_id == user["_id"])
+        select(Product).where(Product.id == pid, (Product.user_id == user["_id"]) | (Product.user_id.is_(None)))
     )).scalar_one_or_none()
     if not p:
         raise HTTPException(404, "Product not found")
+    if p.user_id is None:
+        # A shared item is never changed for everyone: the person gets their own copy (or their existing one).
+        mine = (await db.execute(select(Product).where(Product.user_id == user["_id"], Product.name_lower == p.name_lower))).scalar_one_or_none()
+        if mine is None:
+            mine = Product(
+                id=new_id(), user_id=user["_id"], name=p.name, name_lower=p.name_lower, category=p.category,
+                subcategory=p.subcategory, default_unit=p.default_unit, typical_quantity=p.typical_quantity,
+                synonyms=p.synonyms, nutrition=p.nutrition, tags=p.tags, icon=p.icon, is_favorite=p.is_favorite,
+                created_at=now_iso())
+            db.add(mine)
+            await db.flush()
+        p, pid = mine, mine.id
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "name" in updates:
         updates["name_lower"] = updates["name"].lower()
@@ -3006,6 +3018,9 @@ async def update_product(pid: str, body: ProductUpdate, user: dict = Depends(get
 
 @api_router.delete("/products/{pid}")
 async def delete_product(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    shared = (await db.execute(select(Product.id).where(Product.id == pid, Product.user_id.is_(None)))).first()
+    if shared:
+        raise HTTPException(400, "This item is part of the shared catalog and can't be removed. You can edit it to make your own version.")
     result = await db.execute(delete(Product).where(Product.id == pid, Product.user_id == user["_id"]))
     await db.commit()
     if result.rowcount == 0:
@@ -5315,6 +5330,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await seed()
+    await ensure_shared_catalog()
     await migrate_legacy_account_refs()
     scheduler = scheduling.Scheduler(sys.modules[__name__], AsyncSessionLocal)
     if os.environ.get("SCHEDULER_ENABLED", "true").lower() not in ("0", "false", "no"):

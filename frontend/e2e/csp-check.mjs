@@ -5,7 +5,7 @@ import { chromium } from "@playwright/test";
 
 const base = process.env.CSP_BASE || "http://localhost:3100";
 const api = process.env.CSP_API || "http://localhost:8001";
-const email = process.env.TEST_EMAIL || "tiagosa743@gmail.com";
+const email = process.env.TEST_EMAIL || "a39791@aesancho.pt";
 const password = process.env.TEST_PASSWORD;
 if (!password) throw new Error("TEST_PASSWORD missing; run through local_secrets.py run");
 

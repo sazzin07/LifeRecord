@@ -400,6 +400,13 @@ def register(router, srv):
         favs = await favorites_of(db, uid)
         return [{**food_summary(foods[i], uid, favs), "times_logged": c, "last_logged": d} for i, c, d in rows if i in foods]
 
+    @router.get("/nutrition/foods/mine")
+    async def my_foods(user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        uid = user["_id"]
+        favs = await favorites_of(db, uid)
+        foods = (await db.execute(select(Food).where(Food.user_id == uid).order_by(Food.name))).scalars().all()
+        return [food_summary(f, uid, favs) for f in foods]
+
     @router.get("/nutrition/foods/favorites")
     async def favorite_foods(user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
         uid = user["_id"]
@@ -530,7 +537,12 @@ def register(router, srv):
         r = (await db.execute(select(Recipe).where(Recipe.id == rid, Recipe.user_id == uid))).scalar_one_or_none()
         if not r:
             raise HTTPException(404, "Recipe not found")
-        per = r.nutrients or calc.quick_nutrients(r.calories, r.protein, r.carbs, r.fat)
+        # A recipe's own numbers (calories, protein, ...) are for the WHOLE recipe, as in the recipes screen and "cook"; one
+        # serving is that divided by the number of servings. Calculated `nutrients` are already per serving.
+        n_serv = max(int(r.servings or 1), 1)
+        per = r.nutrients or {k: v / n_serv for k, v in calc.quick_nutrients(
+            None if r.calories is None else float(r.calories), None if r.protein is None else float(r.protein),
+            None if r.carbs is None else float(r.carbs), None if r.fat is None else float(r.fat)).items()}
         if not per:
             raise HTTPException(422, "This recipe has no nutrition values yet. Add them or link its ingredients to foods first.")
         return {"description": f"{r.name}", "nutrients": {k: float(v) * servings for k, v in per.items()}, "quality": r.quality or "user"}
@@ -762,7 +774,9 @@ def register(router, srv):
 
     async def suggest_foods(db, key: str, target: float, prof: dict, limit: int = 4) -> List[dict]:
         """Whole foods that are rich in a nutrient (per 100 g), honouring diet choices. Transparent: shows the amount."""
-        cond = [Food.user_id.is_(None), Food.category.in_(SUGGEST_CATEGORIES), or_(Food.source == "usda_foundation", Food.name_lower.like("%, raw%"))]
+        # Foundation Foods only: ~380 analysed whole foods. The much larger SR Legacy set is full of by-products, flours and
+        # brand-style entries that make poor suggestions.
+        cond = [Food.user_id.is_(None), Food.category.in_(SUGGEST_CATEGORIES), Food.source == "usda_foundation"]
         rows = (await db.execute(select(Food).where(*cond))).scalars().all()
         scored = []
         for f in rows:
@@ -812,5 +826,15 @@ def register(router, srv):
                 out.append({"nutrient": key, "title": f"{BY_KEY[key]['name']} is above the guideline limit", "percent": p["percent"] if p["percent"] else None,
                             "why": f"{p['intake']:.3g} {p['unit']} against a limit of {p['max']:.3g}. {p['note']}", "foods": []})
         return {"date": day, "insights": out[:6], "reference_basis": ref["basis"]}
+
+    @router.get("/nutrition/rich-in")
+    async def rich_in(nutrient: str, limit: int = Query(6, ge=1, le=20), user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        """Whole foods with the most of a nutrient per 100 g in the USDA data, honouring the person's diet choices."""
+        if nutrient not in BY_KEY:
+            raise HTTPException(404, "Unknown nutrient.")
+        ref, prof, _, _ = await reference(db, user["_id"])
+        target = (ref["items"].get(nutrient) or {}).get("target")
+        return {"nutrient": nutrient, "foods": await suggest_foods(db, nutrient, target, prof, limit),
+                "note": "Whole foods richest in this nutrient per 100 g. Food data can be incomplete, so a food missing from this list is not necessarily low in it."}
 
     return {"entry_view": entry_view, "entry_nutrients": entry_nutrients}

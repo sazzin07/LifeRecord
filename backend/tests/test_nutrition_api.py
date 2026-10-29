@@ -300,3 +300,43 @@ def test_insights_explain_why_and_respect_diet_choices():
     for i in out:
         for food in i["foods"]:
             assert s.get(f"{N}/foods/{food['food_id']}").json()["category"] not in animal
+
+
+def test_reference_foods_have_no_negative_or_impossible_values():
+    """USDA's carbohydrate-by-difference can be slightly negative in the source; the importer stores 0. Nothing else may be negative either."""
+    import json
+    conn = support_db.connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name, nutrients FROM foods WHERE user_id IS NULL")
+            bad = []
+            for name, raw in cur.fetchall():
+                n = json.loads(raw) if isinstance(raw, str) else raw
+                if any(v < 0 for v in n.values()) or n.get("energy_kcal", 0) > 950 or sum(n.get(k, 0) for k in ("protein_g", "carbs_g", "fat_g", "water_g", "alcohol_g")) > 106:
+                    bad.append(name)
+            cur.execute("SELECT COUNT(*) FROM foods WHERE user_id IS NULL")
+            total = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert total > 8000 and not bad[:5], bad[:5]
+
+
+def test_logging_a_recipe_serving_divides_the_whole_recipe_by_its_servings(a):
+    r = a.post(f"{BASE_URL}/api/recipes", json={"name": f"Stew {uuid.uuid4().hex[:5]}", "servings": 3, "calories": 600, "protein": 45, "carbs": 60, "fat": 18}).json()
+    try:
+        one = a.post(f"{N}/diary", json={"recipe_id": r["id"], "quantity": 1}).json()
+        assert one["nutrients"]["energy_kcal"] == pytest.approx(200) and one["nutrients"]["protein_g"] == pytest.approx(15)
+        assert one["source"] == "recipe" and one["unit"] == "serving"
+        half_more = a.post(f"{N}/diary", json={"recipe_id": r["id"], "quantity": 1.5}).json()
+        assert half_more["nutrients"]["energy_kcal"] == pytest.approx(300)
+        assert a.put(f"{N}/diary/{one['id']}", json={"quantity": 2}).json()["nutrients"]["energy_kcal"] == pytest.approx(400)
+        empty = a.post(f"{BASE_URL}/api/recipes", json={"name": f"Bare {uuid.uuid4().hex[:5]}", "servings": 1}).json()
+        assert a.post(f"{N}/diary", json={"recipe_id": empty["id"], "quantity": 1}).status_code == 422  # no numbers yet: refuse, do not log zero
+        a.delete(f"{BASE_URL}/api/recipes/{empty['id']}")
+        assert b_user().post(f"{N}/diary", json={"recipe_id": r["id"], "quantity": 1}).status_code == 404  # someone else's recipe
+    finally:
+        a.delete(f"{BASE_URL}/api/recipes/{r['id']}")
+
+
+def b_user():
+    return _user()

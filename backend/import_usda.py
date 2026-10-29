@@ -123,6 +123,10 @@ def import_dataset(cur, ds: dict, folder: Path) -> dict:
     added = updated = skipped = 0
     for fid, f in foods.items():
         values = {k: round(v[1], 4) for k, v in nutrients[fid].items()}
+        # USDA's "carbohydrate, by difference" is 100 - water - protein - fat - ash and comes out slightly negative for some
+        # high-protein foods (a rounding artefact in the source). A negative amount is meaningless, so it is stored as 0.
+        if values.get("carbs_g", 0) < 0:
+            values["carbs_g"] = 0.0
         if "energy_kcal" not in values or not values:
             skipped += 1  # nothing usable to log
             continue

@@ -28,7 +28,7 @@ const routeQueries = {
   "/": () => ["/analytics/summary", "/tasks", "/people", "/weight", `/meals?date=${today()}`, "/groceries", `/transactions?start=${today()}&end=${today()}`],
   "/money": () => { const m = moneyPaths("week"); return [m.summary, m.transactions, m.categories]; },
   "/people": () => ["/people"],
-  "/nutrition": () => [`/meals?date=${today()}`, "/recipes"],
+  "/nutrition": () => ["/nutrition/meta", "/nutrition/day", "/nutrition/targets", "/recipes"],
   "/fitness": () => ["/workouts", "/workouts/prs"],
   "/body": () => ["/weight", "/photos"],
   "/tasks": () => ["/tasks"],

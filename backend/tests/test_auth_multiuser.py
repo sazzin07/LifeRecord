@@ -3,7 +3,7 @@ import os
 import uuid
 from pathlib import Path
 import requests
-from support_auth import login
+from support_auth import login, OWNER_EMAIL as ADMIN_EMAIL, OWNER_PASSWORD as ADMIN_PASSWORD
 import pymysql
 import pytest
 
@@ -16,8 +16,6 @@ if not BASE_URL:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-ADMIN_EMAIL = "tiagosa743@gmail.com"
-ADMIN_PASSWORD = "LifeRecord"
 
 
 def _db_query(sql, params=()):

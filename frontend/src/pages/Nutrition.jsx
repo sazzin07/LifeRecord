@@ -53,7 +53,7 @@ function MealDialog({ open, setOpen, editing, date, onSave }) {
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" data-testid="meal-dialog">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit meal" : "Log a meal"}</DialogTitle>
           <DialogDescription>{editing ? "Update what you ate and its macros." : "Manually log a meal and its macros."}</DialogDescription>
@@ -111,7 +111,7 @@ function RecipeDialog({ open, setOpen, editing, onSave }) {
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="recipe-dialog">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit recipe" : "New recipe"}</DialogTitle>
           <DialogDescription>{editing ? "Update ingredients and nutrition." : "Create a recipe with ingredients and nutrition per serving."}</DialogDescription>
@@ -129,7 +129,7 @@ function RecipeDialog({ open, setOpen, editing, onSave }) {
                 <Input className="col-span-5 h-9" placeholder="Name" value={it.name} onChange={(e) => updateIng(i, "name", e.target.value)} />
                 <Input className="col-span-3 h-9" type="number" min={0} step="0.1" placeholder="Qty" value={it.quantity} onChange={(e) => updateIng(i, "quantity", e.target.value)} />
                 <Input className="col-span-3 h-9" placeholder="Unit" value={it.unit} onChange={(e) => updateIng(i, "unit", e.target.value)} />
-                <Button type="button" variant="ghost" size="icon" className="col-span-1 h-9 w-9 text-red-500" onClick={() => removeIng(i)}><Trash2 className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="icon" className="col-span-1 h-9 w-9 text-red-500" aria-label="Remove ingredient" onClick={() => removeIng(i)}><Trash2 className="h-4 w-4" /></Button>
               </div>
             ))}
           </div>
@@ -254,16 +254,16 @@ export default function Nutrition() {
             <Card>
               <div className="divide-y divide-border">
                 {arr.map((m) => (
-                  <div key={m.id} className="flex items-center gap-3 px-5 py-3 group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <div key={m.id} data-testid={`meal-${m.id}`} className="flex items-center gap-3 px-5 py-3 group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <div className="h-9 w-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 grid place-items-center shrink-0"><Utensils className="h-4 w-4 text-emerald-600" /></div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{m.description}</p>
                       <p className="text-xs text-slate-500">{Math.round(m.protein || 0)}P · {Math.round(m.carbs || 0)}C · {Math.round(m.fat || 0)}F</p>
                     </div>
                     <div className="text-right"><p className="stat-num font-semibold text-sm">{Math.round(m.calories || 0)} kcal</p><ConfidenceBadge type="estimated">Est.</ConfidenceBadge></div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingMeal(m); setMealDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => setDeleteMealId(m.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${m.description}`} data-testid={`meal-edit-${m.id}`} onClick={() => { setEditingMeal(m); setMealDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${m.description}`} data-testid={`meal-delete-${m.id}`} onClick={() => setDeleteMealId(m.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </div>
                 ))}
@@ -304,8 +304,8 @@ export default function Nutrition() {
                     <p className="text-xs text-slate-500">{r.servings} serving{r.servings > 1 ? "s" : ""} · {Math.round((r.calories || 0) / (r.servings || 1))} kcal each</p>
                   </div>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingRecipe(r); setRecipeDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" onClick={() => setDeleteRecipeId(r.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${r.name}`} data-testid={`recipe-edit-${r.id}`} onClick={() => { setEditingRecipe(r); setRecipeDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${r.name}`} data-testid={`recipe-delete-${r.id}`} onClick={() => setDeleteRecipeId(r.id)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 mt-2 line-clamp-2">{(r.ingredients || []).map((i) => `${i.quantity}${i.unit} ${i.name}`).join(", ")}</p>

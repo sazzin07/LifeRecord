@@ -4,7 +4,7 @@ import base64
 import os
 from pathlib import Path
 import requests
-from support_auth import login
+from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -16,8 +16,6 @@ if not BASE_URL:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-OWNER_EMAIL = os.environ.get("TEST_EMAIL", "tiagosa743@gmail.com")
-OWNER_PASSWORD = os.environ.get("TEST_PASSWORD", "LifeRecord")
 
 # 1x1 transparent PNG
 PNG = base64.b64decode(

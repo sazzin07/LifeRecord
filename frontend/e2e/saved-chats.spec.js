@@ -1,5 +1,5 @@
 import { expect, request } from "@playwright/test";
-import { test as authed } from "./fixtures";
+import { test as authed, credentials } from "./fixtures";
 
 // Chats are created through the real assistant (one short message each), then managed through the real UI.
 const TAG = `e2echat${Date.now().toString(36)}`;
@@ -8,7 +8,7 @@ const made = [];
 
 async function login() {
   const anon = await request.newContext({ baseURL: API });
-  const res = await anon.post("/api/auth/login", { data: { email: process.env.TEST_EMAIL || "tiagosa743@gmail.com", password: process.env.TEST_PASSWORD || "LifeRecord" } });
+  const res = await anon.post("/api/auth/login", { data: credentials });
   const { token } = await res.json();
   await anon.dispose();
   return request.newContext({ baseURL: API, extraHTTPHeaders: { Authorization: `Bearer ${token}` } });

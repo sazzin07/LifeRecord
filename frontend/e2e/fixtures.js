@@ -1,12 +1,18 @@
 import { test as base, expect, request } from "@playwright/test";
 
+// Owner account used by the e2e suite; override with TEST_EMAIL / TEST_PASSWORD.
+export const credentials = {
+  email: process.env.TEST_EMAIL || "tiagosa743@gmail.com",
+  password: process.env.TEST_PASSWORD || "LifeRecord",
+};
+
 let sessionPromise = null;
 function getSession() {
   if (!sessionPromise) {
     sessionPromise = (async () => {
       const anon = await request.newContext({ baseURL: process.env.API_URL || "http://localhost:8000" });
       const res = await anon.post("/api/auth/login", {
-        data: { email: process.env.TEST_EMAIL || "tiagosa743@gmail.com", password: process.env.TEST_PASSWORD || "LifeRecord" },
+        data: credentials,
       });
       const body = await res.json();
       await anon.dispose();

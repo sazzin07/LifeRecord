@@ -18,6 +18,7 @@ import scheduling as sch  # noqa: E402
 from database import AsyncSessionLocal  # noqa: E402
 from sqlalchemy import delete, select  # noqa: E402
 from models import ScheduledTask, ScheduledTaskRun, User  # noqa: E402
+from support_auth import OWNER_EMAIL  # noqa: E402
 
 TITLE = "E2E seeded history"
 
@@ -35,7 +36,7 @@ async def seed():
     now = datetime.now(timezone.utc)
     iso = sch.iso
     async with AsyncSessionLocal() as db:
-        owner = (await db.execute(select(User).where(User.email == "tiagosa743@gmail.com"))).scalar_one()
+        owner = (await db.execute(select(User).where(User.email == OWNER_EMAIL))).scalar_one()
         task = ScheduledTask(id=str(uuid.uuid4()), user_id=owner.id, title=TITLE, instruction="Summarise last week's spending.",
                              schedule={"kind": "daily", "time": "09:00"}, timezone="Europe/Lisbon", data_sources=["money"],
                              recipients=["e2e-unverified@example.test"], status="active", next_run_at=iso(now + timedelta(days=1)), confirmed_at=iso(now),

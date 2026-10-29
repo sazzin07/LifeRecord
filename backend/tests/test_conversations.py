@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 import requests
-from support_auth import login
+from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD
 from sqlalchemy import delete, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,7 +30,6 @@ if not BASE_URL:
             BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
 TAG = f"CONV_{uuid.uuid4().hex[:6]}"
-OWNER_EMAIL, OWNER_PASSWORD = "tiagosa743@gmail.com", "LifeRecord"
 STRANGER_EMAIL, STRANGER_PASSWORD = f"{TAG.lower()}@example.test", "Str4nger-pass!"
 
 

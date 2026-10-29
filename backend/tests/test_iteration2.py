@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
-from support_auth import login
+from support_auth import login, OWNER_EMAIL, OWNER_PASSWORD
 import pytest
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -17,8 +17,6 @@ if not BASE_URL:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-OWNER_EMAIL = "tiagosa743@gmail.com"
-OWNER_PASSWORD = "LifeRecord"
 TAG = f"TEST2_{uuid.uuid4().hex[:6]}"
 
 

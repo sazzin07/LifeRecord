@@ -21,10 +21,10 @@ import server  # noqa: E402
 from database import AsyncSessionLocal  # noqa: E402
 from email_service import Delivery  # noqa: E402
 from models import ReportRecipient, ScheduledTask, ScheduledTaskRun, Task, User  # noqa: E402
+from support_auth import OWNER_EMAIL  # noqa: E402
 
 UTC = timezone.utc
 TAG = f"SCH_{uuid.uuid4().hex[:6]}"
-OWNER_EMAIL = "tiagosa743@gmail.com"
 
 
 def run(coro):

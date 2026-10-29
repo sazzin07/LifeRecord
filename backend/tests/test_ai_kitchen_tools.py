@@ -18,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server  # noqa: E402  (loads backend/.env)
 from database import AsyncSessionLocal  # noqa: E402
 from models import Grocery, StorageLocation, User  # noqa: E402
+from support_auth import OWNER_EMAIL  # noqa: E402
 
 TAG = f"AIK_{uuid.uuid4().hex[:6]}"
-OWNER_EMAIL = "tiagosa743@gmail.com"
 
 
 def run(coro):

@@ -11,7 +11,11 @@ export default function ResetPassword() {
   const { resetPassword } = useAuth();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const token = params.get("token");
+  // Read once, then take the token out of the address bar so it does not stay in history or get sent as a referrer.
+  const [token] = useState(() => params.get("token"));
+  useEffect(() => {
+    if (params.get("token")) window.history.replaceState(null, "", window.location.pathname);
+  }, [params]);
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");

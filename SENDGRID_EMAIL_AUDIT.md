@@ -271,3 +271,20 @@ The owner asked for the `tiagosa743@gmail.com` sender for now, SendGrid's **SMTP
 **Real send:** one test message to `tiagosa743@gmail.com` was accepted by SendGrid's relay on the first attempt (so the key is valid and SendGrid accepts the sender address). It did **not** appear in the inbox, archive or trash when searched through the Gmail connector (which cannot see Spam). Acceptance is not delivery: the owner must look in Spam and in SendGrid → Email Activity. This is the `@gmail.com`-sender risk from §4; the permanent fix is an authenticated domain (P0-1), which remains **not done**.
 
 Still open from this audit: P0-1 (domain), P0-2 (dashboard check), P1-3 (rotate the key), P2-1 (bounce webhook), P3-2/P3-3.
+
+### 14.1 End-to-end check of the email flows (2026-10-29)
+
+The owner confirmed the test mail arrived. Gmail's connector cannot see Spam, so the codes and links were read from a **local mail catcher** that the real backend was temporarily pointed at (the exact messages the app renders and sends; real delivery had already been confirmed). Driven through the real UI in a browser, with throwaway `tiagosa743+lr…@gmail.com` accounts (removed afterwards):
+
+| Flow | Result |
+|------|--------|
+| Sign up → "Verify your email" screen → email with a 6-digit code (same code in text and HTML) | Works |
+| "Resend code" (button disabled for 90 s, then enabled) → new email, new code | Works; the **old code is rejected**, the new one signs in |
+| Log in before verifying → verification screen; wrong code rejected; emailed code accepted | Works |
+| Forgot password → "Check your inbox" → email with the link (text and HTML identical, "30 minutes" noted) | Works |
+| Open the link → reset form → new password → signed in; old password rejected, new accepted | Works |
+| "Your password was reset" security email after a reset | Works |
+| Reset link opened in a browser **where someone is already signed in** | **Bug found and fixed**: the app redirected to the home page and never showed the form. `/reset-password` is now reachable signed in or out (`App.js`); verified with the real link, plus `e2e/reset-link.spec.js` (3 tests) |
+| Token left in the address bar after opening the link | **Fixed**: removed from the URL after it is read (P3-2) |
+
+Not covered by this check: Gmail inbox/spam placement of each message (needs an authenticated domain), the email text rendering in specific mail clients.

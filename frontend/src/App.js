@@ -53,8 +53,9 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
             </Route>
+            {/* Reachable while signed in too: the emailed link must work in whichever browser it is opened. */}
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<Protected />}>
               <Route path="/" element={<Home />} />
               <Route path="/money" element={<Money />} />

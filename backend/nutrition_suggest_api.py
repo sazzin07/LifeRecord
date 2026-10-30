@@ -18,7 +18,7 @@ import nutrition_calc as calc
 import nutrition_suggest as sg
 from models import Food, FoodFavorite, Grocery, Meal, Recipe
 from nutrition_api import ISO_DATE
-from nutrition_data import BY_KEY
+from nutrition_data import BY_KEY, meta
 
 SHOWN_KEYS = ("energy_kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "sodium_mg")
 RECENT_DAYS, VARIETY_DAYS, DISCOVER_NEW_DAYS = 60, 3, 14
@@ -147,8 +147,8 @@ def register(router, srv, nx):
                     "note": "No energy reference is available yet, so there is nothing to compare with."}
         ctx = sg.build_context(d["progress"] or {}, d["energy_target"], d["totals"].get("energy_kcal", 0.0), slot, keys or None)
         context = {"energy_target": ctx["energy_target"], "remaining_kcal": round(ctx["remaining_kcal"]), "budget_kcal": round(ctx["budget_kcal"]), "meal_type": slot,
-                   "focus": [{"nutrient": k, "name": BY_KEY[k]["name"], "unit": BY_KEY[k]["unit"], "remaining": round(ctx["remaining"][k], 1)} for k in ctx["focus"]],
-                   "limits": [{"nutrient": k, "name": BY_KEY[k]["name"], "unit": BY_KEY[k]["unit"], "headroom": round(v, 1)} for k, v in ctx["headroom"].items()]}
+                   "focus": [{"nutrient": k, "name": meta(k)["name"], "unit": meta(k)["unit"], "remaining": round(ctx["remaining"][k], 1)} for k in ctx["focus"]],
+                   "limits": [{"nutrient": k, "name": meta(k)["name"], "unit": meta(k)["unit"], "headroom": round(v, 1)} for k, v in ctx["headroom"].items()]}
         base = {"date": d["date"], "meal_type": slot, "context": context, "suggestions": [], "discover": [], "excluded_for_diet": 0}
         if ctx["remaining_kcal"] <= 0:
             return {**base, "note": "You have reached today's energy reference, so no suggestions are shown."}
@@ -194,6 +194,6 @@ def register(router, srv, nx):
             note = "Save recipes, star foods or log a few meals and your own ideas will appear here; meanwhile these foods are rich in what you still need."
         return {**base, "suggestions": ranked, "discover": discover, "excluded_for_diet": r_ex + f_ex, "note": note,
                 "basis": "Ranked by how much of what you still need each portion covers, how well it fits the energy left for this meal, what your kitchen has, and "
-                         "what you ate lately. Only nutrients a food reports count. Reference values describe healthy adults and are not medical advice."}
+                         "what you ate lately. Only nutrients a food reports count. Reference values describe healthy people of your age and are not medical advice."}
 
     return SimpleNamespace(suggestions=suggestions, load_candidates=load_candidates, food_candidate=food_candidate)

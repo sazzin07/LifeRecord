@@ -78,7 +78,8 @@ NUTRITION_TOOLS = [
         {"date": _DATE}),
     _fn("get_nutrition_targets",
         "The user's nutrition profile (age, sex, activity, diet, allergies), their effective daily reference values or own targets for each nutrient, the standards "
-        "they come from, and their reminder settings. Check it before answering questions about what the user 'should' eat.",
+        "they come from (EFSA age-specific values, including for children and teenagers from 1 year; babies, pregnant teenagers and anyone whose sex is not set get none), "
+        "EFSA's upper levels where they apply, and their reminder settings. Check it before answering questions about what the user 'should' eat.",
         {}),
     _fn("suggest_food_swaps",
         "Similar foods (same category, similar energy) with less or more of one nutrient than a given food, for example a lower-sodium alternative. "
@@ -259,8 +260,23 @@ def _status_rows(progress: dict, only_reported=True):
             continue
         rows.append({"nutrient": k, "name": _name(k), "intake": _r(p["intake"], 2), "unit": p["unit"], "status": p["status"],
                      "percent_of_target": _r(p["percent"], 0), "min": p["min"], "target": p["target"], "max": p["max"],
-                     "entries_reporting": p["entries_reporting"], "of_entries": p["entries"]})
+                     "entries_reporting": p["entries_reporting"], "of_entries": p["entries"], **_upper(p)})
     return rows
+
+
+def _upper(p: dict) -> dict:
+    """EFSA's upper level (or safe level) for a nutrient row, only when there is one. A level that does not cover the same thing as the logged
+    total is given with the reason and no verdict, so the assistant cannot call it exceeded."""
+    u = p.get("upper")
+    if not u or u["kind"] == "none":
+        return {}
+    out = {"upper_level": {"kind": "upper level" if u["kind"] == "UL" else "safe level (not a limit)", "value": u["value"], "comparable_with_logged_food": u["comparable"]}}
+    if u["comparable"]:
+        if "over" in u:  # a day's progress row carries a verdict; the plain reference (get_nutrition_targets) has no intake to compare
+            out["upper_level"]["above_it"] = u["over"]
+    else:
+        out["upper_level"]["why_not_compared"] = u["basis"]
+    return out
 
 
 def _reported(detail: dict) -> dict:
@@ -349,8 +365,9 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
                 "hydration": {"drinks_ml": d["hydration"]["drinks_ml"], "food_water_ml": d["hydration"]["food_water_ml"], "total_ml": d["hydration"]["total_ml"],
                               "reference_ml": d["hydration"]["target_ml"], "drinks": d["hydration"]["entries"]},
                 "nutrients": _status_rows(prog), "nutrients_with_no_data": sum(1 for p in prog.values() if p["status"] == "no_data"),
-                "data_quality": d["quality"], "reference": d["reference"],
-                "note": "'no_data' means no logged entry reported the nutrient; it is not zero. Reference values are for healthy adults, not medical advice."}
+                "data_quality": d["quality"], "reference": d["reference"], "above_upper_levels": d["upper_exceeded"],
+                "note": "'no_data' means no logged entry reported the nutrient; it is not zero. Reference values are for healthy people of the profile's age, not medical advice. "
+                        "An upper level concerns usual intake over weeks, so one day above it is a prompt to look, not a finding; supplements are not logged."}
     if name == "get_nutrition_report":
         days = max(1, min(int(_num(args.get("days"), "days") or 7), 90))
         end = _day(args.get("end_date"), today)
@@ -388,8 +405,8 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
         return {"profile": {k: prof[k] for k in ("birth_year", "sex", "height_cm", "weight_kg", "activity", "pregnancy", "diet_tags", "allergies", "timezone")},
                 "personalised": t["personalised"], "basis": t["basis"], "notes": t["notes"], "weight_used": t["weight"],
                 "targets": [{"nutrient": k, "name": _name(k), "unit": v.get("unit") or _unit(k), "min": v.get("min"), "target": v.get("target"), "max": v.get("max"),
-                             "kind": v.get("kind"), "source": v.get("source"), "user_set": v["overridden"]} for k, v in t["items"].items()],
-                "reminders": rem, "disclaimer": t["disclaimer"]}
+                             "kind": v.get("kind"), "source": v.get("source"), "user_set": v["overridden"], **_upper({"upper": v.get("upper")})} for k, v in t["items"].items()],
+                "reminders": rem, "supported": t["supported"], "disclaimer": t["disclaimer"]}
     if name == "suggest_food_swaps":
         s = await pl.food_swaps(fid=str(args.get("food_id") or ""), nutrient=str(args.get("nutrient") or ""), direction=args.get("direction"),
                                 limit=max(1, min(int(_num(args.get("limit"), "limit") or 5), 10)), user=user, db=db)
@@ -620,9 +637,10 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
             if tg is not None and ((hi is not None and tg > hi) or (lo is not None and tg < lo)):
                 return {"error": "The target must lie between the minimum and the maximum."}
         warn = ""
-        if key == "energy_kcal" and not clear and vals.get("target", 1e9) < napi.LOW_ENERGY_WARNING_KCAL:
-            warn = (f" Safety note: a daily energy target under {napi.LOW_ENERGY_WARNING_KCAL} kcal is very low for most adults; recommend talking to a doctor "
-                    "or dietitian before eating this little for more than a short time.")
+        if key == "energy_kcal" and not clear:
+            low = await nx.low_energy_warning(db, uid, key, vals)
+            if low:
+                warn = " Safety note: " + low + " Recommend talking to a doctor or dietitian."
         gate = await _gate(srv, db, user, session_id, previewed, name, f"target:{key}:" + _digest([clear, vals]), args,
                            (f"This will remove the user's own {_name(key)} target and go back to the suggested reference." if clear else
                             f"This will set the user's own {_name(key)} target to {vals} {_unit(key)}, replacing the suggested reference.") + warn + " Ask the user to confirm.")

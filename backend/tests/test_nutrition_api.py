@@ -229,8 +229,12 @@ def test_profile_validation_and_personalised_targets():
     t = s.get(f"{N}/targets").json()
     assert t["personalised"] and t["items"]["energy_kcal"]["target"] == 2080 and t["items"]["protein_g"]["target"] == round(0.83 * 62)
     assert t["items"]["iron_mg"]["target"] == 16 and any(src["doi"] == "10.2903/sp.efsa.2017.e15121" for src in t["sources"] if src.get("doi"))
-    s.put(f"{N}/profile", json={"birth_year": thisyear - 15, "sex": "F"})
-    assert s.get(f"{N}/targets").json()["supported"] is False
+    s.put(f"{N}/profile", json={"birth_year": thisyear - 15, "sex": "F", "weight_kg": 50})
+    teen = s.get(f"{N}/targets").json()
+    assert teen["supported"] and teen["personalised"] and teen["items"]["protein_g"]["target"] == round(0.85 * 50)  # EFSA PRI for a 15 year old girl, 0.85 g/kg
+    assert teen["items"]["zinc_mg"]["upper"]["value"] == 22 and all(src["publisher"].startswith("European Food Safety") for src in teen["sources"])
+    s.put(f"{N}/profile", json={"birth_year": thisyear, "sex": "F"})
+    assert s.get(f"{N}/targets").json()["supported"] is False  # a baby: EFSA's tables start at 1 year
     s.put(f"{N}/profile", json={"birth_year": thisyear - 35, "sex": "F", "weight_kg": 62, "activity": "moderate"})
     assert s.delete(f"{N}/profile").status_code == 200 and s.get(f"{N}/profile").json()["exists"] is False
 

@@ -23,6 +23,9 @@ async function cleanup(api, { food, recipe }) {
   await api.delete(`/api/recipes/${recipe.id}`);
   await api.delete(`/api/nutrition/foods/${food.id}`);
 }
+async function dinner(page) {   // the card starts on the meal that fits the time of day; a one-serving recipe of 400 kcal only fits a main meal
+  await page.getByTestId("suggestions").getByRole("button", { name: "Dinner", exact: true }).click();
+}
 async function reveal(page) {   // the ideas are the top three; open the rest if needed
   const more = page.getByTestId("suggestions-more");
   if (await more.count() && (await more.getAttribute("aria-expanded")) !== "true") await more.click();
@@ -38,6 +41,7 @@ test.describe("Nutrition suggestions", () => {
       await expect(card).toBeVisible();
       await expect(page.getByTestId("suggestions-context")).toContainText("kcal fits this meal");
       await expect(page.getByTestId("suggestions-focus")).toContainText("Still needed");
+      await dinner(page);
       await page.getByTestId("suggestions-aim").click();
       await page.getByRole("option", { name: "Aim: Protein" }).click();
       await reveal(page);
@@ -75,12 +79,14 @@ test.describe("Nutrition suggestions", () => {
     const before = await (await apiContext.get("/api/nutrition/profile")).json();
     try {
       await page.goto("/nutrition");
+      await dinner(page);
       await page.getByTestId("suggestions-aim").click();
       await page.getByRole("option", { name: "Aim: Protein" }).click();
       await reveal(page);
       await expect(page.getByTestId(`idea-recipe-${made.recipe.id}`)).toBeVisible({ timeout: 10000 });
       expect((await apiContext.put("/api/nutrition/profile", { data: { ...before, allergies: [word] } })).ok()).toBe(true);
       await page.reload();
+      await dinner(page);
       await page.getByTestId("suggestions-aim").click();
       await page.getByRole("option", { name: "Aim: Protein" }).click();
       await expect(page.getByTestId("suggestions")).toContainText("left out because of your diet or allergy words");
@@ -105,6 +111,7 @@ test.describe("Nutrition suggestions", () => {
     const made = await strongRecipe(apiContext, tag());
     try {
       await page.goto("/nutrition");
+      await dinner(page);
       await page.getByTestId("suggestions-aim").click();
       await page.getByRole("option", { name: "Aim: Protein" }).click();
       await reveal(page);

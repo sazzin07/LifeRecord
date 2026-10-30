@@ -5,15 +5,19 @@ Everything in here is DATA with a citation, not advice. Reference values come fr
   EFSA   European Food Safety Authority, "Dietary Reference Values for nutrients: Summary report",
          EFSA Supporting publication 2017:e15121 (approved 4 Dec 2017), doi:10.2903/sp.efsa.2017.e15121.
          Tables 1-3 (energy, macronutrients, fibre, water, protein), 5/7 (minerals), 9/11 (vitamins).
-         Adults 18 years and over, plus pregnancy and lactation. PRI = population reference intake,
+         Adults 18 years and over, pregnancy and lactation, and children and teenagers aged 1-17 (single years of age).
+         PRI = population reference intake,
          AI = adequate intake, RI = reference intake range, AR = average requirement.
   WHO    World Health Organization, "Healthy diet" fact sheet (page dated 26 January 2026): free sugars,
          saturated fat, trans fat, sodium and potassium guidance.
   EU     Regulation (EU) No 1169/2011, Annex XIII: reference intakes for a general adult (2000 kcal, ...), used only
          when no profile is available.
 
-Not covered, on purpose: people under 18 (the tables are not encoded; no personalised values are produced),
-upper limits (ULs), medical conditions. EFSA has revised some values since 2017 (for example sodium and potassium
+  EFSA UL  EFSA, "Overview on Tolerable Upper Intake Levels" (SCF and NDA Panel), version 11, August 2025: tables 1-3.
+         Shown beside a reference value; a level is compared with logged food only where its footnote says it covers total intake.
+
+Not covered, on purpose: babies under 1 year, pregnancy or lactation under 18, supplements, medical conditions. Any value EFSA does not
+publish for an age is left out, never scaled or estimated. EFSA has revised some values since 2017 (for example sodium and potassium
 in 2019); the app shows the 2017 summary values plus the WHO limits and says so.
 
 Nutrient amounts everywhere are per 100 g in foods and absolute (in the stated unit) in entries and totals.
@@ -125,6 +129,11 @@ DERIVED = {
 }
 
 
+def meta(key: str) -> dict:
+    """Name, unit and group of a nutrient key, stored or derived (EPA + DHA, available carbohydrate). Unknown keys give {}."""
+    return BY_KEY.get(key) or DERIVED.get(key) or {}
+
+
 def derive(n: Dict[str, float]) -> Dict[str, float]:
     """Add the derived values that can be computed from what is present."""
     out = dict(n)
@@ -141,8 +150,12 @@ def derive(n: Dict[str, float]) -> Dict[str, float]:
 SOURCES = {
     "efsa2017": {"title": "EFSA Dietary Reference Values for nutrients: Summary report", "publisher": "European Food Safety Authority",
                  "published": "2017-12-04", "id": "EFSA Supporting publication 2017:e15121", "doi": "10.2903/sp.efsa.2017.e15121",
-                 "population": "Healthy adults 18 years and over; pregnancy and lactation",
+                 "population": "Healthy people from 1 year of age (age-specific values for children and adolescents), adults, pregnancy and lactation",
                  "url": "https://www.efsa.europa.eu/sites/default/files/2017_09_DRVs_summary_report.pdf"},
+    "efsa_ul": {"title": "Overview on Tolerable Upper Intake Levels as derived by the Scientific Committee on Food (SCF) and the EFSA Panel on Dietetic Products, Nutrition and Allergies (NDA)",
+                "publisher": "European Food Safety Authority", "published": "2025-08", "id": "Version 11 (August 2025)",
+                "population": "Children, adolescents and adults; pregnancy and lactation",
+                "url": "https://www.efsa.europa.eu/sites/default/files/2024-05/ul-summary-report.pdf"},
     "who2026": {"title": "Healthy diet (fact sheet)", "publisher": "World Health Organization", "published": "2026-01-26",
                 "population": "Adults", "url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"},
     "eu1169": {"title": "Regulation (EU) No 1169/2011, Annex XIII reference intakes", "publisher": "European Union",
@@ -194,8 +207,129 @@ NUTRIENT_NOTES = {
 }
 
 
+# --------------------------------------------------------------------------------------------------------------
+# Children and adolescents, 1-17 years (EFSA 2017 summary report, the same tables as the adult values above).
+# Single years of age. A value that EFSA does not give for an age is left out; the app never fills a gap by scaling.
+# --------------------------------------------------------------------------------------------------------------
+CHILD_AGES = (1, 17)
+# Table 1: ages 1-3 have one level (PAL 1.4), ages 4-9 three (1.4, 1.6, 1.8), ages 10-17 three (1.6, 1.8, 2.0). Pairs are (boys, girls), MJ/day.
+CHILD_ENERGY_AR_MJ = {
+    1: ((3.3,), (3.0,)), 2: ((4.3,), (4.0,)), 3: ((4.9,), (4.6,)),
+    4: ((5.3, 6.0, 6.8), (4.9, 5.6, 6.3)), 5: ((5.6, 6.4, 7.2), (5.2, 5.9, 6.7)), 6: ((5.9, 6.7, 7.6), (5.5, 6.3, 7.1)),
+    7: ((6.3, 7.2, 8.1), (5.8, 6.7, 7.5)), 8: ((6.7, 7.6, 8.6), (6.2, 7.1, 7.9)), 9: ((7.0, 8.1, 9.1), (6.6, 7.5, 8.4)),
+    10: ((8.1, 9.1, 10.1), (7.6, 8.6, 9.5)), 11: ((8.5, 9.6, 10.7), (8.0, 9.0, 10.0)), 12: ((9.1, 10.2, 11.4), (8.4, 9.4, 10.5)),
+    13: ((9.8, 11.0, 12.2), (8.8, 9.9, 11.0)), 14: ((10.5, 11.8, 13.1), (9.1, 10.2, 11.4)), 15: ((11.3, 12.7, 14.1), (9.3, 10.5, 11.7)),
+    16: ((11.9, 13.4, 14.9), (9.5, 10.6, 11.8)), 17: ((12.3, 13.8, 15.4), (9.5, 10.7, 11.9)),
+}
+CHILD_PAL_LEVELS = {range(1, 4): (1.4,), range(4, 10): (1.4, 1.6, 1.8), range(10, 18): (1.6, 1.8, 2.0)}
+# Table 3: PRI for protein, g per kg body weight per day, (boys, girls)
+CHILD_PROTEIN_PRI = {1: (1.14, 1.14), 2: (0.97, 0.97), 3: (0.90, 0.90), 4: (0.86, 0.86), 5: (0.85, 0.85), 6: (0.89, 0.89), 7: (0.91, 0.91), 8: (0.92, 0.92),
+                     9: (0.92, 0.92), 10: (0.91, 0.91), 11: (0.91, 0.90), 12: (0.90, 0.89), 13: (0.90, 0.88), 14: (0.89, 0.87), 15: (0.88, 0.85),
+                     16: (0.87, 0.84), 17: (0.86, 0.83)}
+# Table 2: dietary fibre AI (g/day), total fat RI (% of energy) and total water AI (litres/day, total incl. food moisture; (boys, girls))
+CHILD_FIBRE_G = [((1, 3), 10), ((4, 6), 14), ((7, 10), 16), ((11, 14), 19), ((15, 17), 21)]
+CHILD_FAT_PCT = [((1, 3), (35, 40)), ((4, 17), (20, 35))]
+CHILD_WATER_L = [((1, 1), (1.1, 1.1)), ((2, 3), (1.3, 1.3)), ((4, 8), (1.6, 1.6)), ((9, 13), (2.1, 1.9)), ((14, 17), (2.5, 2.0))]  # age 1: EFSA gives 1.1-1.2, the lower is used
+_STD = ((1, 3), (4, 6), (7, 10), (11, 14), (15, 17))
+
+
+def _s(*values):
+    return list(zip(_STD, values))
+
+
+# Tables 5, 7, 9, 11: (kind, boys, girls); girls None = same as boys. Each is [((first age, last age), value), ...] because EFSA's age bands differ by nutrient.
+CHILD_MICRO = {
+    "calcium_mg": ("PRI", _s(450, 800, 800, 1150, 1150), None),
+    "iodine_ug": ("AI", _s(90, 90, 90, 120, 130), None),
+    "manganese_mg": ("AI", _s(0.5, 1.0, 1.5, 2.0, 3.0), None),
+    "phosphorus_mg": ("AI", _s(250, 440, 440, 640, 640), None),
+    "potassium_mg": ("AI", _s(800, 1100, 1800, 2700, 3500), None),
+    "selenium_ug": ("AI", _s(15, 20, 35, 55, 70), None),
+    "iron_mg": ("PRI", _s(7, 7, 11, 11, 11), [((1, 3), 7), ((4, 6), 7), ((7, 11), 11), ((12, 14), 13), ((15, 17), 13)]),
+    "zinc_mg": ("PRI", _s(4.3, 5.5, 7.4, 10.7, 14.2), _s(4.3, 5.5, 7.4, 10.7, 11.9)),
+    "copper_mg": ("AI", [((1, 2), 0.7), ((3, 9), 1.0), ((10, 17), 1.3)], [((1, 2), 0.7), ((3, 9), 1.0), ((10, 17), 1.1)]),
+    "magnesium_mg": ("AI", [((1, 2), 170), ((3, 9), 230), ((10, 17), 300)], [((1, 2), 170), ((3, 9), 230), ((10, 17), 250)]),
+    "vit_a_ug": ("PRI", _s(250, 300, 400, 600, 750), _s(250, 300, 400, 600, 650)),
+    "vit_c_mg": ("PRI", _s(20, 30, 45, 70, 100), _s(20, 30, 45, 70, 90)),
+    "vit_d_ug": ("AI", _s(15, 15, 15, 15, 15), None),
+    "vit_e_mg": ("AI", [((1, 2), 6), ((3, 9), 9), ((10, 17), 13)], [((1, 2), 6), ((3, 9), 9), ((10, 17), 11)]),
+    "vit_k_ug": ("AI", _s(12, 20, 30, 45, 65), None),
+    "riboflavin_mg": ("PRI", _s(0.6, 0.7, 1.0, 1.4, 1.6), None),
+    "vit_b6_mg": ("PRI", _s(0.6, 0.7, 1.0, 1.4, 1.7), _s(0.6, 0.7, 1.0, 1.4, 1.6)),
+    "folate_ug": ("PRI", _s(120, 140, 200, 270, 330), None),
+    "vit_b12_ug": ("AI", _s(1.5, 1.5, 2.5, 3.5, 4.0), None),
+    "pantothenic_mg": ("AI", _s(4, 4, 4, 5, 5), None),
+    "choline_mg": ("AI", _s(140, 170, 250, 340, 400), None),
+    "biotin_ug": ("AI", _s(20, 25, 25, 35, 35), None),
+}
+CHILD_NOTE = ("These are EFSA's age-specific values for healthy children and adolescents. They are a reference, not a growth chart, and not advice about weight; "
+              "questions about a child's eating, growth or weight belong with a doctor or dietitian.")
+
+# --------------------------------------------------------------------------------------------------------------
+# Tolerable upper intake levels (EFSA/SCF overview, version 11, August 2025). Tables 1-3 of that document.
+# kind "UL": an upper level. kind "safe": a "safe level of intake", used where the data were too thin for a UL; going above it does
+# not by itself mean harm. scope says what the number covers, which decides whether it can be compared with logged food.
+# --------------------------------------------------------------------------------------------------------------
+_UB = ((1, 3), (4, 6), (7, 10), (11, 14), (15, 17), (18, 150))
+
+
+def _u(*values):
+    """The six age bands EFSA prints for most nutrients (1-3, 4-6, 7-10, 11-14, 15-17, adults); None = not defined (ND) or no value."""
+    return [(b, v) for b, v in zip(_UB, values) if v is not None]
+
+
+_TOTAL = "Total usual daily intake from food, drinks and supplements. Supplements are not logged here, so this checks food only."
+UPPER_LEVELS = {
+    "calcium_mg": ("UL", "total", _u(None, None, None, None, None, 2500), _TOTAL + " EFSA sets no level for children."),
+    "copper_mg": ("UL", "total", _u(1, 2, 3, 4, 4, 5), _TOTAL),
+    "iodine_ug": ("UL", "total", _u(200, 250, 300, 450, 500, 600), _TOTAL),
+    "selenium_ug": ("UL", "total", _u(70, 95, 130, 180, 230, 255), _TOTAL),
+    "zinc_mg": ("UL", "total", _u(7, 10, 13, 18, 22, 25), _TOTAL),
+    "vit_d_ug": ("UL", "total", _u(50, 50, 50, 100, 100, 100), _TOTAL),
+    "vit_b6_mg": ("UL", "total", _u(3.2, 4.5, 6.1, 8.6, 10.7, 12), _TOTAL),
+    "vit_e_mg": ("UL", "total", _u(100, 120, 160, 220, 260, 300), _TOTAL + " EFSA notes a review of this level is ongoing."),
+    "magnesium_mg": ("UL", "added", _u(None, 250, 250, 250, 250, 250),
+                     "EFSA's level covers magnesium from supplements, added to food or in water, and excludes magnesium naturally in food and drink, so it cannot be checked against what you log."),
+    "folate_ug": ("UL", "added", _u(200, 300, 400, 600, 800, 1000),
+                  "EFSA's level covers folic acid and similar forms added to food or taken as supplements, and excludes folate naturally in food, so it cannot be checked against what you log."),
+    "vit_a_ug": ("UL", "preformed", _u(800, 1100, 1500, 2000, 2600, 3000),
+                 "EFSA's level covers preformed vitamin A (retinol and retinyl esters). Food data here are retinol activity equivalents, which also count carotenoids, so the two cannot be compared."),
+    "niacin_mg": ("UL", "forms", _u(150, 220, 350, 500, 700, 900),
+                  "EFSA gives separate levels for nicotinamide (shown) and nicotinic acid (adults 10 mg a day). Food data list niacin as one number, so this cannot be checked against what you log."),
+    "iron_mg": ("safe", "total", _u(10, 15, 20, 30, 35, 40),
+                "EFSA found too little data for an upper level and gives a safe level of intake instead. Going above it does not by itself mean harm."),
+    "manganese_mg": ("safe", "total", [((1, 2), 4), ((3, 6), 5), ((7, 13), 6), ((14, 17), 7), ((18, 150), 8)],
+                     "EFSA found too little data for an upper level and gives a safe level of intake instead. Going above it does not by itself mean harm."),
+}
+_NO_DATA = "EFSA found too little data to set an upper level."
+NO_UPPER_LEVEL = {k: _NO_DATA for k in ("vit_c_mg", "vit_k_ug", "thiamin_mg", "riboflavin_mg", "biotin_ug", "pantothenic_mg", "phosphorus_mg", "potassium_mg", "sodium_mg",
+                                         "fat_g", "sat_fat_g", "protein_g", "sugars_g", "epa_dha_mg")}
+NO_UPPER_LEVEL["vit_b12_ug"] = "EFSA found no adverse effects from high intakes of vitamin B12 and set no upper level."
+UPPER_LABEL = {"UL": "Tolerable upper intake level", "safe": "Safe level of intake", "none": "No upper level"}
+
+
+def upper_level_for(key: str, age: Optional[int]) -> Optional[dict]:
+    """EFSA's upper level (or safe level) for one nutrient at this age. Unknown age = adult. None when EFSA gives nothing for the nutrient."""
+    unit = BY_KEY[key]["unit"] if key in BY_KEY else ""
+    if key in UPPER_LEVELS:
+        kind, scope, bands, basis = UPPER_LEVELS[key]
+        years = 18 if age is None else age
+        value = next((v for (lo, hi), v in bands if lo <= years <= hi), None)
+        if value is None:
+            return {"kind": "none", "value": None, "unit": unit, "scope": scope, "comparable": False, "source": "efsa_ul",
+                    "basis": "EFSA gives no upper level for this age." if age is not None and age >= 1 else _NO_DATA}
+        return {"kind": kind, "value": value, "unit": unit, "scope": scope, "comparable": scope == "total", "source": "efsa_ul", "basis": basis}
+    if key in NO_UPPER_LEVEL:
+        return {"kind": "none", "value": None, "unit": unit, "scope": "none", "comparable": False, "source": "efsa_ul", "basis": NO_UPPER_LEVEL[key]}
+    return None
+
+
 def age_from_birth_year(birth_year: Optional[int], today_year: int) -> Optional[int]:
     return today_year - birth_year if birth_year else None
+
+
+def _in_band(age: int, bands: list) -> Optional[float]:
+    return next((v for (lo, hi), v in bands if lo <= age <= hi), None)
 
 
 def _band(age: int, table: dict) -> Optional[tuple]:
@@ -221,8 +355,7 @@ def reference_for(profile: Optional[dict], weight_kg: Optional[float]) -> dict:
     status = p.get("pregnancy")
     notes: List[str] = []
     if age is not None and age < 18:
-        return {"personalised": False, "supported": False, "basis": "none", "energy_kcal": None, "items": {}, "sources": [],
-                "notes": ["Reference values for people under 18 are not included in this app. Please ask a doctor or dietitian for targets; you can still log food and set your own targets."]}
+        return _reference_child(age, sex, status, p.get("activity"), weight_kg)
     if age is not None and age > 79:
         notes.append("EFSA gives no energy reference for people over 79; the 70-79 band is used for energy.")
 
@@ -242,7 +375,7 @@ def reference_for(profile: Optional[dict], weight_kg: Optional[float]) -> dict:
         basis = "efsa2017"
         items["energy_kcal"] = _item("AR", "efsa2017", "kcal", target=energy,
                                      note=f"EFSA average requirement for age {age}, {'women' if sex == 'F' else 'men'}, PAL {pal}"
-                                          + (f", plus pregnancy/lactation allowance" if status in PREGNANCY_ENERGY_MJ and sex == "F" else "") + ".")
+                                          + (", plus pregnancy/lactation allowance" if status in PREGNANCY_ENERGY_MJ and sex == "F" else "") + ".")
     else:
         energy, basis = 2000, "eu1169"
         notes.append("Age and sex are needed for personalised values; the general adult labelling reference (2000 kcal) is shown instead.")
@@ -309,5 +442,82 @@ def reference_for(profile: Optional[dict], weight_kg: Optional[float]) -> dict:
         for key, row in MICRO_ADULT.items():
             if row[1] != row[2]:
                 items[key]["target"] = min(row[1], row[2])
+    _attach_upper_levels(items, age)
     return {"personalised": personalised, "supported": True, "basis": basis, "energy_kcal": energy, "items": items, "notes": notes,
-            "sources": [SOURCES["efsa2017"], SOURCES["who2026"]] + ([SOURCES["eu1169"]] if basis == "eu1169" else [])}
+            "sources": [SOURCES["efsa2017"], SOURCES["efsa_ul"], SOURCES["who2026"]] + ([SOURCES["eu1169"]] if basis == "eu1169" else [])}
+
+
+def _attach_upper_levels(items: Dict[str, dict], age: Optional[int]) -> None:
+    """Put EFSA's upper (or safe) level on each item that has one; an unknown age gets the adult level."""
+    for key, item in items.items():
+        upper = upper_level_for(key, age)
+        if upper:
+            item["upper"] = upper
+
+
+def _unsupported(note: str) -> dict:
+    return {"personalised": False, "supported": False, "basis": "none", "energy_kcal": None, "items": {}, "sources": [], "notes": [note]}
+
+
+def _reference_child(age: int, sex: Optional[str], status: Optional[str], activity: Optional[str], weight_kg: Optional[float]) -> dict:
+    """EFSA reference values for 1-17 year olds. Anything EFSA does not publish for this person is left out, never estimated."""
+    if age < CHILD_AGES[0]:
+        return _unsupported("EFSA's reference values start at 1 year of age. For babies, ask a doctor or health visitor; you can still log food and set your own targets.")
+    if status:
+        return _unsupported("EFSA's pregnancy and breastfeeding values are for adult women. Please ask a doctor or midwife for advice; you can still log food and set your own targets.")
+    if sex not in ("M", "F"):
+        return _unsupported("EFSA's tables for children are separate for girls and boys. Set sex to F or M in your details to see values for your age; you can still log food and set your own targets.")
+    i = 0 if sex == "M" else 1
+    notes = [CHILD_NOTE, "Age is worked out from the birth year alone, so it can be a year out; around a birthday the neighbouring age may fit better."]
+    items: Dict[str, dict] = {}
+
+    # ---- energy: the PAL levels EFSA gives depend on age, so the nearest one to the chosen activity level is used
+    levels = next(v for r, v in CHILD_PAL_LEVELS.items() if age in r)
+    chosen = activity if activity in PAL else DEFAULT_ACTIVITY
+    wanted = PAL[chosen][1]
+    pick = min(range(len(levels)), key=lambda k: (abs(levels[k] - wanted), k))
+    if not activity:
+        notes.append("Activity level not set; moderately active (PAL 1.6) is assumed.")
+    if levels[pick] != wanted:
+        notes.append(f"For age {age} EFSA gives energy at PAL {', '.join(f'{x:g}' for x in levels)} only, so PAL {levels[pick]:g} is used.")
+    mj = CHILD_ENERGY_AR_MJ[age][i][pick]
+    energy = round(mj * KCAL_PER_MJ / 10) * 10
+    items["energy_kcal"] = _item("AR", "efsa2017", "kcal", target=energy,
+                                 note=f"EFSA average requirement for a {age} year old {'boy' if sex == 'M' else 'girl'}, PAL {levels[pick]:g}.")
+
+    # ---- macronutrients
+    fat_lo, fat_hi = _in_band(age, CHILD_FAT_PCT)
+    items["carbs_available_g"] = _item("RI", "efsa2017", "g", minimum=round(0.45 * energy / 4), target=round(0.50 * energy / 4), maximum=round(0.60 * energy / 4),
+                                       note="EFSA: 45-60% of energy from carbohydrate (excluding fibre). Target shown is the 50% point.")
+    fat_mid = (fat_lo + fat_hi) / 2 if fat_lo >= 35 else 30
+    items["fat_g"] = _item("RI", "efsa2017", "g", minimum=round(fat_lo / 100 * energy / 9), target=round(fat_mid / 100 * energy / 9), maximum=round(fat_hi / 100 * energy / 9),
+                           note=f"EFSA: {fat_lo}-{fat_hi}% of energy from total fat. Target shown is the {fat_mid:g}% point.")
+    items["fiber_g"] = _item("AI", "efsa2017", "g", target=_in_band(age, CHILD_FIBRE_G), note="EFSA adequate intake for this age.")
+    items["la_g"] = _item("AI", "efsa2017", "g", target=round(0.04 * energy / 9, 1), note="EFSA: 4% of energy.")
+    items["ala_g"] = _item("AI", "efsa2017", "g", target=round(0.005 * energy / 9, 1), note="EFSA: 0.5% of energy.")
+    if age >= 2:
+        items["epa_dha_mg"] = _item("AI", "efsa2017", "mg", target=250, note="EFSA: 250 mg/day combined EPA and DHA.")
+    else:
+        notes.append("At 1 year EFSA gives a DHA value (100 mg) but no EPA+DHA value, so no omega-3 fish-fat target is shown.")
+    if weight_kg:
+        items["protein_g"] = _item("PRI", "efsa2017", "g", target=round(CHILD_PROTEIN_PRI[age][i] * weight_kg),
+                                   note=f"EFSA PRI {CHILD_PROTEIN_PRI[age][i]:g} g per kg body weight at age {age}, for {weight_kg:g} kg.")
+    else:
+        notes.append("Body weight is needed for the protein target (EFSA gives it per kg). Add it in your details or log a weigh-in.")
+    water_boys, water_girls = _in_band(age, CHILD_WATER_L)
+    items["water_ml"] = _item("AI", "efsa2017", "ml", target=int(round((water_boys, water_girls)[i] * 1000)),
+                              note="EFSA adequate intake of TOTAL water (drinks plus water in food)." + (" EFSA gives 1.1-1.2 L at this age; the lower value is used." if age == 1 else ""))
+
+    # ---- vitamins and minerals
+    mj_e = energy / KCAL_PER_MJ
+    micro_notes = {**NUTRIENT_NOTES, "iron_mg": "EFSA's iron value for girls is higher from age 12." if (sex == "F" and age >= 12) else "",
+                   "zinc_mg": "EFSA does not adjust children's zinc values for phytate intake."}
+    for key, (kind, boys, girls) in CHILD_MICRO.items():
+        value = _in_band(age, boys if (i == 0 or girls is None) else girls)
+        items[key] = _item(kind, "efsa2017", BY_KEY[key]["unit"], target=value, note=micro_notes.get(key, ""))
+    for key, (kind, per_mj) in PER_MJ.items():
+        items[key] = _item(kind, "efsa2017", BY_KEY[key]["unit"], target=round(per_mj * mj_e, 1), note=f"EFSA: {per_mj} per MJ of energy ({mj_e:.1f} MJ).  " + micro_notes.get(key, ""))
+    notes.append("Guideline limits for saturated fat, sugar and sodium come from WHO's adult advice and are not applied to children.")
+    _attach_upper_levels(items, age)
+    return {"personalised": True, "supported": True, "basis": "efsa2017", "energy_kcal": energy, "items": items, "notes": notes,
+            "sources": [SOURCES["efsa2017"], SOURCES["efsa_ul"]]}

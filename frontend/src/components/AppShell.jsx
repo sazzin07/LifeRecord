@@ -133,9 +133,9 @@ export function AppShell({ children }) {
           <span className="font-bold tracking-tight">Life Record</span>
         </div>
         <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
-          className="ml-auto lg:ml-0 flex items-center gap-2 rounded-xl border border-border bg-card px-3 h-9 text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 min-w-[180px] max-w-[280px]">
-          <Search className="h-4 w-4" /><span className="hidden sm:inline">Search or command…</span>
-          <kbd className="ml-auto hidden sm:inline text-[10px] font-mono border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+          className="ml-auto lg:ml-0 flex items-center gap-2 rounded-xl border border-border bg-card px-3 h-9 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-w-[180px] max-w-[280px]">
+          <Search className="h-4 w-4" aria-hidden="true" /><span className="sr-only sm:not-sr-only">Search or command…</span>
+          <kbd className="ml-auto hidden sm:inline text-[10px] font-mono border border-border rounded px-1.5 py-0.5" aria-hidden="true">⌘K</kbd>
         </button>
         <div className="lg:ml-auto flex items-center gap-2">
           <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -143,7 +143,7 @@ export function AppShell({ children }) {
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <button data-testid="quick-add-trigger" onClick={() => setQuickOpen(true)}
-            className="hidden sm:flex items-center gap-1.5 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 text-sm font-semibold">
+            className="hidden sm:flex items-center gap-1.5 h-9 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 text-sm font-semibold">
             <Plus className="h-4 w-4" />Add
           </button>
         </div>
@@ -163,15 +163,15 @@ export function AppShell({ children }) {
       <nav className="lg:hidden glass-strong fixed bottom-0 inset-x-0 z-30 border-t border-border h-16 flex items-center justify-around px-2">
         {MOBILE_NAV.map((n, i) =>
           n === null ? (
-            <button key="qa" data-testid="mobile-quick-add" onClick={() => setQuickOpen(true)}
-              className="h-12 w-12 -mt-6 rounded-full bg-emerald-600 text-white grid place-items-center shadow-lg shadow-emerald-600/30">
-              <Plus className="h-6 w-6" />
+            <button key="qa" data-testid="mobile-quick-add" aria-label="Quick add" onClick={() => setQuickOpen(true)}
+              className="h-12 w-12 -mt-6 rounded-full bg-emerald-700 text-white grid place-items-center shadow-lg shadow-emerald-600/30">
+              <Plus className="h-6 w-6" aria-hidden="true" />
             </button>
           ) : (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`mnav-${n.label.toLowerCase()}`}
               onTouchStart={() => warm(n.to)} onFocus={() => warm(n.to)}
               className={({ isActive }) => cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
-                isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500")}>
+                isActive ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
               <n.icon className="h-5 w-5" />{n.label}
             </NavLink>
           )

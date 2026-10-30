@@ -154,3 +154,15 @@ def test_one_account_never_sees_anothers_recipes_or_foods(a, b):
     theirs = ask(b)
     assert "Private casserole" in mine
     assert all("Private casserole" not in s["name"] and "Secret" not in s["name"] for s in theirs["suggestions"] + theirs["discover"])
+
+
+def test_a_derived_nutrient_that_is_a_gap_is_named_not_a_crash(a):
+    """EPA + DHA and available carbohydrate are derived values, not stored nutrients; a day with some fish but under 60% of the EFSA amount used to answer 500."""
+    fish = food(a, f"Mild fish {uuid.uuid4().hex[:4]}", {"energy_kcal": 100, "protein_g": 20, "epa_g": 0.05, "dha_g": 0.05})   # 100 mg EPA + DHA per 100 g, EFSA says 250 mg
+    assert a.post(f"{N}/diary", json={"food_id": fish["id"], "quantity": 100, "unit": "g", "meal_type": "lunch"}).status_code == 200
+    out = ask(a)
+    focus = {f["nutrient"]: f for f in out["context"]["focus"]}
+    assert focus["epa_dha_mg"]["name"] == "EPA + DHA" and focus["epa_dha_mg"]["unit"] == "mg" and focus["epa_dha_mg"]["remaining"] == 150.0
+    from datetime import date, timedelta
+    week = a.post(f"{N}/plan/generate", json={"start": (date.today() + timedelta(days=1)).isoformat(), "days": 2})
+    assert week.status_code == 200, week.text   # the week generator names its focus the same way

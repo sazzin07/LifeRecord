@@ -55,8 +55,8 @@ export default function Nutrition() {
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">What you eat, what it contains, and how it compares with the references</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => openAI("Log a meal: ")} aria-label="Ask the assistant" data-testid="nutrition-ai"><Sparkles className="mr-1.5 h-4 w-4 text-emerald-600" />Assistant</Button>
-          <Button size="sm" onClick={() => openAdd()} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="header-add-food"><Plus className="mr-1 h-4 w-4" />Add food</Button>
+          <Button variant="outline" size="sm" onClick={() => openAI("Log a meal: ")} aria-label="Ask the assistant" data-testid="nutrition-ai"><Sparkles className="mr-1.5 h-4 w-4 text-emerald-700" />Assistant</Button>
+          <Button size="sm" onClick={() => openAdd()} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="header-add-food"><Plus className="mr-1 h-4 w-4" />Add food</Button>
         </div>
       </div>
 
@@ -75,7 +75,7 @@ export default function Nutrition() {
               <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Next day" disabled={!date} onClick={() => go(shiftDate(date, 1))} data-testid="day-next"><ChevronRight className="h-4 w-4" /></Button>
             </div>
             {date && date !== today && <Button variant="outline" size="sm" onClick={() => setUrl({ date: null })} data-testid="day-today">Today</Button>}
-            {date && date !== today && <p className="text-sm text-slate-500" data-testid="day-label">{prettyDate(date, today)} · {date}</p>}
+            {date && date !== today && <p className="text-sm text-slate-500 dark:text-slate-400" data-testid="day-label">{prettyDate(date, today)} · {date}</p>}
           </div>
         )}
 

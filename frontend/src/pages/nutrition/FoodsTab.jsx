@@ -22,7 +22,7 @@ function Swaps({ food, onOpen }) {
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { setRes(null); }, [key, food.id]);
-  if (!options.length) return <p className="text-xs text-slate-500">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
+  if (!options.length) return <p className="text-xs text-slate-500 dark:text-slate-400">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
   const go = async () => {
     setBusy(true);
     try { const { data } = await api.get(`/nutrition/foods/${food.id}/swaps`, { params: { nutrient: key, limit: 5 } }); setRes(data); }
@@ -30,25 +30,25 @@ function Swaps({ food, onOpen }) {
   };
   return (
     <div className="rounded-xl border border-border p-3" data-testid="swaps">
-      <p className="flex items-center gap-1.5 text-sm font-semibold"><ArrowLeftRight className="h-4 w-4 text-emerald-600" aria-hidden="true" />Looking for something similar with…</p>
+      <p className="flex items-center gap-1.5 text-sm font-semibold"><ArrowLeftRight className="h-4 w-4 text-emerald-700" aria-hidden="true" />Looking for something similar with…</p>
       <div className="mt-2 flex gap-2">
         <Select value={key} onValueChange={setKey}><SelectTrigger className="h-9" aria-label="What to improve" data-testid="swap-nutrient"><SelectValue /></SelectTrigger>
           <SelectContent>{options.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
         <Button type="button" variant="outline" size="sm" className="h-9" onClick={go} disabled={busy} data-testid="swap-go">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}</Button>
       </div>
-      {res && (res.swaps.length === 0 ? <p className="mt-2 text-xs text-slate-500">{res.note.startsWith(food.name) ? res.note : "No similar food of the same kind has a better value here."}</p> : (
+      {res && (res.swaps.length === 0 ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{res.note.startsWith(food.name) ? res.note : "No similar food of the same kind has a better value here."}</p> : (
         <>
           <ul className="mt-2 divide-y divide-border" aria-live="polite">
             {res.swaps.map((x) => (
               <li key={x.id}>
                 <button type="button" onClick={() => onOpen(x.id)} className="flex w-full items-center justify-between gap-2 py-1.5 text-left text-sm hover:underline focus-visible:underline focus-visible:outline-none">
                   <span className="truncate">{x.name}</span>
-                  <span className="stat-num shrink-0 text-xs text-slate-500">{fmt(x.per100)} vs {fmt(x.original_per100)} {res.unit} ({x.change_pct > 0 ? "+" : ""}{Math.round(x.change_pct)}%)</span>
+                  <span className="stat-num shrink-0 text-xs text-slate-500 dark:text-slate-400">{fmt(x.per100)} vs {fmt(x.original_per100)} {res.unit} ({x.change_pct > 0 ? "+" : ""}{Math.round(x.change_pct)}%)</span>
                 </button>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-[11px] text-slate-400">Per 100 g, same category, similar energy. Not medical advice.</p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Per 100 g, same category, similar energy. Not medical advice.</p>
         </>
       ))}
     </div>
@@ -78,7 +78,7 @@ function FoodDetail({ id, onClose, onLog, onPlan }) {
         </DialogHeader>
         {food && (
           <div className="space-y-4">
-            <p className="text-xs text-slate-500">Values per 100 g. {food.completeness.reported} of {food.completeness.of} tracked nutrients are reported by this source; the rest show "not reported", which is not the same as zero.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Values per 100 g. {food.completeness.reported} of {food.completeness.of} tracked nutrients are reported by this source; the rest show "not reported", which is not the same as zero.</p>
             {groups.map(([g, list]) => (
               <div key={g}>
                 <p className="mb-1 text-sm font-semibold">{title[g]}</p>
@@ -86,19 +86,19 @@ function FoodDetail({ id, onClose, onLog, onPlan }) {
                   {list.map((n) => (
                     <div key={n.key} className="flex justify-between border-b border-border/60 py-1 text-sm">
                       <dt className="text-slate-600 dark:text-slate-300">{n.name}</dt>
-                      <dd className="stat-num">{n.per100 == null ? <span className="text-slate-400">not reported</span> : `${fmt(n.per100)} ${n.unit}`}</dd>
+                      <dd className="stat-num">{n.per100 == null ? <span className="text-slate-500 dark:text-slate-400">not reported</span> : `${fmt(n.per100)} ${n.unit}`}</dd>
                     </div>
                   ))}
                 </dl>
               </div>
             ))}
-            {food.portions?.length > 0 && <p className="text-xs text-slate-500">Portions: {food.portions.map((p) => `${p.label} = ${fmt(p.grams)} g`).join(" · ")}</p>}
+            {food.portions?.length > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Portions: {food.portions.map((p) => `${p.label} = ${fmt(p.grams)} g`).join(" · ")}</p>}
             <Swaps food={food} onOpen={setShown} />
             <div className="flex flex-wrap justify-between gap-2">
               <Button type="button" variant="outline" onClick={toggle} aria-pressed={!!food.favorite}><Star className={food.favorite ? "mr-1.5 h-4 w-4 fill-amber-400 text-amber-500" : "mr-1.5 h-4 w-4"} />{food.favorite ? "Favourite" : "Add to favourites"}</Button>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => { onClose(); onPlan(food.id); }} data-testid="food-detail-plan"><CalendarPlus className="mr-1.5 h-4 w-4" />Plan</Button>
-                <Button type="button" onClick={() => { onClose(); onLog(food.id); }} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-detail-log">Log this food</Button>
+                <Button type="button" onClick={() => { onClose(); onLog(food.id); }} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="food-detail-log">Log this food</Button>
               </div>
             </div>
           </div>
@@ -147,7 +147,7 @@ function CreateFoodDialog({ open, onOpenChange, byKey }) {
             <div><Label htmlFor="cf-pl">One serving is called (optional)</Label><Input id="cf-pl" value={f.portionLabel} onChange={(e) => setF({ ...f, portionLabel: e.target.value })} placeholder="1 bowl" className="mt-1 h-10" /></div>
             <div><Label htmlFor="cf-pg">…and weighs (g)</Label><Input id="cf-pg" inputMode="decimal" value={f.portionGrams} onChange={(e) => setF({ ...f, portionGrams: e.target.value.replace(",", ".") })} className="mt-1 h-10" /></div>
           </div>
-          <div className="flex justify-end"><Button type="submit" disabled={saving || !f.name || !n.energy_kcal} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="cf-save">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save food"}</Button></div>
+          <div className="flex justify-end"><Button type="submit" disabled={saving || !f.name || !n.energy_kcal} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="cf-save">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save food"}</Button></div>
         </form>
       </DialogContent>
     </Dialog>
@@ -198,8 +198,8 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
       {foods.map((f) => (
         <li key={f.id} className="flex items-center gap-2 px-4 py-2.5 sm:px-5">
           <button type="button" onClick={() => setDetailId(f.id)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:underline" data-testid={`food-row-${f.id}`}>
-            <p className="truncate text-sm font-medium">{f.name}{f.brand ? <span className="font-normal text-slate-500"> · {f.brand}</span> : null}</p>
-            <p className="text-xs text-slate-500"><span className="stat-num">{fmt(f.per100.energy_kcal)} kcal</span> per 100 g · P {fmt(f.per100.protein_g)} · C {fmt(f.per100.carbs_g)} · F {fmt(f.per100.fat_g)}</p>
+            <p className="truncate text-sm font-medium">{f.name}{f.brand ? <span className="font-normal text-slate-500 dark:text-slate-400"> · {f.brand}</span> : null}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400"><span className="stat-num">{fmt(f.per100.energy_kcal)} kcal</span> per 100 g · P {fmt(f.per100.protein_g)} · C {fmt(f.per100.carbs_g)} · F {fmt(f.per100.fat_g)}</p>
           </button>
           <QualityBadge quality={f.quality} className="hidden sm:inline-flex" />
           <Button variant="ghost" size="sm" className="h-8 shrink-0 text-emerald-700 dark:text-emerald-400" aria-label={`Add ${shortName(f.name)} to today`} onClick={() => logFoodNow(f, { date })} data-testid={`food-quick-${f.id}`}><Plus className="mr-0.5 h-4 w-4" />Add</Button>
@@ -207,17 +207,17 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
         </li>
       ))}
     </ul>
-  ) : <p className="px-5 py-5 text-sm text-slate-500">{empty}</p>);
+  ) : <p className="px-5 py-5 text-sm text-slate-500 dark:text-slate-400">{empty}</p>);
 
   return (
     <div className="space-y-6" data-testid="foods-tab">
       <Card className="p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h3 className="font-semibold">Food database</h3><p className="text-xs text-slate-500">About 8,000 USDA reference foods, plus packaged foods you look up by barcode and foods you add.</p></div>
+          <div><h3 className="font-semibold">Food database</h3><p className="text-xs text-slate-500 dark:text-slate-400">About 8,000 USDA reference foods, plus packaged foods you look up by barcode and foods you add.</p></div>
           <Button variant="outline" onClick={() => setCreateOpen(true)} data-testid="create-food"><Plus className="mr-1.5 h-4 w-4" />Add your own food</Button>
         </div>
         <div className="relative mt-4">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" aria-hidden="true" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search foods" aria-label="Search the food database" className="h-11 pl-9" data-testid="foods-search" />
         </div>
         {results && <div className="mt-3 rounded-xl border border-border" data-testid="foods-results">{list(results, `No food matches "${q}".`)}</div>}
@@ -225,14 +225,14 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
       {!results && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="overflow-hidden"><h3 className="border-b border-border px-4 py-3 font-semibold sm:px-5"><Star className="mr-1.5 inline h-4 w-4 text-amber-500" aria-hidden="true" />Favourites</h3>{list(favorites, "Star a food when you log it and it will be here for one-tap access.")}</Card>
-          <Card className="overflow-hidden"><h3 className="border-b border-border px-4 py-3 font-semibold sm:px-5"><Utensils className="mr-1.5 inline h-4 w-4 text-emerald-600" aria-hidden="true" />Foods you added</h3>{list(mine, "Foods you add (from a label, or your own recipes) appear here and are private to you.")}</Card>
+          <Card className="overflow-hidden"><h3 className="border-b border-border px-4 py-3 font-semibold sm:px-5"><Utensils className="mr-1.5 inline h-4 w-4 text-emerald-700" aria-hidden="true" />Foods you added</h3>{list(mine, "Foods you add (from a label, or your own recipes) appear here and are private to you.")}</Card>
         </div>
       )}
 
       <Card className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><ChefHat className="h-4 w-4 text-emerald-600" aria-hidden="true" /><h3 className="font-semibold">Recipes</h3></div>
-          <Button size="sm" onClick={() => { setEditingRecipe(null); setRecipeOpen(true); }} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="new-recipe"><Plus className="mr-1 h-4 w-4" />New recipe</Button>
+          <div className="flex items-center gap-2"><ChefHat className="h-4 w-4 text-emerald-700" aria-hidden="true" /><h3 className="font-semibold">Recipes</h3></div>
+          <Button size="sm" onClick={() => { setEditingRecipe(null); setRecipeOpen(true); }} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="new-recipe"><Plus className="mr-1 h-4 w-4" />New recipe</Button>
         </div>
         {recipes === null ? <div className="skeleton mt-4 h-28 rounded-2xl" aria-busy="true" /> : !recipes?.length ? (
           <EmptyState icon={ChefHat} title="No recipes yet" sub="Save the meals you cook often, then log a serving in one tap." compact />
@@ -242,7 +242,7 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
               <div key={r.id} data-testid={`recipe-${r.id}`} className="min-w-0 rounded-xl border border-border p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{r.name}</p>
-                    <p className="text-xs text-slate-500">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
                     {r.nutrition_meta?.linked > 0 && (
                       <p className={r.nutrition_meta.complete ? "mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-400" : "mt-0.5 text-[11px] text-amber-700 dark:text-amber-400"} data-testid={`recipe-calc-${r.id}`}
                         title={r.nutrition_meta.missing?.length ? `Not counted: ${r.nutrition_meta.missing.join(", ")}` : undefined}>
@@ -254,10 +254,10 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" aria-label={`Delete ${r.name}`} data-testid={`recipe-delete-${r.id}`} onClick={() => setDeleteRecipe(r)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
-                <p className="mt-2 line-clamp-2 text-xs text-slate-500">{(r.ingredients || []).map((i) => `${i.quantity}${i.unit} ${i.name}`).join(", ")}</p>
+                <p className="mt-2 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{(r.ingredients || []).map((i) => `${i.quantity}${i.unit} ${i.name}`).join(", ")}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2 [&>button]:min-w-0 [&>button]:px-2">
                   <Button size="sm" variant="outline" className="h-8" onClick={() => logRecipe(r)} disabled={r.calories == null} data-testid={`log-recipe-${r.id}`}>Log a serving</Button>
-                  <Button size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => cook(r)} data-testid={`cook-${r.id}`}><Flame className="mr-1 h-3.5 w-3.5" />Cook</Button>
+                  <Button size="sm" className="h-8 bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => cook(r)} data-testid={`cook-${r.id}`}><Flame className="mr-1 h-3.5 w-3.5" />Cook</Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => onPlanRecipe(r.id)} disabled={r.calories == null} data-testid={`plan-recipe-${r.id}`}><CalendarPlus className="mr-1 h-3.5 w-3.5" />Plan it</Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => shopRecipe(r)} data-testid={`shop-recipe-${r.id}`}><ShoppingCart className="mr-1 h-3.5 w-3.5" />Shopping list</Button>
                 </div>

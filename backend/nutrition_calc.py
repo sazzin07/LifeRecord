@@ -165,7 +165,19 @@ def progress(totals: dict, reported: dict, entries: int, items: Dict[str, dict],
                     "unit": ref.get("unit") or info.get("unit"), "kind": ref.get("kind"), "source": ref.get("source"),
                     "overridden": bool(ov), "note": ref.get("note", ""), "entries_reporting": got, "entries": entries,
                     "complete": entries > 0 and got == entries}
+        upper = ref.get("upper")
+        if upper:
+            # an upper level is only compared with the logged total when it covers the same thing (EFSA's own footnotes decide that);
+            # it concerns usual intake over time, so one day above it is a prompt to look, not a finding
+            over = bool(have and upper.get("comparable") and upper.get("value") is not None and intake > upper["value"])
+            out[key]["upper"] = {**upper, "over": over, "percent": (intake / upper["value"] * 100.0) if have and upper.get("comparable") and upper.get("value") else None}
     return out
+
+
+def upper_exceeded(prog: Dict[str, dict]) -> List[dict]:
+    """The nutrients whose logged total is above a comparable EFSA upper (or safe) level, for a banner and for the assistant."""
+    return [{"key": k, "intake": p["intake"], "limit": p["upper"]["value"], "unit": p["unit"], "kind": p["upper"]["kind"]}
+            for k, p in prog.items() if p.get("upper", {}).get("over")]
 
 
 # ---------------------------------------------------------------- recipes, planning, shopping, swaps

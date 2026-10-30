@@ -19,7 +19,7 @@ function Alternatives({ ingredient, nutrients, onUse }) {
   const [key, setKey] = useState(options[0]?.[0] || "");
   const [res, setRes] = useState(null);
   const [busy, setBusy] = useState(false);
-  if (!options.length) return <p className="col-span-12 text-xs text-slate-500">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
+  if (!options.length) return <p className="col-span-12 text-xs text-slate-500 dark:text-slate-400">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
   const go = async () => {
     setBusy(true);
     try { const { data } = await api.post("/nutrition/recipe-alternatives", { ...nutrients, nutrient: key, limit: 5 }); setRes(data); }
@@ -32,13 +32,13 @@ function Alternatives({ ingredient, nutrients, onUse }) {
           <SelectContent>{options.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
         <Button type="button" variant="outline" size="sm" className="h-9" onClick={go} disabled={busy} data-testid="alt-go">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}</Button>
       </div>
-      {res && (res.alternatives.length === 0 ? <p className="mt-2 text-xs text-slate-500" data-testid="alt-none">{res.note.startsWith(res.food) ? res.note : "No similar food of the same kind does better here."}</p> : (
+      {res && (res.alternatives.length === 0 ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400" data-testid="alt-none">{res.note.startsWith(res.food) ? res.note : "No similar food of the same kind does better here."}</p> : (
         <ul className="mt-2 divide-y divide-border" aria-live="polite">
           {res.alternatives.map((a) => (
             <li key={a.food_id} className="flex items-center gap-2 py-1.5" data-testid={`alt-${a.food_id}`}>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{a.name}</p>
-                <p className="text-xs text-slate-500">Recipe {res.name.toLowerCase()}: <span className="stat-num">{fmt(a.recipe_per_serving.before)} → {a.recipe_per_serving.after == null ? "n/a" : fmt(a.recipe_per_serving.after)} {res.unit}</span> per serving
+                <p className="text-xs text-slate-500 dark:text-slate-400">Recipe {res.name.toLowerCase()}: <span className="stat-num">{fmt(a.recipe_per_serving.before)} → {a.recipe_per_serving.after == null ? "n/a" : fmt(a.recipe_per_serving.after)} {res.unit}</span> per serving
                   {a.recipe_per_serving.change_pct != null ? ` (${a.recipe_per_serving.change_pct > 0 ? "+" : ""}${Math.round(a.recipe_per_serving.change_pct)}%)` : ""}
                   {a.energy_per_serving.after != null ? ` · ${fmt(a.energy_per_serving.before)} → ${fmt(a.energy_per_serving.after)} kcal` : ""}</p>
               </div>
@@ -65,12 +65,12 @@ function FindFood({ onPick }) {
   return (
     <div className="col-span-12 rounded-lg border border-dashed border-border p-2">
       <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search for the food this ingredient is" aria-label="Search for a food to link" className="h-9" data-testid="link-food-search" />
-      {results && (results.length === 0 ? <p className="mt-2 text-xs text-slate-500">No food matches "{q}".</p> : (
+      {results && (results.length === 0 ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">No food matches "{q}".</p> : (
         <ul className="mt-1 max-h-44 overflow-y-auto">
           {results.map((f) => (
             <li key={f.id}><button type="button" onClick={() => onPick(f)} data-testid={`link-food-${f.id}`}
               className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none dark:hover:bg-slate-800/60">
-              <span className="truncate">{f.name}{f.brand ? ` · ${f.brand}` : ""}</span><span className="stat-num shrink-0 text-xs text-slate-500">{fmt(f.per100.energy_kcal)} kcal/100 g</span>
+              <span className="truncate">{f.name}{f.brand ? ` · ${f.brand}` : ""}</span><span className="stat-num shrink-0 text-xs text-slate-500 dark:text-slate-400">{fmt(f.per100.energy_kcal)} kcal/100 g</span>
             </button></li>
           ))}
         </ul>
@@ -156,7 +156,7 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between"><Label>Ingredients</Label>
               <Button type="button" variant="outline" size="sm" onClick={() => setF((x) => ({ ...x, ingredients: [...x.ingredients, blankIngredient()] }))} data-testid="recipe-add-ingredient"><Plus className="mr-1 h-4 w-4" />Add</Button></div>
-            {f.ingredients.length === 0 && <p className="text-xs text-slate-500">Add the ingredients, then link each one to a food.</p>}
+            {f.ingredients.length === 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Add the ingredients, then link each one to a food.</p>}
             {f.ingredients.map((it) => (
               <div key={it.key} className="grid grid-cols-12 items-center gap-2 rounded-xl border border-border p-2" data-testid="recipe-ingredient">
                 <Input className="col-span-9 h-9 sm:col-span-5" placeholder="Name" aria-label="Ingredient name" value={it.name} onChange={(e) => upd(it.key, { name: e.target.value })} data-testid="ing-name" />
@@ -176,7 +176,7 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
                 </div>
                 {finding === it.key && <FindFood onPick={(food) => link(it.key, food)} />}
                 {it.food_id && it.food && (
-                  <button type="button" className="col-span-12 -mt-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 focus-visible:underline focus-visible:outline-none dark:hover:text-slate-200"
+                  <button type="button" className="col-span-12 -mt-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 focus-visible:underline focus-visible:outline-none dark:hover:text-slate-200"
                     aria-expanded={swapping === it.key} onClick={() => setSwapping(swapping === it.key ? null : it.key)} data-testid="ing-swap"><ArrowLeftRight className="h-3 w-3" aria-hidden="true" />Find a swap</button>
                 )}
                 {swapping === it.key && it.food && (
@@ -190,13 +190,13 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
 
           {linked.length > 0 ? (
             <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50" aria-live="polite" data-testid="recipe-preview">
-              {!preview ? <p className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Calculating…</p> : preview.linked === 0 ? (
+              {!preview ? <p className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 className="h-4 w-4 animate-spin" />Calculating…</p> : preview.linked === 0 ? (
                 <p className="text-sm text-amber-700 dark:text-amber-400">None of the linked ingredients could be calculated yet. Check their units below.</p>
               ) : (
                 <>
                   <p className="text-sm"><span className="stat-num text-lg font-semibold" data-testid="preview-kcal">{fmt(preview.per_serving.energy_kcal)}</span> kcal per serving
-                    <span className="text-slate-500"> · based on {preview.linked} of {preview.total_ingredients} {preview.total_ingredients === 1 ? "ingredient" : "ingredients"}</span></p>
-                  <p className="mt-1 text-xs text-slate-500">Protein {fmt(preview.per_serving.protein_g)} g · Carbs {fmt(preview.per_serving.carbs_g)} g · Fat {fmt(preview.per_serving.fat_g)} g{preview.per_serving.fiber_g != null ? ` · Fibre ${fmt(preview.per_serving.fiber_g)} g` : ""}</p>
+                    <span className="text-slate-500 dark:text-slate-400"> · based on {preview.linked} of {preview.total_ingredients} {preview.total_ingredients === 1 ? "ingredient" : "ingredients"}</span></p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Protein {fmt(preview.per_serving.protein_g)} g · Carbs {fmt(preview.per_serving.carbs_g)} g · Fat {fmt(preview.per_serving.fat_g)} g{preview.per_serving.fiber_g != null ? ` · Fibre ${fmt(preview.per_serving.fiber_g)} g` : ""}</p>
                 </>
               )}
               {problems.length > 0 && (
@@ -210,13 +210,13 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
               {[["calories", "Calories, whole recipe"], ["protein", "Protein (g), whole recipe"], ["carbs", "Carbs (g), whole recipe"], ["fat", "Fat (g), whole recipe"]].map(([k, p]) => (
                 <Input key={k} type="number" min={0} step="0.1" placeholder={p} aria-label={p} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className="h-10" />
               ))}
-              <p className="col-span-2 -mt-1 text-xs text-slate-500">Or link ingredients above to calculate this instead of typing it.</p>
+              <p className="col-span-2 -mt-1 text-xs text-slate-500 dark:text-slate-400">Or link ingredients above to calculate this instead of typing it.</p>
             </div>
           )}
           <Input placeholder="Notes" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} className="h-10" />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy || !f.name.trim()} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="recipe-save">{editing ? "Save" : "Create recipe"}</Button>
+            <Button type="submit" disabled={busy || !f.name.trim()} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="recipe-save">{editing ? "Save" : "Create recipe"}</Button>
           </div>
         </form>
       </DialogContent>

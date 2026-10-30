@@ -18,6 +18,9 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", prese
   const selected = value ? parseISO(value) : undefined;
   const valid = selected && isValid(selected);
   const pick = (d) => { onChange(d ? toIso(d) : ""); setOpen(false); };
+  // The accessible name must contain the visible text (WCAG 2.5.3), so the label says what the field is and the button shows its value.
+  const shown = valid ? format(selected, "EEE d MMM yyyy") : placeholder;
+  const name = !ariaLabel ? shown : ariaLabel.toLowerCase().includes(shown.toLowerCase()) ? ariaLabel : `${ariaLabel}: ${shown}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -26,7 +29,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", prese
           type="button"
           id={id}
           disabled={disabled}
-          aria-label={ariaLabel || placeholder}
+          aria-label={name}
           className={cn(
             "flex h-10 w-full items-center gap-2 rounded-xl border border-input bg-background px-3 text-left text-sm transition-colors",
             "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
@@ -37,7 +40,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", prese
           {...rest}
         >
           <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="flex-1 truncate">{valid ? format(selected, "EEE d MMM yyyy") : placeholder}</span>
+          <span className="flex-1 truncate">{shown}</span>
           {valid && clearable && (
             <span
               role="button"

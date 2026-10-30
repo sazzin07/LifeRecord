@@ -98,9 +98,10 @@ def test_kinds_distinguish_pri_ai_ri_and_limits():
     assert all(v["source"] in ("efsa2017", "who2026", "eu1169") for v in r["items"].values())
 
 
-def test_people_under_18_get_no_personalised_values():
+def test_people_under_18_get_efsas_age_specific_values():
     r = ref(age=15, sex="F")
-    assert r["supported"] is False and r["items"] == {} and "under 18" in r["notes"][0]
+    assert r["supported"] and r["personalised"] and r["items"] and "not a growth chart" in r["notes"][0]
+    assert ref(age=0, sex="F")["supported"] is False  # EFSA's tables start at 1 year; every value is checked in test_nutrition_reference_efsa.py
 
 
 def test_sources_are_cited():

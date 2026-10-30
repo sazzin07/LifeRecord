@@ -30,8 +30,8 @@ function FoodRow({ food, onPick }) {
     <button type="button" onClick={() => onPick(food)} data-testid={`food-result-${food.id}`}
       className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-slate-50 focus-visible:border-emerald-400 focus-visible:outline-none dark:hover:bg-slate-800/60">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{food.name}{food.brand ? <span className="font-normal text-slate-500"> · {food.brand}</span> : null}</p>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+        <p className="truncate text-sm font-medium">{food.name}{food.brand ? <span className="font-normal text-slate-500 dark:text-slate-400"> · {food.brand}</span> : null}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-500 dark:text-slate-400">
           <span className="stat-num">{fmt(food.per100.energy_kcal)} kcal</span>
           <span>per 100 g</span>
           <span>P {fmt(food.per100.protein_g)} · C {fmt(food.per100.carbs_g)} · F {fmt(food.per100.fat_g)}</span>
@@ -192,14 +192,14 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
   const mealPicker = (
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="text-xs font-medium text-slate-500" htmlFor="nf-meal">Meal</label>
+        <label className="text-xs font-medium text-slate-500 dark:text-slate-400" htmlFor="nf-meal">Meal</label>
         <Select value={mealType} onValueChange={setMealType}>
           <SelectTrigger id="nf-meal" className="mt-1 h-10" data-testid="food-meal"><SelectValue /></SelectTrigger>
           <SelectContent>{MEALS.map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div>
-        <label className="text-xs font-medium text-slate-500" htmlFor="nf-time">Time (optional)</label>
+        <label className="text-xs font-medium text-slate-500 dark:text-slate-400" htmlFor="nf-time">Time (optional)</label>
         <Input id="nf-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} className="mt-1 h-10" data-testid="food-time" />
       </div>
     </div>
@@ -214,12 +214,13 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
           <DialogDescription>{editing ? entry.description : planning ? "Planned food only counts once you log it. Search the food database, add a recipe or type it in." : "Search the food database, scan a barcode, add a recipe or type it in."}</DialogDescription>
         </DialogHeader>
 
+        {/* The mode's content is rendered below, outside the Tabs, so the triggers must not point aria-controls at a panel that does not exist. */}
         {!editing && !showPortion && (
           <Tabs value={mode} onValueChange={setMode}>
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="find" className="gap-1.5" data-testid="food-tab-find"><Search className="h-3.5 w-3.5" />Find food</TabsTrigger>
-              <TabsTrigger value="recipe" className="gap-1.5" data-testid="food-tab-recipe"><ChefHat className="h-3.5 w-3.5" />Recipe</TabsTrigger>
-              <TabsTrigger value="quick" className="gap-1.5" data-testid="food-tab-quick"><Pencil className="h-3.5 w-3.5" />Type it in</TabsTrigger>
+              <TabsTrigger value="find" aria-controls={undefined} className="gap-1.5" data-testid="food-tab-find"><Search className="h-3.5 w-3.5" />Find food</TabsTrigger>
+              <TabsTrigger value="recipe" aria-controls={undefined} className="gap-1.5" data-testid="food-tab-recipe"><ChefHat className="h-3.5 w-3.5" />Recipe</TabsTrigger>
+              <TabsTrigger value="quick" aria-controls={undefined} className="gap-1.5" data-testid="food-tab-quick"><Pencil className="h-3.5 w-3.5" />Type it in</TabsTrigger>
             </TabsList>
           </Tabs>
         )}
@@ -230,25 +231,25 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
         {mode === "find" && !showPortion && !editing && (
           <div className="space-y-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" aria-hidden="true" />
               <Input ref={inputRef} autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search foods, e.g. chicken breast, oats, yoghurt"
                 aria-label="Search foods" className="h-11 pl-9" data-testid="food-search" />
-              {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" aria-label="Searching" />}
+              {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500 dark:text-slate-400" aria-label="Searching" />}
             </div>
             {results === null ? (
               <div className="space-y-3">
-                {favorites?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500">Favourites</p>{favorites.slice(0, 5).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
-                {recent?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500">Recently logged</p>{recent.slice(0, 6).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
+                {favorites?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">Favourites</p>{favorites.slice(0, 5).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
+                {recent?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">Recently logged</p>{recent.slice(0, 6).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
                 <div className="rounded-xl border border-dashed border-border p-3">
-                  <label htmlFor="nf-barcode" className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><ScanBarcode className="h-3.5 w-3.5" />Packaged food? Scan it or type the barcode number</label>
+                  <label htmlFor="nf-barcode" className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400"><ScanBarcode className="h-3.5 w-3.5" />Packaged food? Scan it or type the barcode number</label>
                   <div className="mt-2 flex gap-2">
                     <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => setScanning(true)} data-testid="food-scan"><Camera className="mr-1.5 h-4 w-4" />Scan</Button>
                     <Input id="nf-barcode" inputMode="numeric" value={barcode} onChange={(e) => setBarcode(e.target.value.replace(/\D/g, ""))} placeholder="e.g. 3017620422003" className="h-10" data-testid="food-barcode" />
                     <Button type="button" variant="outline" disabled={barcode.length < 8 || saving} onClick={() => lookupBarcode()} data-testid="food-barcode-go">Look up</Button>
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">Uses Open Food Facts. Values come from the community and are marked as estimated.</p>
+                  <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Uses Open Food Facts. Values come from the community and are marked as estimated.</p>
                 </div>
-                {!favorites?.length && !recent?.length && <p className="text-sm text-slate-500">Start typing to search about 8,000 reference foods. Foods you log often will appear here.</p>}
+                {!favorites?.length && !recent?.length && <p className="text-sm text-slate-500 dark:text-slate-400">Start typing to search about 8,000 reference foods. Foods you log often will appear here.</p>}
               </div>
             ) : results.length === 0 ? (
               <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
@@ -256,7 +257,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
               </div>
             ) : (
               <div className="max-h-[46vh] space-y-0.5 overflow-y-auto" role="list" aria-label="Search results">
-                {results.map((f) => <div key={f.id} role="listitem"><FoodRow food={f} onPick={pick} />{f.flags?.length > 0 && <p className="-mt-1 mb-1 px-3 text-xs text-amber-600 dark:text-amber-400">{f.flags[0]}</p>}</div>)}
+                {results.map((f) => <div key={f.id} role="listitem"><FoodRow food={f} onPick={pick} />{f.flags?.length > 0 && <p className="-mt-1 mb-1 px-3 text-xs text-amber-700 dark:text-amber-400">{f.flags[0]}</p>}</div>)}
               </div>
             )}
           </div>
@@ -268,7 +269,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold leading-snug">{food.name}</p>
-                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <QualityBadge quality={food.quality} />
                   <span>{food.brand || food.data_version}</span>
                   <span title="How many of the 41 tracked nutrients this source reports">{food.completeness.reported}/{food.completeness.of} nutrients reported</span>
@@ -276,17 +277,17 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
               </div>
               {!editing && (
                 <Button type="button" variant="ghost" size="icon" aria-pressed={!!food.favorite} aria-label={food.favorite ? "Remove from favourites" : "Add to favourites"} onClick={toggleFavorite}>
-                  <Star className={food.favorite ? "h-4 w-4 fill-amber-400 text-amber-500" : "h-4 w-4 text-slate-400"} />
+                  <Star className={food.favorite ? "h-4 w-4 fill-amber-400 text-amber-500" : "h-4 w-4 text-slate-500 dark:text-slate-400"} />
                 </Button>
               )}
             </div>
             <div className="grid grid-cols-5 gap-3">
               <div className="col-span-2">
-                <label htmlFor="nf-qty" className="text-xs font-medium text-slate-500">Amount</label>
+                <label htmlFor="nf-qty" className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount</label>
                 <Input id="nf-qty" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value.replace(",", "."))} className="mt-1 h-10" data-testid="food-qty" />
               </div>
               <div className="col-span-3">
-                <label htmlFor="nf-unit" className="text-xs font-medium text-slate-500">Unit</label>
+                <label htmlFor="nf-unit" className="text-xs font-medium text-slate-500 dark:text-slate-400">Unit</label>
                 <Select value={unit} onValueChange={setUnit}>
                   <SelectTrigger id="nf-unit" className="mt-1 h-10" data-testid="food-unit"><SelectValue /></SelectTrigger>
                   <SelectContent>{unitOptions.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
@@ -297,30 +298,30 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50" aria-live="polite" data-testid="food-preview">
               {preview ? (
                 <>
-                  <p className="text-sm"><span className="stat-num text-lg font-semibold">{fmt(preview.kcal)}</span> kcal <span className="text-slate-500">· {fmt(grams)} g</span></p>
-                  <p className="mt-1 text-xs text-slate-500">Protein {fmt(preview.p)} g · Carbs {fmt(preview.c)} g · Fat {fmt(preview.f)} g{preview.fiber != null ? ` · Fibre ${fmt(preview.fiber)} g` : ""}</p>
+                  <p className="text-sm"><span className="stat-num text-lg font-semibold">{fmt(preview.kcal)}</span> kcal <span className="text-slate-500 dark:text-slate-400">· {fmt(grams)} g</span></p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Protein {fmt(preview.p)} g · Carbs {fmt(preview.c)} g · Fat {fmt(preview.f)} g{preview.fiber != null ? ` · Fibre ${fmt(preview.fiber)} g` : ""}</p>
                 </>
-              ) : <p className="text-sm text-slate-500">Enter a valid amount and unit to see the nutrition.</p>}
+              ) : <p className="text-sm text-slate-500 dark:text-slate-400">Enter a valid amount and unit to see the nutrition.</p>}
               {food.energy_check && Math.abs(food.energy_check.difference_pct) > 10 && (
-                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">The listed energy differs from what the macronutrients add up to by {Math.abs(Math.round(food.energy_check.difference_pct))}%. That happens with food data; the listed value is used.</p>
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">The listed energy differs from what the macronutrients add up to by {Math.abs(Math.round(food.energy_check.difference_pct))}%. That happens with food data; the listed value is used.</p>
               )}
             </div>
             <div className="flex justify-between gap-2">
               {!editing ? <Button type="button" variant="outline" onClick={() => setFood(null)}>Back to search</Button> : <span />}
-              <Button type="button" disabled={saving || grams == null} onClick={saveFood} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-save">
+              <Button type="button" disabled={saving || grams == null} onClick={saveFood} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="food-save">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? "Save changes" : planning ? "Add to plan" : "Add to diary"}
               </Button>
             </div>
           </div>
         )}
-        {editing && mode === "find" && !food && !error && !entry.recipe_id && entry.food_id && <p className="text-sm text-slate-500">Loading…</p>}
+        {editing && mode === "find" && !food && !error && !entry.recipe_id && entry.food_id && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 
         {/* ---- recipe */}
         {(mode === "recipe" || (editing && entry?.recipe_id)) && (
           <div className="space-y-4" data-testid="food-recipe">
             {!editing && (
               <div>
-                <label htmlFor="nf-recipe" className="text-xs font-medium text-slate-500">Recipe</label>
+                <label htmlFor="nf-recipe" className="text-xs font-medium text-slate-500 dark:text-slate-400">Recipe</label>
                 <Select value={recipeId} onValueChange={setRecipeId}>
                   <SelectTrigger id="nf-recipe" className="mt-1 h-10" data-testid="food-recipe-select"><SelectValue placeholder={recipes?.length ? "Choose a recipe" : "No recipes yet"} /></SelectTrigger>
                   <SelectContent>{(recipes || []).map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent>
@@ -328,12 +329,12 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
               </div>
             )}
             <div>
-              <label htmlFor="nf-serv" className="text-xs font-medium text-slate-500">Servings eaten</label>
+              <label htmlFor="nf-serv" className="text-xs font-medium text-slate-500 dark:text-slate-400">Servings eaten</label>
               <Input id="nf-serv" inputMode="decimal" value={editing ? qty : servings} onChange={(e) => (editing ? setQty : setServings)(e.target.value.replace(",", "."))} className="mt-1 h-10" />
             </div>
             {mealPicker}
             <div className="flex justify-end">
-              <Button type="button" disabled={saving || (!editing && !recipeId)} onClick={saveRecipe} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-recipe-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add recipe"}</Button>
+              <Button type="button" disabled={saving || (!editing && !recipeId)} onClick={saveRecipe} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="food-recipe-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add recipe"}</Button>
             </div>
           </div>
         )}
@@ -342,20 +343,20 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
         {mode === "quick" && (!editing || (!entry.food_id && !entry.recipe_id)) && (
           <form onSubmit={saveQuick} className="space-y-4" data-testid="food-quick">
             <div>
-              <label htmlFor="nf-desc" className="text-xs font-medium text-slate-500">What did you eat?</label>
+              <label htmlFor="nf-desc" className="text-xs font-medium text-slate-500 dark:text-slate-400">What did you eat?</label>
               <Input id="nf-desc" value={quick.description} onChange={(e) => setQuick({ ...quick, description: e.target.value })} required className="mt-1 h-10" data-testid="quick-description" />
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[["calories", "Calories (kcal)"], ["protein", "Protein (g)"], ["carbs", "Carbs (g)"], ["fat", "Fat (g)"]].map(([k, l]) => (
                 <div key={k}>
-                  <label htmlFor={`nf-${k}`} className="text-xs font-medium text-slate-500">{l}</label>
+                  <label htmlFor={`nf-${k}`} className="text-xs font-medium text-slate-500 dark:text-slate-400">{l}</label>
                   <Input id={`nf-${k}`} inputMode="decimal" value={quick[k]} onChange={(e) => setQuick({ ...quick, [k]: e.target.value.replace(",", ".") })} className="mt-1 h-10" data-testid={`quick-${k}`} />
                 </div>
               ))}
             </div>
-            <p className="text-xs text-slate-500">Only the numbers you type are recorded; vitamins and minerals stay "no data" for typed-in meals.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Only the numbers you type are recorded; vitamins and minerals stay "no data" for typed-in meals.</p>
             {mealPicker}
-            <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="quick-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add to diary"}</Button></div>
+            <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="quick-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add to diary"}</Button></div>
           </form>
         )}
       </DialogContent>

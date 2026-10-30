@@ -2,9 +2,8 @@ import { useEffect } from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { STATUS_LABEL, fmt, prettyDate, useNutrientMeta } from "./shared";
+import { SRC_LABEL, STATUS_LABEL, fmt, prettyDate, useNutrientMeta } from "./shared";
 
-const SRC = { efsa2017: "EFSA 2017", who2026: "WHO", eu1169: "EU labelling" };
 const refText = (p) => (p.min != null && p.max != null ? `${fmt(p.min)}–${fmt(p.max)}` : p.target != null ? `${fmt(p.target)}` : p.max != null ? `limit ${fmt(p.max)}` : "–");
 
 /**
@@ -29,7 +28,7 @@ export function WeeklySummary({ open, onOpenChange, t, today, energyTarget }) {
           <DialogTitle>Nutrition summary</DialogTitle>
           <DialogDescription>{prettyDate(t.start, today)} to {prettyDate(t.end, today)} · {t.days_logged} of {t.days} days logged</DialogDescription>
         </DialogHeader>
-        {t.days_logged === 0 ? <p className="text-sm text-slate-500">Nothing was logged in this period.</p> : (
+        {t.days_logged === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">Nothing was logged in this period.</p> : (
           <div className="space-y-4 text-sm">
             <p>
               On the days you logged, you averaged <strong className="stat-num">{fmt(avg.energy_kcal)} kcal</strong>
@@ -39,23 +38,23 @@ export function WeeklySummary({ open, onOpenChange, t, today, energyTarget }) {
             </p>
             <table className="w-full border-collapse text-left text-xs sm:text-sm">
               <thead>
-                <tr className="border-b border-border text-slate-500"><th className="py-1.5 pr-2 font-medium">Nutrient</th><th className="px-2 font-medium">Average per logged day</th><th className="px-2 font-medium">Reference</th><th className="px-2 font-medium">Compared</th><th className="pl-2 text-right font-medium">Days with data</th></tr>
+                <tr className="border-b border-border text-slate-500 dark:text-slate-400"><th className="py-1.5 pr-2 font-medium">Nutrient</th><th className="px-2 font-medium">Average per logged day</th><th className="px-2 font-medium">Reference</th><th className="px-2 font-medium">Compared</th><th className="pl-2 text-right font-medium">Days with data</th></tr>
               </thead>
               <tbody>
                 {rows.map((p) => (
                   <tr key={p.key} className="border-b border-border/60">
                     <td className="py-1.5 pr-2">{byKey[p.key]?.name || p.key}</td>
                     <td className="stat-num px-2">{fmt(p.intake)} {p.unit}</td>
-                    <td className="stat-num px-2">{refText(p)} {p.unit} <span className="text-slate-400">{SRC[p.source] || ""}</span></td>
+                    <td className="stat-num px-2">{refText(p)} {p.unit} <span className="text-slate-500 dark:text-slate-400">{SRC_LABEL[p.source] || ""}</span></td>
                     <td className="px-2">{p.percent != null ? `${Math.round(p.percent)}% · ` : ""}{STATUS_LABEL[p.status]}</td>
                     <td className="stat-num pl-2 text-right">{t.days_reporting[p.key]}/{t.days_logged}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Each nutrient is averaged over the logged days that reported it; a day without data is not counted as zero, and typed-in or estimated entries may lack
-              vitamins and minerals, so a low average can reflect missing data. Reference values describe healthy adults (EFSA 2017 and WHO) and are not medical advice;
+              vitamins and minerals, so a low average can reflect missing data. Reference values describe healthy people of your age (EFSA 2017 and WHO) and are not medical advice;
               a low recorded intake is not a diagnosis. Created {new Date().toLocaleDateString()} from LifeRecord.
             </p>
           </div>

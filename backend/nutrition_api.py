@@ -42,6 +42,7 @@ ACTIVITY = ("sedentary", "moderate", "active", "very_active")
 PREGNANCY = ("pregnant_t1", "pregnant_t2", "pregnant_t3", "lactating_0_6", "lactating_6plus")
 MAX_RANGE_DAYS = 366
 LOW_ENERGY_WARNING_KCAL = 1200  # an app safety rule, not an EFSA value
+CHILD_LOW_ENERGY_SHARE = 0.85  # under 85% of EFSA's average requirement for a child's age is flagged (an app safety rule, not an EFSA value)
 OFF_USER_AGENT = "LifeRecord/1.0 (personal nutrition diary)"
 TRACKED_KEYS = [n["key"] for n in NUTRIENTS if n["key"] != "biotin_ug"]
 
@@ -351,8 +352,26 @@ def register(router, srv):
             items[key] = {**eff, "suggested": {k: it.get(k) for k in ("min", "target", "max")}, "overridden": bool(ov)}
         return {"personalised": ref["personalised"], "supported": ref["supported"], "basis": ref["basis"], "notes": ref["notes"],
                 "sources": ref["sources"], "weight": weight, "items": items, "overrides": overrides,
-                "disclaimer": "Reference values describe what healthy adults generally need. They are not medical advice, and a low "
+                "disclaimer": "Reference values describe what healthy people of your age generally need. They are not medical advice, and a low "
                               "recorded intake is not a diagnosis of deficiency. Talk to a doctor or dietitian about medical conditions."}
+
+    async def low_energy_warning(db, uid, key: str, vals: dict) -> Optional[str]:
+        """A target is the user's choice and is kept, but a very low energy one is said out loud: a fixed floor for adults, and for
+        children and teenagers anything clearly under EFSA's average requirement for their age (their needs include growth)."""
+        if key != "energy_kcal" or vals.get("target") is None:
+            return None
+        ref, prof, _, today = await reference(db, uid)
+        age = today.year - prof["birth_year"] if prof["birth_year"] else None
+        if age is not None and age < 18:
+            suggested = (ref["items"].get("energy_kcal") or {}).get("target")
+            if suggested and vals["target"] < CHILD_LOW_ENERGY_SHARE * suggested:
+                return (f"This is well under EFSA's average energy requirement for a {age} year old ({suggested:.0f} kcal). It was saved because it is your choice, "
+                        "but children and teenagers are still growing, so please talk to a doctor or dietitian before setting a lower target.")
+            return None
+        if vals["target"] < LOW_ENERGY_WARNING_KCAL:
+            return (f"A daily energy target under {LOW_ENERGY_WARNING_KCAL} kcal is very low for most adults. It was saved because it is your "
+                    "choice, but please talk to a doctor or dietitian before eating this little for more than a short time.")
+        return None
 
     @router.put("/nutrition/targets/{key}")
     async def set_target(key: str, body: OverrideBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
@@ -373,11 +392,7 @@ def register(router, srv):
         ov[key] = vals
         row.target_overrides, row.updated_at = ov, now_iso()
         await db.commit()
-        warning = None
-        if key == "energy_kcal" and vals.get("target", 1e9) < LOW_ENERGY_WARNING_KCAL:
-            warning = (f"A daily energy target under {LOW_ENERGY_WARNING_KCAL} kcal is very low for most adults. It was saved because it is your "
-                       "choice, but please talk to a doctor or dietitian before eating this little for more than a short time.")
-        return {"key": key, "override": vals, "warning": warning}
+        return {"key": key, "override": vals, "warning": await low_energy_warning(db, user["_id"], key, vals)}
 
     @router.delete("/nutrition/targets/{key}")
     async def clear_target(key: str, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
@@ -875,8 +890,9 @@ def register(router, srv):
         for e in entries:
             quality_counts[e["quality"]] += 1
         energy_target = (overrides.get("energy_kcal") or {}).get("target") or ref["items"].get("energy_kcal", {}).get("target")
+        prog = calc.progress(totals, s["reported"], s["entries"], ref["items"], overrides) if ref.get("items") else {}
         return {"totals": totals, "reported": s["reported"], "entries": s["entries"], "meals": list(groups.values()),
-                "progress": calc.progress(totals, s["reported"], s["entries"], ref["items"], overrides) if ref.get("items") else {},
+                "progress": prog, "upper_exceeded": calc.upper_exceeded(prog),
                 "macro_shares": calc.macro_shares(totals), "energy_check": calc.energy_from_macros(totals), "quality": dict(quality_counts),
                 "energy_target": energy_target,
                 "hydration": {"drinks_ml": drinks, "food_water_ml": round(food_water), "total_ml": round(drinks + food_water), "target_ml": water_target,
@@ -1078,5 +1094,5 @@ def register(router, srv):
         update_entry=update_entry, delete_entry=delete_entry, duplicate_entry=duplicate_entry, move_entry=move_entry, copy_entries=copy_entries,
         add_water=add_water, update_water=update_water, delete_water=delete_water, get_day=get_day, trends=trends,
         contributors=contributors, insights=insights, rich_in=rich_in, get_targets=get_targets, set_target=set_target,
-        clear_target=clear_target, get_profile=get_profile, put_profile=put_profile, get_reminders=get_reminders,
+        clear_target=clear_target, low_energy_warning=low_energy_warning, get_profile=get_profile, put_profile=put_profile, get_reminders=get_reminders,
         put_reminders=put_reminders, reminders_due=reminders_due, recipe_preview=recipe_preview)

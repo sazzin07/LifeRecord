@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,7 @@ export function Coverage({ reporting, entries }) {
   if (!entries) return null;
   const full = reporting === entries;
   return (
-    <span className={cn("inline-flex items-center gap-1 text-[11px]", full ? "text-slate-400" : "text-amber-600 dark:text-amber-400")}
+    <span className={cn("inline-flex items-center gap-1 text-[11px]", full ? "text-slate-500 dark:text-slate-400" : "text-amber-700 dark:text-amber-400")}
       title={full ? "Every entry reported this value" : `${entries - reporting} of ${entries} entries have no value for this`}>
       <span className="flex gap-0.5" aria-hidden="true">
         {Array.from({ length: Math.min(entries, 8) }).map((_, i) => (
@@ -79,12 +80,12 @@ export function RangeGauge({ label, color, intake, min, max, target, unit, missi
   const hasRange = min != null && max != null;
   const state = missing ? "No data yet" : hasRange ? (intake < min ? "Below range" : intake > max ? "Above range" : "In range")
     : target ? (intake >= target ? "Target reached" : `${Math.round((intake / target) * 100)}% of target`) : "";
-  const tone = missing ? "text-slate-400" : state === "In range" || state === "Target reached" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500";
+  const tone = missing ? "text-slate-500 dark:text-slate-400" : state === "In range" || state === "Target reached" ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400";
   return (
     <div data-testid={testid}>
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm font-medium">{label}</p>
-        <p className="stat-num text-sm font-semibold">{missing ? "–" : fmt(intake)}<span className="text-xs font-normal text-slate-500"> {unit}</span></p>
+        <p className="stat-num text-sm font-semibold">{missing ? "–" : fmt(intake)}<span className="text-xs font-normal text-slate-500 dark:text-slate-400"> {unit}</span></p>
       </div>
       <div className="relative mt-2 h-2.5 rounded-full bg-slate-100 dark:bg-slate-800" role="img"
         aria-label={`${label}: ${missing ? "no data" : `${fmt(intake)} ${unit}`}${hasRange ? `, range ${fmt(min)} to ${fmt(max)}` : ""}. ${state}`}>
@@ -100,7 +101,7 @@ export function RangeGauge({ label, color, intake, min, max, target, unit, missi
       </div>
       <div className="mt-1.5 flex items-center justify-between text-xs">
         <span className={tone}>{state}</span>
-        <span className="text-slate-500">{hasRange ? `${fmt(min)}–${fmt(max)} ${unit}` : target ? `target ${fmt(target)} ${unit}` : ""}</span>
+        <span className="text-slate-500 dark:text-slate-400">{hasRange ? `${fmt(min)}–${fmt(max)} ${unit}` : target ? `target ${fmt(target)} ${unit}` : ""}</span>
       </div>
     </div>
   );
@@ -119,13 +120,13 @@ export function EnergyBar({ meals, total, target }) {
         ))}
       </div>
       {target > 0 && total > target && (
-        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{fmt(total - target)} kcal above the reference energy for today.</p>
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{fmt(total - target)} kcal above the reference energy for today.</p>
       )}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
         {meals.map((m) => (
           <span key={m.meal_type} className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
             <span className="h-2 w-2 rounded-full" style={{ background: MEAL_BY_KEY[m.meal_type]?.color }} aria-hidden="true" />
-            {MEAL_BY_KEY[m.meal_type]?.label} <span className="stat-num text-slate-500">{fmt(m.totals.energy_kcal || 0)}</span>
+            {MEAL_BY_KEY[m.meal_type]?.label} <span className="stat-num text-slate-500 dark:text-slate-400">{fmt(m.totals.energy_kcal || 0)}</span>
           </span>
         ))}
       </div>
@@ -134,3 +135,33 @@ export function EnergyBar({ meals, total, target }) {
 }
 
 export const STATUS_LABEL = { met: "Reached", below: "Below", within: "In range", above: "Above range", over: "Over limit", under: "Under limit", no_data: "No data" };
+
+export const SRC_LABEL = { efsa2017: "EFSA 2017", efsa_ul: "EFSA upper levels", who2026: "WHO", eu1169: "EU labelling" };
+const UPPER_SCOPE = { total: "all sources", added: "added or supplemental only", preformed: "preformed only", forms: "one form only" };
+
+/** One short line about EFSA's upper (or safe) level for a nutrient, or null when EFSA gives none for this person. */
+export function upperLevelText(upper, unit) {
+  if (!upper || upper.kind === "none" || upper.value == null) return null;
+  const what = upper.kind === "safe" ? "Safe level" : "Upper level";
+  return `${what} ${fmt(upper.value)} ${unit} a day (${UPPER_SCOPE[upper.scope] || "see source"})${upper.kind === "safe" ? ", not a limit" : ""}`;
+}
+
+/**
+ * Shown when a day's logged total is above a comparable EFSA upper (or safe) level. It is a prompt to look, never a diagnosis:
+ * the levels concern usual intake over weeks and cover supplements, which are not logged.
+ */
+export function UpperLevelBanner({ items, byKey }) {
+  if (!items?.length) return null;
+  return (
+    <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200" data-testid="upper-banner" role="note">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div>
+        <p className="font-medium">Above an EFSA {items.some((i) => i.kind === "UL") ? "upper level" : "safe level"} today</p>
+        <ul className="mt-1 list-disc pl-4">
+          {items.map((i) => <li key={i.key}>{byKey[i.key]?.name || i.key}: {fmt(i.intake)} {i.unit} against {i.kind === "UL" ? "an upper level" : "a safe level (not a limit)"} of {fmt(i.limit)} {i.unit}</li>)}
+        </ul>
+        <p className="mt-1 text-xs">These levels describe usual intake over weeks and include supplements, which are not logged here, so one day above one is a reason to look, not a finding. Ask a doctor or dietitian if you are unsure.</p>
+      </div>
+    </div>
+  );
+}

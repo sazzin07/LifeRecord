@@ -12,13 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RemindersSettings } from "./Reminders";
-import { fmt, useNutrientMeta, refreshNutrition } from "./shared";
+import { SRC_LABEL, fmt, upperLevelText, useNutrientMeta, refreshNutrition } from "./shared";
 
 const ACTIVITY = { sedentary: "Mostly sitting (PAL 1.4)", moderate: "Moderately active (PAL 1.6)", active: "Active (PAL 1.8)", very_active: "Very active (PAL 2.0)" };
 const PREGNANCY = { pregnant_t1: "Pregnant, first trimester", pregnant_t2: "Pregnant, second trimester", pregnant_t3: "Pregnant, third trimester", lactating_0_6: "Breastfeeding, first 6 months", lactating_6plus: "Breastfeeding, after 6 months" };
 const NONE = "__none";
 const KIND = { PRI: "Population reference intake", AI: "Adequate intake", RI: "Reference range", AR: "Average requirement", limit: "Guideline limit", ref: "Labelling reference" };
-const SRC = { efsa2017: "EFSA 2017", who2026: "WHO", eu1169: "EU labelling" };
 
 function ProfileForm({ profile }) {
   const [f, setF] = useState(null);
@@ -53,7 +52,7 @@ function ProfileForm({ profile }) {
   return (
     <Card className="p-5" data-testid="profile-form">
       <h3 className="font-semibold">About you</h3>
-      <p className="mt-1 text-sm text-slate-500">Optional. These details are used only to pick reference values and stay in your account. Leave a field empty if you prefer not to say; general adult values are used where something is missing.</p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Optional. These details are used only to pick reference values and stay in your account. Leave a field empty if you prefer not to say; general adult values are used where something is missing.</p>
       <form onSubmit={save} className="mt-4 space-y-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div><Label htmlFor="p-year">Birth year</Label><Input id="p-year" inputMode="numeric" value={f.birth_year} onChange={(e) => set("birth_year")(e.target.value.replace(/\D/g, "").slice(0, 4))} className={field} data-testid="profile-year" /></div>
@@ -80,7 +79,7 @@ function ProfileForm({ profile }) {
               <label key={t} className="flex items-center gap-2 text-sm"><Checkbox checked={f.diet_tags.includes(t)} onCheckedChange={(c) => set("diet_tags")(c ? [...f.diet_tags, t] : f.diet_tags.filter((x) => x !== t))} />{t}</label>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-slate-500">Used to filter food suggestions and flag foods by name. Always check labels: this app cannot see ingredient lists for generic foods.</p>
+          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Used to filter food suggestions and flag foods by name. Always check labels: this app cannot see ingredient lists for generic foods.</p>
         </fieldset>
         <div><Label htmlFor="p-all">Allergies or foods to avoid (comma separated)</Label><Input id="p-all" value={f.allergies} onChange={(e) => set("allergies")(e.target.value)} placeholder="peanut, shellfish" className={field} data-testid="profile-allergies" /></div>
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto]">
@@ -88,8 +87,8 @@ function ProfileForm({ profile }) {
           <Button type="button" variant="outline" onClick={() => set("timezone")(deviceTz)}>Use this device's</Button>
         </div>
         <div className="flex flex-wrap justify-between gap-2">
-          <Button type="button" variant="ghost" className="text-red-600" onClick={() => setConfirmClear(true)} disabled={!profile.exists}>Remove my details</Button>
-          <Button type="submit" disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="profile-save">Save details</Button>
+          <Button type="button" variant="ghost" className="text-red-600 dark:text-red-400" onClick={() => setConfirmClear(true)} disabled={!profile.exists}>Remove my details</Button>
+          <Button type="submit" disabled={saving} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="profile-save">Save details</Button>
         </div>
       </form>
       <ConfirmDialog open={confirmClear} onOpenChange={setConfirmClear} title="Remove your nutrition details?" description="Your profile and any targets you set yourself are deleted. Your diary is not touched." onConfirm={clear} confirmText="Remove" variant="danger" />
@@ -116,15 +115,15 @@ function TargetDialog({ item, byKey, onClose }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md" data-testid="target-dialog">
         <DialogHeader><DialogTitle>Your {info.name?.toLowerCase()} target</DialogTitle>
-          <DialogDescription>Suggested: {item.suggested.min != null && item.suggested.max != null ? `${fmt(item.suggested.min)}–${fmt(item.suggested.max)}` : fmt(item.suggested.target ?? item.suggested.max)} {item.unit} ({KIND[item.kind]}, {SRC[item.source]}). Your own values always replace the suggestion and are never changed silently.</DialogDescription></DialogHeader>
+          <DialogDescription>Suggested: {item.suggested.min != null && item.suggested.max != null ? `${fmt(item.suggested.min)}–${fmt(item.suggested.max)}` : fmt(item.suggested.target ?? item.suggested.max)} {item.unit} ({KIND[item.kind]}, {SRC_LABEL[item.source]}). Your own values always replace the suggestion and are never changed silently.</DialogDescription></DialogHeader>
         <form onSubmit={save} className="space-y-3">
           <div className="grid grid-cols-3 gap-3">
             {[["min", "Minimum"], ["target", "Target"], ["max", "Maximum"]].map(([k, l]) => (
               <div key={k}><Label htmlFor={`t-${k}`}>{l}</Label><Input id={`t-${k}`} inputMode="decimal" value={v[k] ?? ""} onChange={(e) => setV({ ...v, [k]: e.target.value.replace(",", ".") })} className="mt-1 h-10" data-testid={`target-${k}`} /></div>
             ))}
           </div>
-          <p className="text-xs text-slate-500">Unit: {item.unit}. Fill in only what you want to set.</p>
-          <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="target-save">Save target</Button></div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Unit: {item.unit}. Fill in only what you want to set.</p>
+          <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="target-save">Save target</Button></div>
         </form>
       </DialogContent>
     </Dialog>
@@ -148,7 +147,7 @@ export function GoalsTab() {
       <Card className="overflow-hidden">
         <div className="border-b border-border px-4 py-3 sm:px-5">
           <h3 className="font-semibold">Targets</h3>
-          <p className="mt-1 text-sm text-slate-500">{!t ? "Loading…" : t.supported === false ? "" : t.personalised ? "Suggested for your details, from EFSA's dietary reference values." : "General adult values. Add your birth year and sex above for personalised ones."}</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{!t ? "Loading…" : t.supported === false ? "" : t.personalised ? "Suggested for your details, from EFSA's dietary reference values." : "General adult values. Add your birth year and sex above for personalised ones."}</p>
         </div>
         {t && t.supported === false ? (
           <div className="flex gap-3 p-5 text-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" /><p>{t.notes[0]}</p></div>
@@ -160,17 +159,18 @@ export function GoalsTab() {
                 <div key={it.key} className="flex items-center gap-3 px-4 py-3 text-sm sm:px-5" data-testid={`goal-${it.key}`}>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{byKey[it.key]?.name || it.key}{it.overridden && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Your target</span>}</p>
-                    <p className="text-xs text-slate-500">{KIND[it.kind]} · {SRC[it.source]}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{KIND[it.kind]} · {SRC_LABEL[it.source]}</p>
+                    {upperLevelText(it.upper, it.unit) && <p className="text-xs text-slate-500 dark:text-slate-400" data-testid={`goal-upper-${it.key}`}>{upperLevelText(it.upper, it.unit)}</p>}
                   </div>
                   <p className="stat-num shrink-0 text-right">
-                    {it.min != null && it.max != null ? `${fmt(it.min)}–${fmt(it.max)}` : it.target != null ? fmt(it.target) : it.max != null ? `≤ ${fmt(it.max)}` : "–"} <span className="text-xs text-slate-500">{it.unit}</span>
+                    {it.min != null && it.max != null ? `${fmt(it.min)}–${fmt(it.max)}` : it.target != null ? fmt(it.target) : it.max != null ? `≤ ${fmt(it.max)}` : "–"} <span className="text-xs text-slate-500 dark:text-slate-400">{it.unit}</span>
                   </p>
                   <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${byKey[it.key]?.name} target`} onClick={() => setEditing(it)} data-testid={`goal-edit-${it.key}`}><Pencil className="h-4 w-4" /></Button>
                   {it.overridden ? <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Reset ${byKey[it.key]?.name} to suggested`} onClick={() => reset(it.key)}><RotateCcw className="h-4 w-4" /></Button> : <span className="h-8 w-8" aria-hidden="true" />}
                 </div>
               ))}
             </div>
-            <p className="border-t border-border px-5 py-4 text-xs text-slate-500">{t.disclaimer}</p>
+            <p className="border-t border-border px-5 py-4 text-xs text-slate-500 dark:text-slate-400">{t.disclaimer}</p>
           </>
         )}
       </Card>
@@ -181,11 +181,11 @@ export function GoalsTab() {
             {t.sources.map((s) => (
               <li key={s.title}>
                 <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-400">{s.title}<ExternalLink className="h-3 w-3" aria-hidden="true" /></a>
-                <p className="text-xs text-slate-500">{s.publisher}, {s.published}{s.id ? `, ${s.id}` : ""}. Applies to: {s.population}.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{s.publisher}, {s.published}{s.id ? `, ${s.id}` : ""}. Applies to: {s.population}.</p>
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-xs text-slate-500">Food data: USDA FoodData Central (Foundation Foods 2025-12-18 and SR Legacy 2018, public domain) and Open Food Facts (community data, ODbL), with every food's source shown. Reference values for people under 18, upper limits and medical conditions are not included.</p>
+          <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">Food data: USDA FoodData Central (Foundation Foods 2025-12-18 and SR Legacy 2018, public domain) and Open Food Facts (community data, ODbL), with every food's source shown. Not included: babies under 1 year, pregnancy or breastfeeding under 18, supplements and medical conditions. Upper levels are EFSA's, shown beside a target where EFSA gives one.</p>
         </Card>
       )}
       <TargetDialog item={editing} byKey={byKey} onClose={() => setEditing(null)} />

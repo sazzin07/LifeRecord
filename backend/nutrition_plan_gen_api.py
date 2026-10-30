@@ -17,7 +17,7 @@ import nutrition_planner as pl
 import nutrition_suggest as sg
 from models import Food, MealPlanEntry
 from nutrition_api import DiaryBody, ValidDate
-from nutrition_data import BY_KEY
+from nutrition_data import BY_KEY, meta
 from nutrition_plan_api import MAX_ENTRIES_PER_DAY, PLAN_KEYS
 
 Slot = Literal["breakfast", "lunch", "dinner", "snack"]
@@ -100,10 +100,10 @@ def register(router, srv, nx, plan, suggest):
         placed = sum(len(d["items"]) for d in result["days"])
         return {"start": dates[0], "end": dates[-1], "slots": body.slots, "days": result["days"], "notes": result["notes"], "digest": pl.digest(result),
                 "placed": placed, "excluded_for_diet": excluded, "energy_target": energy,
-                "focus": [{"nutrient": k, "name": BY_KEY[k]["name"], "unit": BY_KEY[k]["unit"], "target": base["remaining"][k],
+                "focus": [{"nutrient": k, "name": meta(k)["name"], "unit": meta(k)["unit"], "target": base["remaining"][k],
                            "average_percent": round(sum(v) / len(v)) if v else None} for k, v in focus_pct.items()],
                 "basis": "Built from your own recipes and foods only, with the energy and nutrient references you see on the Goals tab. Items already planned in these "
-                         "slots are left alone. Only nutrients a food reports count. Reference values describe healthy adults and are not medical advice."}
+                         "slots are left alone. Only nutrients a food reports count. Reference values describe healthy people of your age and are not medical advice."}
 
     async def bulk_create(db, uid: str, items: List[BulkItem]) -> List[dict]:
         """All or nothing: either every item is planned, or none is."""

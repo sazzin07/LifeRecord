@@ -715,3 +715,40 @@ def test_suggest_recipe_alternatives_compares_a_swap_and_reads_only(other):
     assert "error" in tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "water", "nutrient": "sodium_mg"})              # not linked to a food
     assert "error" in tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "unicorn", "nutrient": "sodium_mg"})
     assert "error" in tool(other, "suggest_recipe_alternatives", {"recipe": r["id"], "ingredient": "crackers", "nutrient": "sodium_mg"})         # someone else's recipe
+
+
+def test_a_teenagers_targets_come_with_efsas_upper_levels_and_say_when_a_level_cannot_be_checked():
+    me = _make_user()
+    year = date.today().year
+    two_step(me, "update_nutrition_profile", {"birth_year": year - 14, "sex": "F", "weight_kg": 50, "activity": "moderate"})
+    t = tool(me, "get_nutrition_targets")
+    assert t["supported"] and t["personalised"]
+    rows = {x["nutrient"]: x for x in t["targets"]}
+    assert rows["protein_g"]["target"] == round(0.87 * 50)                      # EFSA PRI for a 14 year old girl
+    zinc = rows["zinc_mg"]["upper_level"]
+    assert zinc["value"] == 18 and zinc["kind"] == "upper level" and zinc["comparable_with_logged_food"] is True and "above_it" not in zinc   # no intake to compare here
+    folate = rows["folate_ug"]["upper_level"]
+    assert folate["value"] == 600 and folate["comparable_with_logged_food"] is False and "naturally in food" in folate["why_not_compared"]
+    assert rows["iron_mg"]["upper_level"]["kind"] == "safe level (not a limit)"
+    assert "upper_level" not in rows["vit_c_mg"]                                 # EFSA sets none
+    # a day above the zinc level is reported as above it; the folate level is never judged
+    tool(me, "save_custom_food", {"name": "Zinc crisps", "calories": 400, "other_nutrients": [{"nutrient": "zinc_mg", "per_100g": 30},
+                                                                                                {"nutrient": "folate_ug", "per_100g": 900}]})
+    food = tool(me, "search_foods", {"query": "Zinc crisps"})["foods"][0]
+    tool(me, "log_food", {"food_id": food["id"], "quantity": 100, "unit": "g"})
+    day = tool(me, "get_nutrition_day")
+    assert [x["key"] for x in day["above_upper_levels"]] == ["zinc_mg"]
+    nutrients = {x["nutrient"]: x for x in day["nutrients"]}
+    assert nutrients["zinc_mg"]["upper_level"]["above_it"] is True and "above_it" not in nutrients["folate_ug"]["upper_level"]
+    assert "one day above it is a prompt to look" in day["note"]
+
+
+def test_a_childs_very_low_energy_target_is_saved_but_warned_about_against_efsas_requirement_for_their_age():
+    me = _make_user()
+    two_step(me, "update_nutrition_profile", {"birth_year": date.today().year - 10, "sex": "M", "weight_kg": 32, "activity": "moderate"})
+    suggested = next(x for x in tool(me, "get_nutrition_targets")["targets"] if x["nutrient"] == "energy_kcal")["target"]
+    assert suggested == round(8.1 * 238.83 / 10) * 10                                # EFSA Table 1: boys aged 10 at PAL 1.6 = 8.1 MJ
+    _, low = two_step(me, "set_nutrition_target", {"nutrient": "energy_kcal", "target": 1500})
+    assert "warning" in low and "growing" in low["warning"] and "doctor" in low["warning"]
+    _, fine = two_step(me, "set_nutrition_target", {"nutrient": "energy_kcal", "target": suggested})
+    assert not fine.get("warning")

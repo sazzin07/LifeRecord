@@ -1,26 +1,72 @@
 import { useEffect, useState } from "react";
-import { ChefHat, Flame, Loader2, Pencil, Plus, Search, Star, Trash2, Utensils } from "lucide-react";
+import { ArrowLeftRight, CalendarPlus, ChefHat, Flame, Loader2, Pencil, Plus, Search, ShoppingCart, Star, Trash2, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
-import { useFetch, refreshAll } from "@/lib/useFetch";
+import { useFetch } from "@/lib/useFetch";
 import { Card, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { QualityBadge, fmt, useNutrientMeta } from "./shared";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RecipeDialog } from "./RecipeDialog";
+import { QualityBadge, fmt, logFoodNow, shortName, useNutrientMeta, refreshNutrition } from "./shared";
 
 const FORM_FIELDS = ["energy_kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugars_g", "sat_fat_g", "sodium_mg", "calcium_mg", "iron_mg", "vit_c_mg", "vit_d_ug", "vit_b12_ug", "potassium_mg"];
 
-function FoodDetail({ id, onClose, onLog }) {
+const SWAP_NUTRIENTS = [["sodium_mg", "less sodium"], ["sat_fat_g", "less saturated fat"], ["sugars_g", "less sugar"], ["fiber_g", "more fibre"], ["protein_g", "more protein"], ["calcium_mg", "more calcium"], ["iron_mg", "more iron"], ["potassium_mg", "more potassium"]];
+
+/** Similar foods with less or more of one nutrient. Foods that do not report it are skipped, never assumed to be low. */
+function Swaps({ food, onOpen }) {
+  const options = SWAP_NUTRIENTS.filter(([k]) => food.nutrients.find((n) => n.key === k)?.per100 != null);
+  const [key, setKey] = useState(options[0]?.[0] || "");
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setRes(null); }, [key, food.id]);
+  if (!options.length) return <p className="text-xs text-slate-500">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
+  const go = async () => {
+    setBusy(true);
+    try { const { data } = await api.get(`/nutrition/foods/${food.id}/swaps`, { params: { nutrient: key, limit: 5 } }); setRes(data); }
+    catch (err) { toast.error(errorMessage(err, "Could not look for swaps")); } finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-xl border border-border p-3" data-testid="swaps">
+      <p className="flex items-center gap-1.5 text-sm font-semibold"><ArrowLeftRight className="h-4 w-4 text-emerald-600" aria-hidden="true" />Looking for something similar with…</p>
+      <div className="mt-2 flex gap-2">
+        <Select value={key} onValueChange={setKey}><SelectTrigger className="h-9" aria-label="What to improve" data-testid="swap-nutrient"><SelectValue /></SelectTrigger>
+          <SelectContent>{options.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
+        <Button type="button" variant="outline" size="sm" className="h-9" onClick={go} disabled={busy} data-testid="swap-go">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}</Button>
+      </div>
+      {res && (res.swaps.length === 0 ? <p className="mt-2 text-xs text-slate-500">{res.note.startsWith(food.name) ? res.note : "No similar food of the same kind has a better value here."}</p> : (
+        <>
+          <ul className="mt-2 divide-y divide-border" aria-live="polite">
+            {res.swaps.map((x) => (
+              <li key={x.id}>
+                <button type="button" onClick={() => onOpen(x.id)} className="flex w-full items-center justify-between gap-2 py-1.5 text-left text-sm hover:underline focus-visible:underline focus-visible:outline-none">
+                  <span className="truncate">{x.name}</span>
+                  <span className="stat-num shrink-0 text-xs text-slate-500">{fmt(x.per100)} vs {fmt(x.original_per100)} {res.unit} ({x.change_pct > 0 ? "+" : ""}{Math.round(x.change_pct)}%)</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px] text-slate-400">Per 100 g, same category, similar energy. Not medical advice.</p>
+        </>
+      ))}
+    </div>
+  );
+}
+
+function FoodDetail({ id, onClose, onLog, onPlan }) {
   const [food, setFood] = useState(null);
+  const [shown, setShown] = useState(id);
+  useEffect(() => { setShown(id); }, [id]);
   useEffect(() => {
     setFood(null);
-    if (id) api.get(`/nutrition/foods/${id}`).then(({ data }) => setFood(data)).catch((err) => { toast.error(errorMessage(err, "Could not open this food")); onClose(); });
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (shown) api.get(`/nutrition/foods/${shown}`).then(({ data }) => setFood(data)).catch((err) => { toast.error(errorMessage(err, "Could not open this food")); onClose(); });
+  }, [shown]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = async () => {
-    try { if (food.favorite) await api.delete(`/nutrition/foods/${food.id}/favorite`); else await api.post(`/nutrition/foods/${food.id}/favorite`); setFood({ ...food, favorite: !food.favorite }); refreshAll(); }
+    try { if (food.favorite) await api.delete(`/nutrition/foods/${food.id}/favorite`); else await api.post(`/nutrition/foods/${food.id}/favorite`); setFood({ ...food, favorite: !food.favorite }); refreshNutrition(); }
     catch (err) { toast.error(errorMessage(err, "Could not change favourites")); }
   };
   const groups = food ? ["macro", "fat", "vitamin", "mineral", "other"].map((g) => [g, food.nutrients.filter((n) => (n.group === "energy" ? "macro" : n.group) === g)]) : [];
@@ -49,9 +95,13 @@ function FoodDetail({ id, onClose, onLog }) {
               </div>
             ))}
             {food.portions?.length > 0 && <p className="text-xs text-slate-500">Portions: {food.portions.map((p) => `${p.label} = ${fmt(p.grams)} g`).join(" · ")}</p>}
-            <div className="flex justify-between gap-2">
+            <Swaps food={food} onOpen={setShown} />
+            <div className="flex flex-wrap justify-between gap-2">
               <Button type="button" variant="outline" onClick={toggle} aria-pressed={!!food.favorite}><Star className={food.favorite ? "mr-1.5 h-4 w-4 fill-amber-400 text-amber-500" : "mr-1.5 h-4 w-4"} />{food.favorite ? "Favourite" : "Add to favourites"}</Button>
-              <Button type="button" onClick={() => { onClose(); onLog(food.id); }} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-detail-log">Log this food</Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => { onClose(); onPlan(food.id); }} data-testid="food-detail-plan"><CalendarPlus className="mr-1.5 h-4 w-4" />Plan</Button>
+                <Button type="button" onClick={() => { onClose(); onLog(food.id); }} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-detail-log">Log this food</Button>
+              </div>
             </div>
           </div>
         )}
@@ -70,7 +120,7 @@ function CreateFoodDialog({ open, onOpenChange, byKey }) {
     e.preventDefault(); setSaving(true); setError("");
     const nutrients = Object.fromEntries(Object.entries(n).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, parseFloat(v)]));
     const portions = f.portionLabel && f.portionGrams ? [{ label: f.portionLabel, grams: parseFloat(f.portionGrams) }] : [];
-    try { await api.post("/nutrition/foods", { name: f.name, brand: f.brand || null, nutrients, portions }); toast.success(`Saved ${f.name}`); refreshAll(); onOpenChange(false); }
+    try { await api.post("/nutrition/foods", { name: f.name, brand: f.brand || null, nutrients, portions }); toast.success(`Saved ${f.name}`); refreshNutrition(); onOpenChange(false); }
     catch (err) { const d = err.response?.data?.detail; setError(typeof d === "string" ? d : errorMessage(err, "Could not save this food")); }
     finally { setSaving(false); }
   };
@@ -106,63 +156,7 @@ function CreateFoodDialog({ open, onOpenChange, byKey }) {
   );
 }
 
-function RecipeDialog({ open, onOpenChange, editing }) {
-  const blank = { name: "", servings: 1, ingredients: [], calories: "", protein: "", carbs: "", fat: "", notes: "" };
-  const [f, setF] = useState(blank);
-  useEffect(() => {
-    if (!open) return;
-    setF(editing ? { name: editing.name || "", servings: editing.servings || 1, ingredients: (editing.ingredients || []).map((i) => ({ ...i })), calories: editing.calories ?? "", protein: editing.protein ?? "", carbs: editing.carbs ?? "", fat: editing.fat ?? "", notes: editing.notes || "" } : blank);
-  }, [open, editing]); // eslint-disable-line react-hooks/exhaustive-deps
-  const upd = (i, k, v) => setF((x) => ({ ...x, ingredients: x.ingredients.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
-  const num = (v) => (v === "" || v == null ? null : parseFloat(v));
-  const submit = async (e) => {
-    e.preventDefault();
-    const payload = { name: f.name, servings: parseInt(f.servings, 10) || 1, notes: f.notes, calories: num(f.calories), protein: num(f.protein), carbs: num(f.carbs), fat: num(f.fat),
-      ingredients: f.ingredients.filter((i) => i.name.trim()).map((i) => ({ name: i.name, quantity: parseFloat(i.quantity) || 1, unit: i.unit || "unit" })) };
-    try {
-      if (editing) await api.put(`/recipes/${editing.id}`, payload); else await api.post("/recipes", payload);
-      toast.success(editing ? "Recipe updated" : "Recipe created"); refreshAll(); onOpenChange(false);
-    } catch (err) { toast.error(errorMessage(err, "Could not save recipe")); }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto" data-testid="recipe-dialog">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit recipe" : "New recipe"}</DialogTitle>
-          <DialogDescription>Ingredients link to your Groceries stock. Nutrition is for the whole recipe and entered by you; one serving is the total divided by the servings.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="mt-2 space-y-3">
-          <Input placeholder="Recipe name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required />
-          <Input type="number" min={1} placeholder="Servings" value={f.servings} onChange={(e) => setF({ ...f, servings: e.target.value })} required />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between"><Label>Ingredients</Label>
-              <Button type="button" variant="outline" size="sm" onClick={() => setF((x) => ({ ...x, ingredients: [...x.ingredients, { name: "", quantity: 1, unit: "unit" }] }))}><Plus className="mr-1 h-4 w-4" />Add</Button></div>
-            {f.ingredients.map((it, i) => (
-              <div key={i} className="grid grid-cols-12 items-center gap-2">
-                <Input className="col-span-5 h-9" placeholder="Name" value={it.name} onChange={(e) => upd(i, "name", e.target.value)} />
-                <Input className="col-span-3 h-9" type="number" min={0} step="0.1" placeholder="Qty" value={it.quantity} onChange={(e) => upd(i, "quantity", e.target.value)} />
-                <Input className="col-span-3 h-9" placeholder="Unit" value={it.unit} onChange={(e) => upd(i, "unit", e.target.value)} />
-                <Button type="button" variant="ghost" size="icon" className="col-span-1 h-9 w-9 text-red-500" aria-label="Remove ingredient" onClick={() => setF((x) => ({ ...x, ingredients: x.ingredients.filter((_, idx) => idx !== i) }))}><Trash2 className="h-4 w-4" /></Button>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[["calories", "Calories, whole recipe"], ["protein", "Protein (g), whole recipe"], ["carbs", "Carbs (g), whole recipe"], ["fat", "Fat (g), whole recipe"]].map(([k, p]) => (
-              <Input key={k} type="number" min={0} step="0.1" placeholder={p} aria-label={p} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-            ))}
-          </div>
-          <Input placeholder="Notes" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 text-white hover:bg-emerald-700">{editing ? "Save" : "Create recipe"}</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function FoodsTab({ onLog }) {
+export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
   const { byKey } = useNutrientMeta();
   const [q, setQ] = useState("");
   const [results, setResults] = useState(null);
@@ -184,18 +178,22 @@ export function FoodsTab({ onLog }) {
   }, [q]);
 
   const cook = async (r) => {
-    try { const { data } = await api.post(`/recipes/${r.id}/cook`); toast.success(`Cooked ${r.name}`, { description: data.inventory_changes?.join(", ") }); refreshAll(); }
+    try { const { data } = await api.post(`/recipes/${r.id}/cook`); toast.success(`Cooked ${r.name}`, { description: data.inventory_changes?.join(", ") }); refreshNutrition(["/groceries", "/shopping"]); }
     catch (err) { toast.error(errorMessage(err, "Could not cook recipe")); }
   };
+  const shopRecipe = async (r) => {
+    try { const { data } = await api.post(`/recipes/${r.id}/add-missing`, {}); toast.success(data.count ? `Added ${data.count} missing ${data.count === 1 ? "ingredient" : "ingredients"} to your shopping list` : "You already have everything for this recipe"); refreshNutrition(["/groceries", "/shopping"]); }
+    catch (err) { toast.error(errorMessage(err, "Could not add to the shopping list")); }
+  };
   const logRecipe = async (r) => {
-    try { await api.post("/nutrition/diary", { recipe_id: r.id, quantity: 1 }); toast.success(`Added 1 serving of ${r.name} to today`); refreshAll(); }
+    try { await api.post("/nutrition/diary", { recipe_id: r.id, quantity: 1 }); toast.success(`Added 1 serving of ${r.name} to today`); refreshNutrition(); }
     catch (err) { toast.error(errorMessage(err, "Could not log this recipe")); }
   };
   const removeRecipe = async () => {
-    try { await api.delete(`/recipes/${deleteRecipe.id}`); toast.success("Recipe deleted"); setDeleteRecipe(null); refreshAll(); } catch (err) { toast.error(errorMessage(err, "Could not delete recipe")); }
+    try { await api.delete(`/recipes/${deleteRecipe.id}`); toast.success("Recipe deleted"); setDeleteRecipe(null); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not delete recipe")); }
   };
   const removeFood = async () => {
-    try { await api.delete(`/nutrition/foods/${deleteFood.id}`); toast.success("Food deleted. Past diary entries keep their numbers."); setDeleteFood(null); refreshAll(); } catch (err) { toast.error(errorMessage(err, "Could not delete this food")); }
+    try { await api.delete(`/nutrition/foods/${deleteFood.id}`); toast.success("Food deleted. Past diary entries keep their numbers."); setDeleteFood(null); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not delete this food")); }
   };
   const list = (foods, empty) => (foods?.length ? (
     <ul className="divide-y divide-border">
@@ -205,7 +203,8 @@ export function FoodsTab({ onLog }) {
             <p className="truncate text-sm font-medium">{f.name}{f.brand ? <span className="font-normal text-slate-500"> · {f.brand}</span> : null}</p>
             <p className="text-xs text-slate-500"><span className="stat-num">{fmt(f.per100.energy_kcal)} kcal</span> per 100 g · P {fmt(f.per100.protein_g)} · C {fmt(f.per100.carbs_g)} · F {fmt(f.per100.fat_g)}</p>
           </button>
-          <QualityBadge quality={f.quality} />
+          <QualityBadge quality={f.quality} className="hidden sm:inline-flex" />
+          <Button variant="ghost" size="sm" className="h-8 shrink-0 text-emerald-700 dark:text-emerald-400" aria-label={`Add ${shortName(f.name)} to today`} onClick={() => logFoodNow(f, { date })} data-testid={`food-quick-${f.id}`}><Plus className="mr-0.5 h-4 w-4" />Add</Button>
           {f.mine && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" aria-label={`Delete ${f.name}`} onClick={() => setDeleteFood(f)}><Trash2 className="h-4 w-4" /></Button>}
         </li>
       ))}
@@ -223,7 +222,7 @@ export function FoodsTab({ onLog }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search foods" aria-label="Search the food database" className="h-11 pl-9" data-testid="foods-search" />
         </div>
-        {results && <div className="mt-3 rounded-xl border border-border">{list(results, `No food matches "${q}".`)}</div>}
+        {results && <div className="mt-3 rounded-xl border border-border" data-testid="foods-results">{list(results, `No food matches "${q}".`)}</div>}
       </Card>
       {!results && (
         <div className="grid gap-6 lg:grid-cols-2">
@@ -242,19 +241,27 @@ export function FoodsTab({ onLog }) {
         ) : (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {recipes.map((r) => (
-              <div key={r.id} data-testid={`recipe-${r.id}`} className="rounded-xl border border-border p-4">
+              <div key={r.id} data-testid={`recipe-${r.id}`} className="min-w-0 rounded-xl border border-border p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{r.name}</p>
-                    <p className="text-xs text-slate-500">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p></div>
+                    <p className="text-xs text-slate-500">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
+                    {r.nutrition_meta?.linked > 0 && (
+                      <p className={r.nutrition_meta.complete ? "mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-400" : "mt-0.5 text-[11px] text-amber-700 dark:text-amber-400"} data-testid={`recipe-calc-${r.id}`}
+                        title={r.nutrition_meta.missing?.length ? `Not counted: ${r.nutrition_meta.missing.join(", ")}` : undefined}>
+                        {r.nutrition_meta.complete ? "Calculated from its ingredients" : `Based on ${r.nutrition_meta.linked} of ${r.nutrition_meta.total} ingredients`}
+                      </p>
+                    )}</div>
                   <div className="flex shrink-0">
                     <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${r.name}`} data-testid={`recipe-edit-${r.id}`} onClick={() => { setEditingRecipe(r); setRecipeOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" aria-label={`Delete ${r.name}`} data-testid={`recipe-delete-${r.id}`} onClick={() => setDeleteRecipe(r)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
                 <p className="mt-2 line-clamp-2 text-xs text-slate-500">{(r.ingredients || []).map((i) => `${i.quantity}${i.unit} ${i.name}`).join(", ")}</p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2 [&>button]:min-w-0 [&>button]:px-2">
                   <Button size="sm" variant="outline" className="h-8" onClick={() => logRecipe(r)} disabled={r.calories == null} data-testid={`log-recipe-${r.id}`}>Log a serving</Button>
                   <Button size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => cook(r)} data-testid={`cook-${r.id}`}><Flame className="mr-1 h-3.5 w-3.5" />Cook</Button>
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => onPlanRecipe(r.id)} disabled={r.calories == null} data-testid={`plan-recipe-${r.id}`}><CalendarPlus className="mr-1 h-3.5 w-3.5" />Plan it</Button>
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => shopRecipe(r)} data-testid={`shop-recipe-${r.id}`}><ShoppingCart className="mr-1 h-3.5 w-3.5" />Shopping list</Button>
                 </div>
               </div>
             ))}
@@ -262,7 +269,7 @@ export function FoodsTab({ onLog }) {
         )}
       </Card>
 
-      <FoodDetail id={detailId} onClose={() => setDetailId(null)} onLog={onLog} />
+      <FoodDetail id={detailId} onClose={() => setDetailId(null)} onLog={onLog} onPlan={onPlan} />
       <CreateFoodDialog open={createOpen} onOpenChange={setCreateOpen} byKey={byKey} />
       <RecipeDialog open={recipeOpen} onOpenChange={setRecipeOpen} editing={editingRecipe} />
       <ConfirmDialog open={!!deleteRecipe} onOpenChange={(v) => !v && setDeleteRecipe(null)} title="Delete recipe?" description={deleteRecipe ? `This will permanently delete "${deleteRecipe.name}".` : ""} onConfirm={removeRecipe} confirmText="Delete" variant="danger" />

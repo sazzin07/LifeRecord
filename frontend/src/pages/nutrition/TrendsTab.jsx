@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useFetch } from "@/lib/useFetch";
 import { cn } from "@/lib/utils";
+import { WeeklySummary } from "./WeeklySummary";
 import { STATUS_LABEL, fmt, prettyDate, useNutrientMeta } from "./shared";
 
 const RANGES = [[7, "7 days"], [30, "30 days"], [90, "90 days"]];
@@ -22,6 +23,7 @@ function Stat({ label, value, unit, note }) {
 
 export function TrendsTab({ date, today, energyTarget }) {
   const [days, setDays] = useState(7);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const { data: t } = useFetch(`/nutrition/trends?days=${days}&end=${date}`);
   const { byKey } = useNutrientMeta();
   const series = useMemo(() => (t?.series || []).map((d) => ({ ...d, label: d.date.slice(5), kcal: d.logged ? Math.round(d.energy_kcal || 0) : null })), [t]);
@@ -46,8 +48,12 @@ export function TrendsTab({ date, today, energyTarget }) {
               className={cn("rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500", days === n ? "bg-white shadow-sm dark:bg-slate-700" : "text-slate-500")}>{label}</button>
           ))}
         </div>
-        <Button variant="outline" size="sm" disabled={empty} onClick={download} data-testid="trends-download"><Download className="mr-1.5 h-4 w-4" />Download CSV</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={empty} onClick={() => setSummaryOpen(true)} data-testid="trends-summary"><FileText className="mr-1.5 h-4 w-4" />Summary</Button>
+          <Button variant="outline" size="sm" disabled={empty} onClick={download} data-testid="trends-download"><Download className="mr-1.5 h-4 w-4" />Download CSV</Button>
+        </div>
       </div>
+      <WeeklySummary open={summaryOpen} onOpenChange={setSummaryOpen} t={t} today={today} energyTarget={energyTarget} />
       <p className="text-sm text-slate-500">{prettyDate(t.start, today)} to {prettyDate(t.end, today)}. {t.note}</p>
 
       {empty ? (

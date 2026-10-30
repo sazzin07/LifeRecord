@@ -145,3 +145,17 @@ html { overflow-anchor: auto; }
   .lm-streaming .lm-ai-prose > :last-child::after { animation: none; }
 }
 .no-anim .lm-typing i, .no-anim .lm-streaming .lm-ai-prose > :last-child::after { animation: none; }
+
+/* ---- Printing the nutrition summary: the app is hidden and the open dialog becomes the whole page ---- */
+@media print {
+  body.printing-summary #root,
+  body.printing-summary [data-radix-popper-content-wrapper],
+  body.printing-summary [class~="fixed"][class~="inset-0"],
+  body.printing-summary [data-sonner-toaster] { display: none !important; }
+  body.printing-summary [data-print-area] {
+    position: static !important; transform: none !important; max-width: none !important; max-height: none !important; width: 100% !important;
+    overflow: visible !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; color: #000 !important; background: #fff !important;
+  }
+  body.printing-summary [data-print-area] button[aria-label="Close"],
+  body.printing-summary [data-print-area] > button { display: none !important; }
+}

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import nutrition_calc as calc
 from models import Food, FoodFavorite, HydrationEntry, Meal, NutritionProfile, Recipe, WeightEntry
-from nutrition_data import BY_KEY, DERIVED, GROUPS, KIND_LABEL, NUTRIENTS, SOURCES, derive, reference_for
+from nutrition_data import BY_KEY, DERIVED, GROUPS, KIND_LABEL, NUTRIENTS, SOURCES, reference_for
 
 ISO_DATE = r"^\d{4}-\d{2}-\d{2}$"
 

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { inScope } from "@/lib/refreshScope";
 import { cacheAge, readCache, writeCache } from "@/lib/swrCache";
 
 /**
@@ -10,6 +11,7 @@ import { cacheAge, readCache, writeCache } from "@/lib/swrCache";
  * the newest request for a path may update the cache, so an older response can never overwrite newer data.
  */
 let currentUser = null;
+
 export function setCacheUser(id) { currentUser = id || null; }
 
 const kind = (path) => `q:${path}`;
@@ -67,11 +69,17 @@ export function subscribeQuery(path) {
 // Refresh their cached queries in the background (once per burst of changes) so they are current when you arrive.
 let refreshTimer = null;
 if (typeof window !== "undefined") {
-  window.addEventListener("lm:refresh", () => {
+  const pending = new Set(); // scopes asked for during the burst; null = everything
+  let everything = false;
+  window.addEventListener("lm:refresh", (e) => {
+    const scope = e.detail?.scope;
+    if (scope) scope.forEach((s) => pending.add(s)); else everything = true;
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => {
+      const wanted = everything ? null : [...pending];
+      pending.clear(); everything = false;
       if (!currentUser) return;
-      known.forEach((path) => { if (!(subscribers.get(path) > 0)) fetchQuery(path, { force: true }).catch(() => {}); });
+      known.forEach((path) => { if (inScope(path, wanted) && !(subscribers.get(path) > 0)) fetchQuery(path, { force: true }).catch(() => {}); });
     }, 1200);
   });
 }

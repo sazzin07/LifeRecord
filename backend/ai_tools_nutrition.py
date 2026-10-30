@@ -24,7 +24,7 @@ from sqlalchemy import select
 import nutrition_api as napi
 import nutrition_calc as calc
 import nutrition_plan_api as plan_api
-from models import Food, FoodFavorite, HydrationEntry, Meal, MealPlanEntry, NutritionProfile, Recipe
+from models import Food, FoodFavorite, HydrationEntry, Meal, Recipe
 from nutrition_data import BY_KEY, DERIVED
 
 
@@ -589,7 +589,8 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
         if args.get("plan_id"):
             p = await pl.own_plan(db, uid, str(args["plan_id"]))
             body = plan_api.PlanUpdate(date=_day(args.get("date"), today), meal_type=args.get("meal_type"), eaten_at=_time(args.get("time")), quantity=_num(args.get("quantity"), "quantity"),
-                                       unit=args.get("unit"), description=args.get("description"), note=args.get("note"))
+                                       unit=args.get("unit"), description=args.get("description"), note=args.get("note"), calories=_num(args.get("calories"), "calories"),
+                                       protein=_num(args.get("protein"), "protein"), carbs=_num(args.get("carbs"), "carbs"), fat=_num(args.get("fat"), "fat"))
             srv.remember_before(created, "meal_plan", p)
             return {"updated": await pl.update_plan(pid=p.id, body=body, user=user, db=db)}
         body = plan_api.PlanBody(date=_day(args.get("date"), today), meal_type=args.get("meal_type") or "other", eaten_at=_time(args.get("time")), food_id=args.get("food_id"),

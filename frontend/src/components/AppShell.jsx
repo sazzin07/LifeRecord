@@ -138,7 +138,7 @@ export function AppShell({ children }) {
           <kbd className="ml-auto hidden sm:inline text-[10px] font-mono border border-border rounded px-1.5 py-0.5">⌘K</kbd>
         </button>
         <div className="lg:ml-auto flex items-center gap-2">
-          <button data-testid="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="h-9 w-9 grid place-items-center rounded-xl border border-border bg-card hover:bg-slate-100 dark:hover:bg-slate-800">
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>

@@ -42,3 +42,16 @@ describe("tool activity", () => {
     ])).toEqual(["Added a task ×2"]);
   });
 });
+
+describe("nutrition tools", () => {
+  test("lookups are not reported as changes, but logging and planning are", () => {
+    const actions = [{ tool: "search_foods" }, { tool: "lookup_barcode" }, { tool: "suggest_food_swaps" }, { tool: "get_nutrition_day" },
+      { tool: "log_food" }, { tool: "log_food" }, { tool: "plan_meal" }, { tool: "set_nutrition_target", error: "refused" }];
+    expect(changeSummary(actions)).toEqual(["Logged food ×2", "Planned a meal"]);
+  });
+  test("progress text says what is being done", () => {
+    expect(toolProgress("search_foods")).toBe("Searching foods…");
+    expect(toolProgress("get_nutrition_day")).toBe("Checking your day's food…");
+    expect(toolProgress("log_water")).toBe("Logged a drink…");
+  });
+});

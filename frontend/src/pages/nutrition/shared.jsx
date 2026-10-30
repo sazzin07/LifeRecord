@@ -1,41 +1,34 @@
 import { useMemo } from "react";
+import { toast } from "sonner";
+import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { useFetch } from "@/lib/useFetch";
+import { refreshAll, useFetch } from "@/lib/useFetch";
 
-export const MEALS = [
-  { key: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { key: "lunch", label: "Lunch", color: "#10B981" },
-  { key: "dinner", label: "Dinner", color: "#6366F1" },
-  { key: "snack", label: "Snacks", color: "#EC4899" },
-  { key: "other", label: "Other", color: "#94A3B8" },
-];
-export const MEAL_BY_KEY = Object.fromEntries(MEALS.map((m) => [m.key, m]));
-export const MACRO_COLORS = { protein_g: "#6366F1", carbs_available_g: "#F59E0B", fat_g: "#EF4444" };
+// the pure helpers live in format.js (unit-tested); they are re-exported so the tabs keep importing everything from "./shared"
+import { MEAL_BY_KEY, defaultAmount, defaultMeal, fmt, shortName } from "./format";
+export * from "./format";
 
-/** YYYY-MM-DD in the browser's own time zone (toISOString() would give the UTC day). */
-export const localISO = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-export const shiftDate = (iso, days) => {
-  const [y, m, d] = iso.split("-").map(Number);
-  return localISO(new Date(y, m - 1, d + days));
-};
-export const prettyDate = (iso, today) => {
-  if (!today) return iso;
-  if (iso === today) return "Today";
-  if (iso === shiftDate(today, -1)) return "Yesterday";
-  if (iso === shiftDate(today, 1)) return "Tomorrow";
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-};
-export const defaultMeal = () => {
-  const h = new Date().getHours();
-  return h < 11 ? "breakfast" : h < 15 ? "lunch" : h < 18 ? "snack" : "dinner";
-};
+/** What a Nutrition change can affect: its own data, recipes, and the calendar (which shows meal counts per day). */
+const NUTRITION_SCOPE = ["/nutrition", "/recipes", "/calendar"];
+/** Refresh only the data a Nutrition action touches; pass more prefixes when it also changes the kitchen (e.g. ["/groceries", "/shopping"]). */
+export const refreshNutrition = (extra = []) => refreshAll([...NUTRITION_SCOPE, ...extra]);
 
-export function fmt(n, digits) {
-  if (n == null || Number.isNaN(n)) return "–";
-  const d = digits ?? (Math.abs(n) >= 100 ? 0 : Math.abs(n) >= 10 ? 1 : 2);
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+/** Log a food with one tap. The confirmation offers Undo, and the entry can be edited from the diary afterwards. */
+export async function logFoodNow(food, { date, mealType } = {}) {
+  const amount = defaultAmount(food);
+  const meal = mealType || defaultMeal();
+  try {
+    const { data } = await api.post("/nutrition/diary", { date, food_id: food.id, meal_type: meal, ...amount, client_ref: crypto.randomUUID ? crypto.randomUUID() : undefined });
+    toast.success(`Added ${shortName(food.name)} · ${fmt(amount.quantity)} ${amount.unit}`, {
+      description: `${MEAL_BY_KEY[meal].label}. Change the amount from the entry's menu.`,
+      action: { label: "Undo", onClick: () => api.delete(`/nutrition/diary/${data.id}`).then(() => refreshNutrition()).catch((err) => toast.error(errorMessage(err, "Could not undo"))) },
+    });
+    refreshNutrition();
+    return data;
+  } catch (err) {
+    toast.error(errorMessage(err, "Could not add this food"));
+    return null;
+  }
 }
 
 export function useNutrientMeta() {

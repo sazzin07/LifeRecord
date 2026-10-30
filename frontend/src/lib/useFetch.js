@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchQuery, peekQuery, subscribeQuery, writeQuery } from "@/lib/query";
+import { inScope } from "@/lib/refreshScope";
 
-export function refreshAll() {
-  window.dispatchEvent(new CustomEvent("lm:refresh"));
+/**
+ * Ask the data hooks to reload. With no argument everything reloads. Pass path prefixes (["/nutrition"]) when a change can only
+ * affect those paths: pages that show other data are then left alone, which keeps common actions fast.
+ */
+export function refreshAll(scope) {
+  window.dispatchEvent(new CustomEvent("lm:refresh", { detail: scope ? { scope: [].concat(scope) } : undefined }));
 }
 
 /**
@@ -35,7 +40,7 @@ export function useFetch(path, { auto = true } = {}) {
   useEffect(() => {
     if (peekQuery(path) == null) setPending(true);
     if (auto) reload({ force: false });
-    const h = () => reload({ force: true });
+    const h = (e) => { if (inScope(path, e.detail?.scope)) reload({ force: true }); };
     window.addEventListener("lm:refresh", h);
     const unsubscribe = path ? subscribeQuery(path) : () => {};
     return () => { window.removeEventListener("lm:refresh", h); unsubscribe(); };

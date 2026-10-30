@@ -37,6 +37,10 @@ class PlanUpdate(BaseModel):
     unit: Optional[str] = Field(default=None, max_length=50)
     description: Optional[str] = Field(default=None, max_length=500)
     note: Optional[str] = Field(default=None, max_length=500)
+    calories: Optional[float] = Field(default=None, ge=0, le=50000)   # typed-in items only
+    protein: Optional[float] = Field(default=None, ge=0, le=5000)
+    carbs: Optional[float] = Field(default=None, ge=0, le=5000)
+    fat: Optional[float] = Field(default=None, ge=0, le=5000)
 
 
 class PlanLogBody(BaseModel):
@@ -145,6 +149,14 @@ def register(router, srv, nx):
                 p.quantity, p.unit, p.grams, p.quality, p.nutrients = body.quantity or p.quantity, e["unit"], e["grams"], e["quality"], e["nutrients"]
             else:
                 raise HTTPException(422, "Quantity and unit only apply to foods and recipes.")
+        if any(getattr(body, k) is not None for k in ("calories", "protein", "carbs", "fat")):
+            if p.food_id or p.recipe_id:
+                raise HTTPException(422, "Typed numbers only apply to typed-in items; change the quantity of a food or recipe instead.")
+            cur = dict(p.nutrients or {})
+            for key, v in (("energy_kcal", body.calories), ("protein_g", body.protein), ("carbs_g", body.carbs), ("fat_g", body.fat)):
+                if v is not None:
+                    cur[key] = float(v)
+            p.nutrients = cur
         p.updated_at = now_iso()
         await db.commit()
         await db.refresh(p)

@@ -56,6 +56,11 @@ const WRITE_LABELS = {
   create_task: "Added a task", update_task: "Updated a task", delete_task: "Deleted a task",
   create_category: "Added a category", update_category: "Updated a category", delete_category: "Deleted a category",
   log_meal: "Logged a meal", update_meal: "Edited a meal", delete_meal: "Deleted a meal",
+  log_food: "Logged food", update_diary_entry: "Edited a diary entry", copy_diary_entries: "Copied diary entries", delete_diary_entry: "Deleted a diary entry",
+  log_water: "Logged a drink", save_custom_food: "Saved a food", delete_custom_food: "Deleted a food", set_favorite_food: "Changed favourites",
+  update_nutrition_profile: "Updated nutrition details", set_nutrition_target: "Changed a nutrition target", set_nutrition_reminders: "Set reminders",
+  plan_meal: "Planned a meal", remove_plan_entry: "Removed a planned meal", log_planned_meal: "Logged a planned meal", copy_meal_plan: "Copied the meal plan",
+  plan_shopping_list: "Built a list from the meal plan", update_recipe: "Updated a recipe",
   log_workout: "Logged a workout", delete_workout: "Deleted a workout",
   record_weight: "Recorded weight", delete_weight_entry: "Deleted a weight entry",
   add_grocery: "Added to inventory", update_grocery: "Updated inventory", consume_grocery: "Used up stock", discard_grocery: "Discarded food",
@@ -75,16 +80,24 @@ const READ_AREAS = {
   shopping_lists: "shopping lists", people_balances: "balances", price_history: "prices", grocery_summary: "groceries",
   grocery_suggestions: "suggestions", products: "the catalog", storage_locations: "storage", appliances: "appliances",
   recurring_lists: "recurring lists",
+  nutrition_day: "your day's food", nutrition_report: "your nutrition trends", nutrition_insights: "your nutrients", nutrition_targets: "your targets",
+  meal_plan: "your meal plan", food: "the food",
 };
+
+// Lookups never change anything. The server uses the same prefixes to decide whether a turn changed data.
+const READ_PREFIXES = ["get_", "search_", "lookup_", "suggest_"];
 
 const humanise = (name) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
-export const isReadTool = (name) => name.startsWith("get_") || name === "suggest_recipes_from_inventory";
+export const isReadTool = (name) => READ_PREFIXES.some((p) => name.startsWith(p));
 
 /** Live label while a tool runs, e.g. "Checking tasks…". */
 export function toolProgress(name) {
   if (name === "suggest_recipes_from_inventory") return "Matching recipes to your kitchen…";
-  if (isReadTool(name)) return `Checking ${READ_AREAS[name.slice(4)] || name.slice(4).replace(/_/g, " ")}…`;
+  if (name === "search_foods") return "Searching foods…";
+  if (name === "lookup_barcode") return "Looking up the barcode…";
+  if (name === "suggest_food_swaps") return "Looking for similar foods…";
+  if (name.startsWith("get_")) return `Checking ${READ_AREAS[name.slice(4)] || name.slice(4).replace(/_/g, " ")}…`;
   return `${WRITE_LABELS[name] || humanise(name)}…`;
 }
 

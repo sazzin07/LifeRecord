@@ -94,6 +94,12 @@ let webpackConfig = {
         ],
       };
 
+      // @zxing/browser (the barcode scanner) ships source maps that point at TypeScript files it does not include, so
+      // source-map-loader warned once per file. Only that package's maps are skipped; every other warning still shows.
+      const sourceMapRule = (webpackConfig.module.rules || []).find((r) => r.loader && String(r.loader).includes("source-map-loader"));
+      const isZxing = (file) => file.split("\\").join("/").includes("/node_modules/@zxing/"); // Windows and POSIX separators alike
+      if (sourceMapRule) sourceMapRule.exclude = [].concat(sourceMapRule.exclude || [], isZxing);
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

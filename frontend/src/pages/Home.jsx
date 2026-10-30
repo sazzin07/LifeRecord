@@ -10,6 +10,7 @@ import { useFetch } from "@/lib/useFetch";
 import { eur } from "@/lib/api";
 import { Card, StatCard, SkeletonCard, Label } from "@/components/common";
 import { openAI } from "@/components/AppShell";
+import { ReminderBanner } from "@/pages/nutrition/Reminders";
 import { cn } from "@/lib/utils";
 
 function Ring({ value, max, color = "#10B981", label, unit }) {
@@ -39,19 +40,20 @@ export default function Home() {
   const { data: tasks } = useFetch("/tasks");
   const { data: people } = useFetch("/people");
   const { data: weight } = useFetch("/weight");
-  const { data: meals } = useFetch(`/meals?date=${today}`);
+  const { data: day } = useFetch("/nutrition/day"); // the same day, targets and time zone the Nutrition page uses
   const { data: groceries } = useFetch("/groceries");
   const { data: transactions } = useFetch(`/transactions?start=${today}&end=${today}`);
 
   const nutri = useMemo(() => {
-    const m = meals || [];
+    const t = day?.totals || {};
+    const pr = day?.progress || {};
+    // rings fill towards the reference: a target where there is one, otherwise the top of the recommended range
     return {
-      cal: m.reduce((s, x) => s + (x.calories || 0), 0),
-      p: m.reduce((s, x) => s + (x.protein || 0), 0),
-      c: m.reduce((s, x) => s + (x.carbs || 0), 0),
-      f: m.reduce((s, x) => s + (x.fat || 0), 0),
+      cal: t.energy_kcal || 0, p: t.protein_g || 0, c: t.carbs_available_g || 0, f: t.fat_g || 0,
+      calMax: day?.energy_target || 0, pMax: pr.protein_g?.target ?? pr.protein_g?.max ?? 0,
+      cMax: pr.carbs_available_g?.target ?? pr.carbs_available_g?.max ?? 0, fMax: pr.fat_g?.target ?? pr.fat_g?.max ?? 0,
     };
-  }, [meals]);
+  }, [day]);
 
   const lowStock = (groceries || []).filter((g) => g.low_threshold && g.quantity <= g.low_threshold);
   const openTasks = (tasks || []).filter((t) => !t.done);
@@ -85,7 +87,7 @@ export default function Home() {
     return out.slice(0, 4);
   }, [sum, people, nutri, weight]);
 
-  if (loading || !tasks || !people || !weight || !meals || !groceries || !transactions) return (
+  if (loading || !tasks || !people || !weight || !day || !groceries || !transactions) return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}</div>
   );
 
@@ -140,6 +142,8 @@ export default function Home() {
         </button>
       </div>
 
+      <ReminderBanner onLogMeal={() => nav("/nutrition")} />
+
       {/* Stat grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard testid="stat-spent" label="Spent (all)" value={eur(sum?.gross)} hint={`Your share ${eur(sum?.personal)}`} icon={TrendingDown} />
@@ -156,11 +160,12 @@ export default function Home() {
             <button onClick={() => nav("/nutrition")} className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
           <div className="grid grid-cols-4 gap-1">
-            <Ring value={nutri.cal} max={2700} color="#10B981" label="kcal" />
-            <Ring value={nutri.p} max={160} color="#6366F1" label="Protein" />
-            <Ring value={nutri.c} max={300} color="#F59E0B" label="Carbs" />
-            <Ring value={nutri.f} max={90} color="#EF4444" label="Fat" />
+            <Ring value={nutri.cal} max={nutri.calMax} color="#10B981" label="kcal" />
+            <Ring value={nutri.p} max={nutri.pMax} color="#6366F1" label="Protein" />
+            <Ring value={nutri.c} max={nutri.cMax} color="#F59E0B" label="Carbs" />
+            <Ring value={nutri.f} max={nutri.fMax} color="#EF4444" label="Fat" />
           </div>
+          <p className="mt-3 text-xs text-slate-500">{day.energy_target ? `Reference ${Math.round(day.energy_target)} kcal` : "No energy reference yet"} · grams for the macros</p>
         </Card>
 
         <Card className="p-5 lm-in">

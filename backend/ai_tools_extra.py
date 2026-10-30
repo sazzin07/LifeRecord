@@ -6,7 +6,7 @@ live in one place) and is scoped to the signed-in user. Deletes go through the s
 gate as the other destructive tools. `srv` is the imported `server` module, passed in to avoid a circular
 import.
 """
-from datetime import date as _date, datetime, timezone
+from datetime import date as _date
 from typing import Optional
 
 from sqlalchemy import select

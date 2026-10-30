@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ExternalLink, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
-import { useFetch, refreshAll } from "@/lib/useFetch";
+import { useFetch } from "@/lib/useFetch";
 import { Card } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { fmt, useNutrientMeta } from "./shared";
+import { RemindersSettings } from "./Reminders";
+import { fmt, useNutrientMeta, refreshNutrition } from "./shared";
 
 const ACTIVITY = { sedentary: "Mostly sitting (PAL 1.4)", moderate: "Moderately active (PAL 1.6)", active: "Active (PAL 1.8)", very_active: "Very active (PAL 2.0)" };
 const PREGNANCY = { pregnant_t1: "Pregnant, first trimester", pregnant_t2: "Pregnant, second trimester", pregnant_t3: "Pregnant, third trimester", lactating_0_6: "Breastfeeding, first 6 months", lactating_6plus: "Breastfeeding, after 6 months" };
@@ -39,14 +40,14 @@ function ProfileForm({ profile }) {
         birth_year: f.birth_year === "" ? null : parseInt(f.birth_year, 10), sex: nullable(f.sex), height_cm: f.height_cm === "" ? null : parseFloat(f.height_cm),
         weight_kg: f.weight_kg === "" ? null : parseFloat(f.weight_kg), activity: nullable(f.activity), pregnancy: f.sex === "F" ? nullable(f.pregnancy) : null,
         diet_tags: f.diet_tags, allergies: f.allergies.split(",").map((s) => s.trim()).filter(Boolean), timezone: f.timezone || null });
-      toast.success("Details saved. Suggested targets updated."); refreshAll();
+      toast.success("Details saved. Suggested targets updated."); refreshNutrition();
     } catch (err) {
       const d = err.response?.data?.detail;
       toast.error(typeof d === "string" ? d : Array.isArray(d) ? "Please check the highlighted values" : "Could not save your details");
     } finally { setSaving(false); }
   };
   const clear = async () => {
-    try { await api.delete("/nutrition/profile"); toast.success("Your nutrition details were removed"); setConfirmClear(false); refreshAll(); } catch (err) { toast.error(errorMessage(err, "Could not remove your details")); }
+    try { await api.delete("/nutrition/profile"); toast.success("Your nutrition details were removed"); setConfirmClear(false); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not remove your details")); }
   };
   const field = "mt-1 h-10";
   return (
@@ -108,7 +109,7 @@ function TargetDialog({ item, byKey, onClose }) {
     try {
       const { data } = await api.put(`/nutrition/targets/${item.key}`, { min: num(v.min), target: num(v.target), max: num(v.max) });
       if (data.warning) toast.warning(data.warning, { duration: 12000 }); else toast.success(`${info.name} target saved`);
-      refreshAll(); onClose();
+      refreshNutrition(); onClose();
     } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Check the values: minimum ≤ target ≤ maximum"); } finally { setSaving(false); }
   };
   return (
@@ -136,13 +137,14 @@ export function GoalsTab() {
   const { byKey } = useNutrientMeta();
   const [editing, setEditing] = useState(null);
   const reset = async (k) => {
-    try { await api.delete(`/nutrition/targets/${k}`); toast.success("Back to the suggested value"); refreshAll(); } catch (err) { toast.error(errorMessage(err, "Could not reset")); }
+    try { await api.delete(`/nutrition/targets/${k}`); toast.success("Back to the suggested value"); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not reset")); }
   };
   const order = ["energy_kcal", "protein_g", "carbs_available_g", "fat_g", "fiber_g", "sat_fat_g", "sugars_g", "sodium_mg", "epa_dha_mg", "calcium_mg", "iron_mg", "magnesium_mg", "potassium_mg", "zinc_mg", "vit_a_ug", "vit_c_mg", "vit_d_ug", "vit_b12_ug", "folate_ug"];
   const items = t ? [...order.filter((k) => t.items[k]), ...Object.keys(t.items).filter((k) => !order.includes(k) && k !== "water_ml")].map((k) => ({ key: k, ...t.items[k] })) : [];
   return (
     <div className="space-y-6" data-testid="goals-tab">
       <ProfileForm profile={profile} />
+      <RemindersSettings timezone={profile?.timezone} />
       <Card className="overflow-hidden">
         <div className="border-b border-border px-4 py-3 sm:px-5">
           <h3 className="font-semibold">Targets</h3>

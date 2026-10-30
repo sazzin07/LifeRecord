@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Search, Star, ScanBarcode, ChefHat, Pencil, AlertTriangle } from "lucide-react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Loader2, Search, Star, ScanBarcode, ChefHat, Pencil, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
-import { useFetch, refreshAll } from "@/lib/useFetch";
+import { useFetch } from "@/lib/useFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MEALS, QualityBadge, defaultMeal, fmt } from "./shared";
+import { MEALS, QualityBadge, defaultMeal, fmt, refreshNutrition } from "./shared";
+
+// the camera reader (ZXing) is only downloaded when someone taps Scan
+const BarcodeScanner = lazy(() => import("./BarcodeScanner"));
 
 const MASS = { g: 1, kg: 1000, oz: 28.3495 };
 
@@ -32,6 +35,7 @@ function FoodRow({ food, onPick }) {
           <span className="stat-num">{fmt(food.per100.energy_kcal)} kcal</span>
           <span>per 100 g</span>
           <span>P {fmt(food.per100.protein_g)} · C {fmt(food.per100.carbs_g)} · F {fmt(food.per100.fat_g)}</span>
+          {food.last_quantity ? <span className="text-emerald-700 dark:text-emerald-400">last: {fmt(food.last_quantity)} {food.last_unit}</span> : null}
         </p>
       </div>
       <QualityBadge quality={food.quality} />
@@ -39,8 +43,14 @@ function FoodRow({ food, onPick }) {
   );
 }
 
-export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, initialFoodId, initialQuery }) {
+/**
+ * Add, edit or plan food. With `planning` the same screens write to the meal plan (`/nutrition/plan`) instead of the diary, so
+ * choosing a food, a recipe or typing a meal in works the same way in both places.
+ */
+export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, initialFoodId, initialRecipeId, initialQuery, planning = false }) {
   const editing = !!entry;
+  const base = planning ? "/nutrition/plan" : "/nutrition/diary";
+  const [scanning, setScanning] = useState(false);
   const [mode, setMode] = useState("find");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState(null);
@@ -68,8 +78,9 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
       const { data } = await api.get(`/nutrition/foods/${f.id}`);
       setFood(data);
       const first = data.portions?.[0];
-      setUnit(first ? first.label : "g");
-      setQty(first ? "1" : "100");
+      const again = f.last_quantity && f.last_unit && data.units?.includes(f.last_unit); // a recent food: start from the amount used last time
+      setUnit(again ? f.last_unit : first ? first.label : "g");
+      setQty(again ? String(f.last_quantity) : first ? "1" : "100");
       setMode("find");
     } catch (err) { toast.error(errorMessage(err, "Could not open this food")); }
   }, []);
@@ -94,6 +105,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     } else {
       setFood(null); setMode("find");
       if (initialFoodId) pick({ id: initialFoodId });
+      else if (initialRecipeId) { setMode("recipe"); setRecipeId(initialRecipeId); }
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -118,7 +130,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     return { kcal: get("energy_kcal"), p: get("protein_g"), c: get("carbs_g"), f: get("fat_g"), fiber: get("fiber_g") };
   }, [food, grams]);
 
-  const done = (msg) => { toast.success(msg); refreshAll(); onOpenChange(false); };
+  const done = (msg) => { toast.success(msg); refreshNutrition(); onOpenChange(false); };
   const fail = (err, fallback) => { const m = errorMessage(err, fallback); setError(m); toast.error(m); setSaving(false); };
 
   const saveFood = async () => {
@@ -126,11 +138,11 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     try {
       const qn = parseFloat(qty);
       if (editing) {
-        await api.put(`/nutrition/diary/${entry.id}`, { quantity: qn, unit, meal_type: mealType, eaten_at: time || undefined, if_updated_at: entry.updated_at });
-        done("Entry updated");
+        await api.put(`${base}/${entry.id}`, { quantity: qn, unit, meal_type: mealType, eaten_at: time || undefined, ...(planning ? {} : { if_updated_at: entry.updated_at }) });
+        done(planning ? "Plan updated" : "Entry updated");
       } else {
-        await api.post("/nutrition/diary", { date, food_id: food.id, quantity: qn, unit, meal_type: mealType, eaten_at: time || undefined, client_ref: clientRef.current });
-        done(`Added ${food.name.split(",")[0]} to ${MEALS.find((m) => m.key === mealType).label.toLowerCase()}`);
+        await api.post(base, { date, food_id: food.id, quantity: qn, unit, meal_type: mealType, eaten_at: time || undefined, ...(planning ? {} : { client_ref: clientRef.current }) });
+        done(`${planning ? "Planned" : "Added"} ${food.name.split(",")[0]} ${planning ? "for" : "to"} ${MEALS.find((m) => m.key === mealType).label.toLowerCase()}`);
       }
     } catch (err) { fail(err, "Could not save this entry"); }
   };
@@ -140,11 +152,11 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     const num = (v) => (v === "" || v == null ? undefined : parseFloat(v));
     try {
       if (editing) {
-        await api.put(`/nutrition/diary/${entry.id}`, { description: quick.description, calories: num(quick.calories), protein: num(quick.protein), carbs: num(quick.carbs), fat: num(quick.fat), meal_type: mealType, eaten_at: time || undefined });
-        done("Entry updated");
+        await api.put(`${base}/${entry.id}`, { description: quick.description, calories: num(quick.calories), protein: num(quick.protein), carbs: num(quick.carbs), fat: num(quick.fat), meal_type: mealType, eaten_at: time || undefined });
+        done(planning ? "Plan updated" : "Entry updated");
       } else {
-        await api.post("/nutrition/diary", { date, description: quick.description, calories: num(quick.calories), protein: num(quick.protein), carbs: num(quick.carbs), fat: num(quick.fat), meal_type: mealType, eaten_at: time || undefined, client_ref: clientRef.current });
-        done(`Added ${quick.description}`);
+        await api.post(base, { date, description: quick.description, calories: num(quick.calories), protein: num(quick.protein), carbs: num(quick.carbs), fat: num(quick.fat), meal_type: mealType, eaten_at: time || undefined, ...(planning ? {} : { client_ref: clientRef.current }) });
+        done(`${planning ? "Planned" : "Added"} ${quick.description}`);
       }
     } catch (err) { fail(err, "Could not save this entry"); }
   };
@@ -153,18 +165,18 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     setSaving(true); setError("");
     try {
       if (editing) {
-        await api.put(`/nutrition/diary/${entry.id}`, { quantity: parseFloat(qty), meal_type: mealType, eaten_at: time || undefined });
-        done("Entry updated");
+        await api.put(`${base}/${entry.id}`, { quantity: parseFloat(qty), meal_type: mealType, eaten_at: time || undefined });
+        done(planning ? "Plan updated" : "Entry updated");
       } else {
-        await api.post("/nutrition/diary", { date, recipe_id: recipeId, quantity: parseFloat(servings), meal_type: mealType, eaten_at: time || undefined, client_ref: clientRef.current });
-        done("Recipe added");
+        await api.post(base, { date, recipe_id: recipeId, quantity: parseFloat(servings), meal_type: mealType, eaten_at: time || undefined, ...(planning ? {} : { client_ref: clientRef.current }) });
+        done(planning ? "Recipe planned" : "Recipe added");
       }
     } catch (err) { fail(err, "Could not add this recipe"); }
   };
 
-  const lookupBarcode = async () => {
+  const lookupBarcode = async (code = barcode) => {
     setSaving(true); setError("");
-    try { const { data } = await api.get(`/nutrition/foods/barcode/${barcode.trim()}`); await pick(data); }
+    try { const { data } = await api.get(`/nutrition/foods/barcode/${String(code).trim()}`); await pick(data); }
     catch (err) { setError(errorMessage(err, "Barcode lookup failed")); }
     finally { setSaving(false); }
   };
@@ -172,7 +184,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
   const toggleFavorite = async () => {
     try {
       if (food.favorite) await api.delete(`/nutrition/foods/${food.id}/favorite`); else await api.post(`/nutrition/foods/${food.id}/favorite`);
-      setFood({ ...food, favorite: !food.favorite }); refreshAll();
+      setFood({ ...food, favorite: !food.favorite }); refreshNutrition();
     } catch (err) { toast.error(errorMessage(err, "Could not change favourites")); }
   };
 
@@ -198,8 +210,8 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[88vh] overflow-y-auto overflow-x-hidden [&>*]:min-w-0" data-testid="food-dialog">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit entry" : "Add to your diary"}</DialogTitle>
-          <DialogDescription>{editing ? entry.description : "Search the food database, scan a barcode, add a recipe or type it in."}</DialogDescription>
+          <DialogTitle>{editing ? (planning ? "Edit planned item" : "Edit entry") : planning ? "Plan a meal" : "Add to your diary"}</DialogTitle>
+          <DialogDescription>{editing ? entry.description : planning ? "Planned food only counts once you log it. Search the food database, add a recipe or type it in." : "Search the food database, scan a barcode, add a recipe or type it in."}</DialogDescription>
         </DialogHeader>
 
         {!editing && !showPortion && (
@@ -228,10 +240,11 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
                 {favorites?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500">Favourites</p>{favorites.slice(0, 5).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
                 {recent?.length > 0 && <div><p className="mb-1 text-xs font-medium text-slate-500">Recently logged</p>{recent.slice(0, 6).map((f) => <FoodRow key={f.id} food={f} onPick={pick} />)}</div>}
                 <div className="rounded-xl border border-dashed border-border p-3">
-                  <label htmlFor="nf-barcode" className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><ScanBarcode className="h-3.5 w-3.5" />Packaged food? Type the barcode number</label>
+                  <label htmlFor="nf-barcode" className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><ScanBarcode className="h-3.5 w-3.5" />Packaged food? Scan it or type the barcode number</label>
                   <div className="mt-2 flex gap-2">
+                    <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => setScanning(true)} data-testid="food-scan"><Camera className="mr-1.5 h-4 w-4" />Scan</Button>
                     <Input id="nf-barcode" inputMode="numeric" value={barcode} onChange={(e) => setBarcode(e.target.value.replace(/\D/g, ""))} placeholder="e.g. 3017620422003" className="h-10" data-testid="food-barcode" />
-                    <Button type="button" variant="outline" disabled={barcode.length < 8 || saving} onClick={lookupBarcode} data-testid="food-barcode-go">Look up</Button>
+                    <Button type="button" variant="outline" disabled={barcode.length < 8 || saving} onClick={() => lookupBarcode()} data-testid="food-barcode-go">Look up</Button>
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">Uses Open Food Facts. Values come from the community and are marked as estimated.</p>
                 </div>
@@ -295,7 +308,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             <div className="flex justify-between gap-2">
               {!editing ? <Button type="button" variant="outline" onClick={() => setFood(null)}>Back to search</Button> : <span />}
               <Button type="button" disabled={saving || grams == null} onClick={saveFood} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-save">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? "Save changes" : "Add to diary"}
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? "Save changes" : planning ? "Add to plan" : "Add to diary"}
               </Button>
             </div>
           </div>
@@ -320,7 +333,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             </div>
             {mealPicker}
             <div className="flex justify-end">
-              <Button type="button" disabled={saving || (!editing && !recipeId)} onClick={saveRecipe} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-recipe-save">{editing ? "Save changes" : "Add recipe"}</Button>
+              <Button type="button" disabled={saving || (!editing && !recipeId)} onClick={saveRecipe} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="food-recipe-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add recipe"}</Button>
             </div>
           </div>
         )}
@@ -342,10 +355,15 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             </div>
             <p className="text-xs text-slate-500">Only the numbers you type are recorded; vitamins and minerals stay "no data" for typed-in meals.</p>
             {mealPicker}
-            <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="quick-save">{editing ? "Save changes" : "Add to diary"}</Button></div>
+            <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="quick-save">{editing ? "Save changes" : planning ? "Add to plan" : "Add to diary"}</Button></div>
           </form>
         )}
       </DialogContent>
+      {scanning && (
+        <Suspense fallback={null}>
+          <BarcodeScanner open={scanning} onOpenChange={setScanning} onDetected={(code) => { setBarcode(code); lookupBarcode(code); }} />
+        </Suspense>
+      )}
     </Dialog>
   );
 }

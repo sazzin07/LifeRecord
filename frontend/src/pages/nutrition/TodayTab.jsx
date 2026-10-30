@@ -1,19 +1,19 @@
 import { useState } from "react";
-import { Copy, Droplets, GlassWater, Lightbulb, MoreHorizontal, Pencil, Plus, Trash2, Utensils, X, ArrowRightLeft, CalendarPlus } from "lucide-react";
+import { Check, Copy, Droplets, GlassWater, History, Lightbulb, MoreHorizontal, Pencil, Plus, Trash2, Utensils, X, ArrowRightLeft, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
-import { refreshAll } from "@/lib/useFetch";
 import { Card, EmptyState } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { MEALS, MEAL_BY_KEY, MACRO_COLORS, EnergyBar, RangeGauge, QualityBadge, fmt, shiftDate } from "./shared";
+import { QuickAdd } from "./QuickAdd";
+import { MEALS, MEAL_BY_KEY, MACRO_COLORS, EnergyBar, RangeGauge, QualityBadge, fmt, shiftDate, refreshNutrition } from "./shared";
 
 function EntryRow({ entry, date, onEdit, onDelete }) {
   const n = entry.nutrients || {};
   const act = async (fn, ok) => {
-    try { await fn(); toast.success(ok); refreshAll(); } catch (err) { toast.error(errorMessage(err, "That did not work")); }
+    try { await fn(); toast.success(ok); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "That did not work")); }
   };
   return (
     <div className="group flex items-center gap-3 px-4 py-3 sm:px-5" data-testid={`entry-${entry.id}`}>
@@ -53,11 +53,18 @@ function Hydration({ day, date }) {
   const h = day.hydration;
   const [custom, setCustom] = useState("");
   const add = async (ml, beverage = "water") => {
-    try { await api.post("/nutrition/water", { amount_ml: ml, beverage, date }); toast.success(`Added ${ml} ml`); refreshAll(); }
+    try { await api.post("/nutrition/water", { amount_ml: ml, beverage, date }); toast.success(`Added ${ml} ml`); refreshNutrition(); }
     catch (err) { toast.error(errorMessage(err, "Could not add water")); }
   };
   const remove = async (id) => {
-    try { await api.delete(`/nutrition/water/${id}`); refreshAll(); } catch (err) { toast.error(errorMessage(err, "Could not remove this drink")); }
+    try { await api.delete(`/nutrition/water/${id}`); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not remove this drink")); }
+  };
+  const [editing, setEditing] = useState(null); // { id, ml }
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    const ml = parseInt(editing.ml, 10);
+    if (!(ml > 0)) { toast.error("Enter an amount in millilitres"); return; }
+    try { await api.put(`/nutrition/water/${editing.id}`, { amount_ml: ml }); setEditing(null); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not change this drink")); }
   };
   const pct = h.target_ml ? Math.min((h.total_ml / h.target_ml) * 100, 100) : 0;
   return (
@@ -82,9 +89,23 @@ function Hydration({ day, date }) {
       {h.entries.length > 0 && (
         <ul className="mt-3 space-y-1">
           {h.entries.map((w) => (
-            <li key={w.id} className="flex items-center justify-between text-sm">
-              <span className="text-slate-600 dark:text-slate-300">{w.amount_ml} ml <span className="text-slate-400">{w.beverage}{w.eaten_at ? ` · ${w.eaten_at}` : ""}</span></span>
-              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${w.amount_ml} ml drink`} onClick={() => remove(w.id)}><X className="h-3.5 w-3.5" /></Button>
+            <li key={w.id} className="flex items-center justify-between gap-2 text-sm">
+              {editing?.id === w.id ? (
+                <form className="flex flex-1 items-center gap-1.5" onSubmit={saveEdit}>
+                  <Input autoFocus inputMode="numeric" value={editing.ml} onChange={(e) => setEditing({ id: w.id, ml: e.target.value.replace(/\D/g, "") })} aria-label="Amount in millilitres" className="h-8 w-24" data-testid="water-edit-input" />
+                  <span className="text-slate-500">ml</span>
+                  <Button type="submit" variant="ghost" size="icon" className="h-7 w-7" aria-label="Save this amount" data-testid="water-edit-save"><Check className="h-3.5 w-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="Cancel" onClick={() => setEditing(null)}><X className="h-3.5 w-3.5" /></Button>
+                </form>
+              ) : (
+                <>
+                  <span className="text-slate-600 dark:text-slate-300">{w.amount_ml} ml <span className="text-slate-400">{w.beverage}{w.eaten_at ? ` · ${w.eaten_at}` : ""}</span></span>
+                  <span className="flex shrink-0">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Change ${w.amount_ml} ml drink`} onClick={() => setEditing({ id: w.id, ml: String(w.amount_ml) })} data-testid={`water-edit-${w.id}`}><Pencil className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${w.amount_ml} ml drink`} onClick={() => remove(w.id)}><X className="h-3.5 w-3.5" /></Button>
+                  </span>
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -94,6 +115,7 @@ function Hydration({ day, date }) {
 }
 
 function Insights({ insights, onLog }) {
+  const [all, setAll] = useState(false);
   if (!insights?.insights?.length) {
     return (
       <Card className="p-5">
@@ -106,7 +128,7 @@ function Insights({ insights, onLog }) {
     <Card className="p-5" data-testid="insights-card">
       <div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-amber-500" aria-hidden="true" /><h3 className="font-semibold">Insights</h3></div>
       <ul className="mt-3 space-y-4">
-        {insights.insights.map((i) => (
+        {(all ? insights.insights : insights.insights.slice(0, 3)).map((i) => (
           <li key={i.nutrient}>
             <p className="text-sm font-medium">{i.title}</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-500">{i.why}</p>
@@ -126,6 +148,11 @@ function Insights({ insights, onLog }) {
           </li>
         ))}
       </ul>
+      {insights.insights.length > 3 && (
+        <Button type="button" variant="ghost" size="sm" className="mt-3 w-full" aria-expanded={all} onClick={() => setAll((v) => !v)} data-testid="insights-more">
+          {all ? "Show fewer" : `Show ${insights.insights.length - 3} more`}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -139,13 +166,20 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
   const byType = Object.fromEntries(day.meals.map((m) => [m.meal_type, m]));
 
   const remove = async () => {
-    try { await api.delete(`/nutrition/diary/${toDelete.id}`); toast.success("Entry deleted"); setToDelete(null); refreshAll(); }
+    try { await api.delete(`/nutrition/diary/${toDelete.id}`); toast.success("Entry deleted"); setToDelete(null); refreshNutrition(); }
     catch (err) { toast.error(errorMessage(err, "Could not delete this entry")); }
+  };
+  const copyYesterday = async (m) => {
+    try {
+      const { data } = await api.post("/nutrition/diary/copy", { from_date: shiftDate(date, -1), to_date: date, meal_type: m.key });
+      toast.success(`Copied ${data.copied} ${data.copied === 1 ? "item" : "items"} from yesterday's ${m.label.toLowerCase()}`); refreshNutrition();
+    } catch (err) { toast.error(errorMessage(err, "Could not copy yesterday's meal")); }
   };
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="min-w-0 space-y-6 lg:col-span-2">
+        <QuickAdd date={date} onMore={(foodId, query) => onAdd(undefined, foodId, query)} />
         <Card className="p-5 sm:p-6" data-testid="day-ledger">
           {day.entries === 0 ? (
             <EmptyState icon={Utensils} title="Nothing logged for this day yet"
@@ -189,7 +223,10 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
                   <h3 className="font-semibold">{m.label}</h3>
                   {g && <span className="stat-num text-sm text-slate-500">{fmt(g.totals.energy_kcal || 0)} kcal</span>}
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => onAdd(m.key)} aria-label={`Add food to ${m.label.toLowerCase()}`} data-testid={`add-${m.key}`}><Plus className="mr-1 h-4 w-4" />Add</Button>
+                <div className="flex items-center gap-1">
+                  {!g && m.key !== "other" && <Button variant="ghost" size="sm" onClick={() => copyYesterday(m)} aria-label={`Copy yesterday's ${m.label.toLowerCase()}`} data-testid={`copy-${m.key}`}><History className="mr-1 h-4 w-4" />Copy yesterday</Button>}
+                  <Button variant="ghost" size="sm" onClick={() => onAdd(m.key)} aria-label={`Add food to ${m.label.toLowerCase()}`} data-testid={`add-${m.key}`}><Plus className="mr-1 h-4 w-4" />Add</Button>
+                </div>
               </div>
               {g ? <div className="divide-y divide-border">{g.entries.map((e) => <EntryRow key={e.id} entry={e} date={date} onEdit={onEdit} onDelete={setToDelete} />)}</div>
                 : <p className="px-5 py-4 text-sm text-slate-400">Nothing logged.</p>}

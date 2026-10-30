@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { ChevronDown, Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronDown, Info, Search } from "lucide-react";
 import { Card } from "@/components/common";
+import { Input } from "@/components/ui/input";
 import { useFetch } from "@/lib/useFetch";
 import { cn } from "@/lib/utils";
 import { Coverage, STATUS_LABEL, fmt, useNutrientMeta } from "./shared";
@@ -12,6 +13,14 @@ const TONE = {
   below: "text-slate-500", above: "text-amber-600 dark:text-amber-400", over: "text-amber-600 dark:text-amber-400", no_data: "text-slate-400",
 };
 const BAR = { met: "bg-emerald-500", within: "bg-emerald-500", under: "bg-emerald-500", below: "bg-slate-400", above: "bg-amber-500", over: "bg-amber-500", no_data: "bg-slate-300" };
+
+// What each filter keeps. "Below reference" means there is data and it is under the target, never "no data".
+const FILTERS = [
+  ["all", "All", () => true],
+  ["attention", "Below reference", (n) => !!n.p && n.p.status === "below" && n.p.percent != null && n.p.percent < 100],
+  ["limits", "Limits", (n) => !!n.p && n.p.kind === "limit"],
+  ["nodata", "No data", (n) => n.intake == null || n.p?.status === "no_data"],
+];
 
 function Details({ k, day, info, p }) {
   const { data: contrib } = useFetch(`/nutrition/contributors?nutrient=${k}&start=${day.date}&end=${day.date}&limit=4`);
@@ -43,22 +52,50 @@ function Details({ k, day, info, p }) {
 export function NutrientsTab({ day }) {
   const { meta, byKey } = useNutrientMeta();
   const [open, setOpen] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+
+  const all = useMemo(() => {
+    const prog = day.progress || {};
+    return (meta?.nutrients || []).map((n) => {
+      const group = n.group === "energy" ? "macro" : n.group;
+      const p = prog[n.key];
+      return { ...n, group, p, intake: p ? p.intake : day.totals[n.key], reporting: p ? p.entries_reporting : day.reported[n.key] || 0 };
+    });
+  }, [meta, day]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map(([k, , test]) => [k, all.filter(test).length])), [all]);
+
   if (day.entries === 0) {
     return <Card className="p-8 text-center text-sm text-slate-500" data-testid="nutrients-empty">Log some food for this day to see its vitamins, minerals and other nutrients here.</Card>;
   }
-  const prog = day.progress || {};
+  const test = FILTERS.find(([k]) => k === filter)[2];
+  const term = q.trim().toLowerCase();
   const rows = {};
-  (meta?.nutrients || []).forEach((n) => {
-    const group = n.group === "energy" ? "macro" : n.group;
-    const p = prog[n.key];
-    const intake = p ? p.intake : day.totals[n.key];
-    (rows[group] = rows[group] || []).push({ ...n, group, p, intake, reporting: p ? p.entries_reporting : day.reported[n.key] || 0 });
-  });
+  all.filter((n) => test(n) && (!term || n.name.toLowerCase().includes(term))).forEach((n) => { (rows[n.group] = rows[n.group] || []).push(n); });
+  const shown = Object.values(rows).flat().length;
+
   return (
     <div className="space-y-6" data-testid="nutrients-tab">
       <Card className="p-4 text-sm text-slate-600 dark:text-slate-300 sm:p-5">
         <p><strong className="font-semibold">Reading this page.</strong> Bars show your recorded intake against the reference for your profile. "No data" means none of today's foods reported that nutrient, which is not the same as zero. The dots show how many of today's {day.entries} entries had a value.</p>
       </Card>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a nutrient" aria-label="Find a nutrient" className="h-10 pl-9" data-testid="nutrient-search" />
+        </div>
+        <div role="group" aria-label="Show" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          {FILTERS.map(([k, label]) => (
+            <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} data-testid={`nutrient-filter-${k}`}
+              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500", filter === k ? "bg-white shadow-sm dark:bg-slate-700" : "text-slate-500")}>
+              {label} <span className="stat-num text-xs text-slate-400">{counts[k]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {shown === 0 && <Card className="p-6 text-center text-sm text-slate-500" data-testid="nutrients-none">{term ? `No nutrient matches "${q}".` : filter === "attention" ? "Nothing is below its reference with the data logged so far." : "Nothing to show for this filter."}</Card>}
       {GROUP_ORDER.filter((g) => rows[g]).map((g) => (
         <Card key={g} className="overflow-hidden">
           <h3 className="border-b border-border px-4 py-3 font-semibold sm:px-5">{GROUP_TITLE[g]}</h3>

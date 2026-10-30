@@ -25,7 +25,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 /** The requests each page makes on arrival (must match the page's own paths so the cache lines up). */
 const routeQueries = {
-  "/": () => ["/analytics/summary", "/tasks", "/people", "/weight", `/meals?date=${today()}`, "/groceries", `/transactions?start=${today()}&end=${today()}`],
+  "/": () => ["/analytics/summary", "/tasks", "/people", "/weight", "/nutrition/day", "/groceries", `/transactions?start=${today()}&end=${today()}`],
   "/money": () => { const m = moneyPaths("week"); return [m.summary, m.transactions, m.categories]; },
   "/people": () => ["/people"],
   "/nutrition": () => ["/nutrition/meta", "/nutrition/day", "/nutrition/targets", "/recipes"],

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { inScope } from "@/lib/refreshScope";
 import { cacheAge, readCache, writeCache } from "@/lib/swrCache";
 
 export const GROCERIES_CACHE_KEY = "groceries";
@@ -44,7 +45,9 @@ let mounted = 0;
 export function watchGroceries() { mounted += 1; return () => { mounted = Math.max(0, mounted - 1); }; }
 let timer = null;
 if (typeof window !== "undefined") {
-  window.addEventListener("lm:refresh", () => {
+  window.addEventListener("lm:refresh", (e) => {
+    const scope = e.detail?.scope; // a change that cannot touch groceries or shopping lists leaves them alone
+    if (!inScope("/groceries", scope) && !inScope("/shopping", scope)) return;
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (mounted > 0 || !lastUser) return;

@@ -16,7 +16,7 @@ async function cleanup(api, before) {
 }
 
 async function openAdd(page) {
-  await page.getByTestId("add-food").first().click();
+  await page.getByTestId("header-add-food").click();
   await expect(page.getByTestId("food-dialog")).toBeVisible();
 }
 
@@ -174,7 +174,7 @@ test.describe("Nutrition", () => {
       await page.goto("/nutrition");
       await page.getByTestId("tab-foods").click();
       await page.getByTestId("foods-search").fill("salmon atlantic farmed");
-      const row = page.locator("[data-testid^=food-row-]").first();
+      const row = page.getByTestId("foods-results").locator("[data-testid^=food-row-]").first();   // the search results, not the lists shown before searching
       await expect(row).toBeVisible({ timeout: 10000 });
       await row.click();
       const detail = page.getByTestId("food-detail");
@@ -218,8 +218,8 @@ test.describe("Nutrition", () => {
       await page.getByTestId("tab-foods").click();
       await page.getByTestId("new-recipe").click();
       const d = page.getByTestId("recipe-dialog");
-      await d.getByPlaceholder("Recipe name").fill(name);
-      await d.getByPlaceholder("Servings").fill("2");
+      await d.getByTestId("recipe-name").fill(name);
+      await d.getByTestId("recipe-servings").fill("2");
       await d.getByLabel("Calories, whole recipe").fill("350");
       await d.getByLabel("Protein (g), whole recipe").fill("25");
       await d.getByRole("button", { name: "Create recipe" }).click();

@@ -166,6 +166,9 @@ def test_plan_edit_recalculates_and_validates(a):
     quick = a.post(f"{N}/plan", json={"date": d, "meal_type": "dinner", "description": "Dinner out", "calories": 800}).json()
     assert quick["nutrients"] == {"energy_kcal": 800.0} and quick["quality"] == "user"
     assert a.put(f"{N}/plan/{quick['id']}", json={"quantity": 2}).status_code == 422   # a typed-in item has no quantity to scale
+    fixed = a.put(f"{N}/plan/{quick['id']}", json={"calories": 650, "protein": 30}).json()
+    assert fixed["nutrients"] == {"energy_kcal": 650.0, "protein_g": 30.0}
+    assert a.put(f"{N}/plan/{p['id']}", json={"calories": 5}).status_code == 422       # a food's numbers come from the food
 
 
 def test_copy_a_week_of_plans_shifts_every_date(a):

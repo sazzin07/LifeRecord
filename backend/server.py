@@ -36,10 +36,12 @@ from models import (
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
+    Food, FoodFavorite, HydrationEntry, NutritionProfile, MealPlanEntry,
 )
 import file_crypto
 import kitchen_logic
 import ai_tools_extra
+import ai_tools_nutrition
 import ai_opencode
 import conversations_api
 import chat_images
@@ -47,6 +49,7 @@ import scheduling
 import scheduling_api
 import calendar_api
 import nutrition_api
+import nutrition_plan_api
 import nutrition_calc
 from starlette.responses import StreamingResponse
 from security_utils import (
@@ -593,7 +596,7 @@ class MealBody(BaseModel):
     protein: Optional[float] = Field(default=None, ge=0, le=5000)
     carbs: Optional[float] = Field(default=None, ge=0, le=5000)
     fat: Optional[float] = Field(default=None, ge=0, le=5000)
-    date: Optional[str] = None
+    date: Optional[nutrition_api.ValidDate] = None
 
 
 class ShoppingBody(BaseModel):
@@ -680,6 +683,7 @@ class RecipeIngredient(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     quantity: float = Field(default=1, ge=0)
     unit: str = Field(default="unit", max_length=50)
+    food_id: Optional[str] = Field(default=None, max_length=36)  # links the ingredient to a food so the recipe's nutrition is calculated
 
 
 class RecipeBody(BaseModel):
@@ -1195,19 +1199,18 @@ async def cook_recipe_doc(db: AsyncSession, recipe: dict, user_id: str) -> dict:
         g.quantity = newq
         g.updated_at = now_iso()
         changes.append(f"{ing['name']} −{ing.get('quantity', 0)}{ing.get('unit', '')} (now {newq} {g.unit})")
-    servings = recipe.get("servings") or 1
-    meal = None
-    if recipe.get("calories"):
-        meal = Meal(id=new_id(), user_id=user_id, description=f"{recipe['name']} (1 serving)",
-                    date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                    calories=round((recipe.get("calories") or 0) / servings, 1),
-                    protein=round((recipe.get("protein") or 0) / servings, 1),
-                    carbs=round((recipe.get("carbs") or 0) / servings, 1),
-                    fat=round((recipe.get("fat") or 0) / servings, 1),
-                    created_at=now_iso())
-        db.add(meal)
     await db.commit()
-    return {"recipe": recipe["name"], "inventory_changes": changes, "meal_logged": meal is not None}
+    meal = None
+    if recipe.get("calories") or recipe.get("nutrients"):
+        # one serving goes into the food diary like any other entry: the profile's "today", a nutrient snapshot, a sensible meal
+        _, prof, _, _ = await nutrition.reference(db, user_id)
+        try:
+            meal = await nutrition.create_diary_entry(db, user_id, nutrition_api.DiaryBody(
+                recipe_id=recipe["id"], quantity=1, meal_type=nutrition_calc.default_meal_type(nutrition.local_now(prof).hour)))
+        except HTTPException:
+            meal = None  # the recipe has no usable nutrition values; the pantry was still updated
+    return {"recipe": recipe["name"], "inventory_changes": changes, "meal_logged": meal is not None,
+            "meal_id": meal.id if meal is not None else None}
 
 
 
@@ -3579,6 +3582,7 @@ async def create_recipe(body: RecipeBody, user: dict = Depends(get_current_user)
                calories=body.calories, protein=body.protein, carbs=body.carbs,
                fat=body.fat, notes=body.notes, created_at=now_iso())
     db.add(r)
+    await nutrition.apply_recipe_nutrition(db, user["_id"], r)
     await db.commit()
     await db.refresh(r)
     return to_dict(r)
@@ -3589,8 +3593,9 @@ async def update_recipe(rid: str, body: RecipeBody, user: dict = Depends(get_cur
     r = (await db.execute(select(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]))).scalar_one_or_none()
     if not r:
         raise HTTPException(404, "Recipe not found")
-    updates = body.model_dump()  # ingredients are already plain dicts here
-    await db.execute(update(Recipe).where(Recipe.id == rid, Recipe.user_id == user["_id"]).values(**updates))
+    for field, value in body.model_dump().items():  # ingredients are already plain dicts here
+        setattr(r, field, value)
+    await nutrition.apply_recipe_nutrition(db, user["_id"], r)
     await db.commit()
     await db.refresh(r)
     return to_dict(r)
@@ -3672,6 +3677,8 @@ def undo_models() -> dict:
         "transactions": Transaction, "settlements": Settlement, "groceries": Grocery, "meals": Meal, "tasks": Task,
         "weight": WeightEntry, "recipes": Recipe, "workouts": Workout, "accounts": Account, "shopping_items": ShoppingItem,
         "shopping_lists": ShoppingList, "storage_locations": StorageLocation, "people": Person, "categories": Category,
+        "hydration": HydrationEntry, "foods": Food, "food_favorites": FoodFavorite, "nutrition_profiles": NutritionProfile,
+        "meal_plan": MealPlanEntry,
     }
 
 
@@ -3867,14 +3874,6 @@ AI_TOOLS = [
         "parameters": {"type": "object", "properties": {"recurring_list_id": {"type": "string"}}, "required": ["recurring_list_id"]},
     }},
     {"type": "function", "function": {
-        "name": "log_meal",
-        "description": "Log a meal with estimated nutrition. Estimate calories/macros from the foods and quantities described.",
-        "parameters": {"type": "object", "properties": {
-            "description": {"type": "string"}, "calories": {"type": "number"},
-            "protein": {"type": "number"}, "carbs": {"type": "number"}, "fat": {"type": "number"}},
-            "required": ["description"]},
-    }},
-    {"type": "function", "function": {
         "name": "record_weight",
         "description": "Record a body weight measurement in kg.",
         "parameters": {"type": "object", "properties": {
@@ -3935,16 +3934,6 @@ AI_TOOLS = [
         "name": "generate_shopping_list",
         "description": "Build a shopping list from current inventory (low/out of stock) and the owner's usual buys, then return price intelligence and the cheaper store recommendation. Optionally target a specific list_id.",
         "parameters": {"type": "object", "properties": {"days": {"type": "number"}, "list_id": {"type": "string"}}},
-    }},
-    {"type": "function", "function": {
-        "name": "create_recipe",
-        "description": "Create a recipe with ingredients (name, quantity, unit) and optional nutrition per whole recipe.",
-        "parameters": {"type": "object", "properties": {
-            "name": {"type": "string"}, "servings": {"type": "number"},
-            "ingredients": {"type": "array", "items": {"type": "object", "properties": {
-                "name": {"type": "string"}, "quantity": {"type": "number"}, "unit": {"type": "string"}}}},
-            "calories": {"type": "number"}, "protein": {"type": "number"}, "carbs": {"type": "number"}, "fat": {"type": "number"}},
-            "required": ["name"]},
     }},
     {"type": "function", "function": {
         "name": "cook_recipe",
@@ -4112,6 +4101,7 @@ AI_TOOLS = [
     }},
 ]
 AI_TOOLS += ai_tools_extra.EXTRA_TOOLS
+AI_TOOLS += ai_tools_nutrition.NUTRITION_TOOLS
 
 AI_SYSTEM ="""You are Life Record's personal assistant, a friendly multi-user life-management helper.
 You turn natural language into structured, connected data by calling tools. You handle money/expenses, shared expenses and reimbursements, groceries, meals/nutrition, workouts, weight and tasks for the current user.
@@ -4127,8 +4117,8 @@ Rules:
 - NEVER invent expenses, refunds, prices, grocery prices, or totals. If you don't have a value, say it is unknown and ask.
 - If something is genuinely ambiguous and financially important (who to split with, or an amount), ASK a short clarifying question instead of guessing.
 - For destructive actions (delete, large bulk changes) always confirm with the user first.
-- For nutrition you MAY estimate calories/macros from typical food values, but say they are estimates.
-- Other pages: get_overview gives the whole day at a glance (Home); get_transactions searches the ledger; get_tasks lists tasks and calendar reminders (a due date is a calendar entry) and update_task / delete_task change them; get_people, update_person, delete_person manage contacts; get_categories and create/update/delete_category manage categories and monthly budgets; get_meals, update_meal, delete_meal and get_recipes / delete_recipe cover nutrition; get_workouts, delete_workout, get_weight_history and delete_weight_entry cover fitness and body. Look things up with a get_ tool before you change or delete them, and use the ids it returns. Deleting always needs a preview and the user's confirmation on a later message: when the user agrees to a previewed deletion, call the same tool again with confirm=true straight away (do not preview a second time). Call every lookup you need in one step rather than one at a time.
+- Nutrition: food data comes from tools, not from memory. To log what the user ate, call search_foods, pick the candidate that best matches (ask one short question if several fit and the choice matters), then log_food with that food_id, a quantity and a unit (g, oz, or a portion the food offers such as '1 cup'; ml only for liquids). Recipes are logged with log_food and a recipe_id. Use log_meal only when no suitable food exists or the user gave their own numbers, and say its numbers are estimates. Never state a nutrient value you did not get from a tool or the user; 'no_data' / 'not reported' is not zero. Create the user's own foods with save_custom_food only from values they give or read off a label. The reference values (energy, nutrients, limits) come from get_nutrition_targets / get_nutrition_day; they describe healthy adults, are not medical advice and a low recorded intake is not a diagnosis. Changing the nutrition profile or a daily target (update_nutrition_profile, set_nutrition_target) is previewed first: after the user agrees, call the same tool again with exactly the same arguments and confirm=true. If the user asks for a very low energy target, give the safety warning the tool returns. Reminders (set_nutrition_reminders) are in-app only. Meal plans (plan_meal, get_meal_plan, log_planned_meal, copy_meal_plan, plan_shopping_list) are intentions: they do not count as eaten until logged, and a shopping list from a plan buys nothing.
+- Other pages: get_overview gives the whole day at a glance (Home); get_transactions searches the ledger; get_tasks lists tasks and calendar reminders (a due date is a calendar entry) and update_task / delete_task change them; get_people, update_person, delete_person manage contacts; get_categories and create/update/delete_category manage categories and monthly budgets; get_nutrition_day, update_diary_entry, delete_diary_entry, get_nutrition_report and get_recipes / update_recipe / delete_recipe cover nutrition; get_workouts, delete_workout, get_weight_history and delete_weight_entry cover fitness and body. Look things up with a get_ tool before you change or delete them, and use the ids it returns. Deleting always needs a preview and the user's confirmation on a later message: when the user agrees to a previewed deletion, call the same tool again with confirm=true straight away (do not preview a second time). Call every lookup you need in one step rather than one at a time.
 - Context: use the conversation and the "Context" notes below to resolve references such as "that expense", "it", "the rest" or "the remaining money". If the reference could match more than one record, or the change moves money, ask one short question instead of guessing. Never state a figure you did not get from a tool result or the user; do not do arithmetic on money yourself when a tool can return the number.
 - Honesty: say a change was made only if its tool returned success. If a tool returned an error or needs_confirmation, say that plainly.
 - After performing actions, give a concise summary of exactly what changed (amounts, shares, refunds, remaining owed, inventory). Be warm but brief.
@@ -4260,7 +4250,7 @@ _MAX_NOTES = 8
 def _remember_tool(session_id: str, name: str, args: dict, result) -> None:
     if not isinstance(result, dict) or result.get("error") or result.get("needs_confirmation"):
         return
-    if name.startswith("get_") or name == "suggest_recipes_from_inventory":
+    if name.startswith(("get_", "search_", "lookup_", "suggest_")):
         return
     brief = {k: v for k, v in args.items() if k != "confirm" and not isinstance(v, (list, dict))}
     keep = ("id", "amount", "gross_amount", "merchant", "name", "title", "deleted", "balance", "date")
@@ -4489,7 +4479,7 @@ async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
     if failure and not reply:
         reply = failure
 
-    changed = any(not t["error"] and not t.get("pending") and not t["tool"].startswith("get_") and t["tool"] != "suggest_recipes_from_inventory" for t in tool_summary)
+    changed = any(not t["error"] and not t.get("pending") and not t["tool"].startswith(("get_", "search_", "lookup_", "suggest_")) for t in tool_summary)
     stored = reply or (f"({failure})" if failure else "")
     # The clock can tie on some systems; keep the reply strictly after the question so history loads in order.
     asked_at = datetime.now(timezone.utc)
@@ -4745,6 +4735,8 @@ async def kitchen_overview(db: AsyncSession, user_id: str) -> dict:
 
 async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
     try:
+        if name in ai_tools_nutrition.NUTRITION_NAMES:
+            return await ai_tools_nutrition.dispatch_nutrition(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name in ai_tools_extra.EXTRA_NAMES:
             return await ai_tools_extra.dispatch_extra(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name == "create_expense":
@@ -4803,10 +4795,6 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             if g.get("id"):
                 created.append({"collection": "groceries", "id": g["id"]})
             return g
-        if name == "log_meal":
-            m = await add_meal(MealBody(**{k: v for k, v in args.items() if k in MealBody.model_fields}), user, db)
-            created.append({"collection": "meals", "id": m["id"]})
-            return m
         if name == "record_weight":
             w = await add_weight(WeightBody(weight=args["weight"], date=args.get("date")), user, db)
             created.append({"collection": "weight", "id": w["id"]})
@@ -4968,14 +4956,6 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             return rl
         if name == "spawn_recurring_list":
             return await spawn_recurring_list(args.get("recurring_list_id"), user, db)
-        if name == "create_recipe":
-            body = RecipeBody(name=args["name"], servings=int(args.get("servings", 1)),
-                              ingredients=[RecipeIngredient(**i) for i in args.get("ingredients", [])],
-                              calories=args.get("calories"), protein=args.get("protein"),
-                              carbs=args.get("carbs"), fat=args.get("fat"))
-            r = await create_recipe(body, user, db)
-            created.append({"collection": "recipes", "id": r["id"]})
-            return r
         if name == "cook_recipe":
             r = (await db.execute(
                 select(Recipe).where(Recipe.name.ilike(args["name"]), Recipe.user_id == user["_id"])
@@ -5365,7 +5345,8 @@ conversations_api.register(api_router, sys.modules[__name__])
 chat_images.register(api_router, sys.modules[__name__])
 scheduling_api.register(api_router, sys.modules[__name__])
 calendar_api.register(api_router, sys.modules[__name__])
-nutrition_api.register(api_router, sys.modules[__name__])
+nutrition = nutrition_api.register(api_router, sys.modules[__name__])
+nutrition_plan = nutrition_plan_api.register(api_router, sys.modules[__name__], nutrition)
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------

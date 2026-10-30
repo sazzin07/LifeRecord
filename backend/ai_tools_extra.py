@@ -1,5 +1,5 @@
 """AI tools that cover the pages beyond money and groceries: tasks and calendar, people, categories,
-nutrition, fitness, body weight and recipes, plus a one-call overview.
+fitness, body weight and recipe deletion, plus a one-call overview (food and nutrition tools live in ai_tools_nutrition).
 
 Every handler reuses the REST endpoint functions in `server` (so validation, ownership and balance logic
 live in one place) and is scoped to the signed-in user. Deletes go through the same two-step confirmation
@@ -60,12 +60,6 @@ EXTRA_TOOLS = [
     _fn("delete_person",
         "Delete a person together with their splits and settlements (preview first, then confirm). Affects balances.",
         {"person": _S, "confirm": _CONFIRM}, ["person"]),
-    _fn("get_meals", "List logged meals (id, description, calories, protein, carbs, fat) for a date (default today) with daily totals.",
-        {"date": _S}),
-    _fn("update_meal", "Edit a logged meal by id.",
-        {"meal_id": _S, "description": _S, "calories": _N, "protein": _N, "carbs": _N, "fat": _N, "date": _S}, ["meal_id"]),
-    _fn("delete_meal", "Delete a logged meal by id (preview first, then confirm).", {"meal_id": _S, "confirm": _CONFIRM}, ["meal_id"]),
-    _fn("get_recipes", "List saved recipes with servings, ingredients and whole-recipe nutrition."),
     _fn("delete_recipe", "Delete a saved recipe (preview first, then confirm).", {"recipe": _S, "confirm": _CONFIRM}, ["recipe"]),
     _fn("get_workouts", "List recent workouts with exercises, plus personal records.", {"limit": _N}),
     _fn("delete_workout", "Delete a workout by id (preview first, then confirm).", {"workout_id": _S, "confirm": _CONFIRM}, ["workout_id"]),
@@ -253,34 +247,6 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         await srv.delete_person(p.id, user, db)
         return {"deleted": p.name}
 
-    if name == "get_meals":
-        day = args.get("date") or _date.today().isoformat()
-        meals = await srv.get_meals(date=day, user=user, db=db)
-        tot = {k: round(sum(m.get(k) or 0 for m in meals)) for k in ("calories", "protein", "carbs", "fat")}
-        return {"date": day, "meals": [{k: m.get(k) for k in ("id", "description", "calories", "protein", "carbs", "fat")} for m in meals], "totals": tot}
-    if name == "update_meal":
-        m = (await db.execute(select(Meal).where(Meal.id == args.get("meal_id"), Meal.user_id == uid))).scalar_one_or_none()
-        if not m:
-            return {"error": "Meal not found"}
-        body = srv.MealBody(description=args.get("description") or m.description,
-                            calories=args.get("calories", m.calories), protein=args.get("protein", m.protein),
-                            carbs=args.get("carbs", m.carbs), fat=args.get("fat", m.fat), date=args.get("date") or m.date)
-        srv.remember_before(created, "meals", m)
-        return {"updated": await srv.update_meal(m.id, body, user, db)}
-    if name == "delete_meal":
-        m = (await db.execute(select(Meal).where(Meal.id == args.get("meal_id"), Meal.user_id == uid))).scalar_one_or_none()
-        if not m:
-            return {"error": "Meal not found"}
-        gate = await _confirm(srv, db, user, session_id, previewed, name, m.id, args, f"This will delete the logged meal '{m.description}'. Ask the user to confirm.")
-        if gate:
-            return gate
-        srv.remember_before(created, "meals", m)
-        await srv.delete_meal(m.id, user, db)
-        return {"deleted": m.description}
-
-    if name == "get_recipes":
-        return {"recipes": [{k: r.get(k) for k in ("id", "name", "servings", "ingredients", "calories", "protein", "carbs", "fat")}
-                            for r in await srv.get_recipes(user, db)]}
     if name == "delete_recipe":
         key = (args.get("recipe") or "").strip()
         r = (await db.execute(select(Recipe).where(Recipe.user_id == uid, (Recipe.id == key) | Recipe.name.ilike(key)))).scalars().first()

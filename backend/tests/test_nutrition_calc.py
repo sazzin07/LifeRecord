@@ -206,3 +206,51 @@ def test_progress_marks_incomplete_data():
     r = ref(age=35, sex="F")
     p = calc.progress({"vit_c_mg": 30}, {"vit_c_mg": 1}, 3, r["items"])
     assert p["vit_c_mg"]["entries_reporting"] == 1 and p["vit_c_mg"]["entries"] == 3 and not p["vit_c_mg"]["complete"]
+
+
+# ---------------------------------------------------------------- Delivery 2: recipes, planning, shopping, swaps
+def test_whole_recipe_numbers_are_per_serving_times_servings():
+    per = {"energy_kcal": 250.0, "protein_g": 12.34, "carbs_g": 30.0, "fat_g": 8.0, "fiber_g": 4.0}
+    whole = calc.whole_recipe_macros(per, 4)
+    assert whole == {"calories": 1000.0, "protein": 49.4, "carbs": 120.0, "fat": 32.0}
+    # a nutrient the ingredients did not report stays None (never 0)
+    assert calc.whole_recipe_macros({"energy_kcal": 100.0}, 2) == {"calories": 200.0, "protein": None, "carbs": None, "fat": None}
+
+
+def test_default_meal_type_follows_the_hour():
+    assert [calc.default_meal_type(h) for h in (6, 10, 11, 14, 15, 17, 18, 23)] == \
+        ["breakfast", "breakfast", "lunch", "lunch", "snack", "snack", "dinner", "dinner"]
+
+
+def test_shopping_needs_merge_compatible_units_and_keep_incompatible_apart():
+    needs = [{"name": "Rice", "quantity": 500, "unit": "g"}, {"name": "rice", "quantity": 1, "unit": "kg"},
+             {"name": "Milk", "quantity": 250, "unit": "ml"}, {"name": "Milk", "quantity": 2, "unit": "unit"},
+             {"name": "Eggs", "quantity": 3, "unit": "unit"}, {"name": "eggs", "quantity": 2, "unit": "unit"}]
+    merged = {(n["name"].lower(), n["unit"]): n["quantity"] for n in calc.merge_needs(needs)}
+    assert merged[("rice", "g")] == 1500
+    assert merged[("milk", "ml")] == 250 and merged[("milk", "unit")] == 2   # ml and "unit" are never guessed into each other
+    assert merged[("eggs", "unit")] == 5
+
+
+def test_shopping_name_uses_the_generic_part_of_a_database_name():
+    assert calc.shopping_name("Chicken, broilers or fryers, breast, meat only, cooked, roasted") == "Chicken"
+    assert calc.shopping_name("Oats") == "Oats"
+    assert calc.shopping_name("  ") == "Food"
+
+
+def test_swaps_prefer_lower_sodium_and_similar_energy():
+    original = {"id": "a", "name": "Salted crackers", "nutrients": {"energy_kcal": 430, "sodium_mg": 1100, "protein_g": 9}}
+    candidates = [
+        {"id": "b", "name": "Plain crackers", "nutrients": {"energy_kcal": 420, "sodium_mg": 300, "protein_g": 9}},
+        {"id": "c", "name": "Lettuce", "nutrients": {"energy_kcal": 15, "sodium_mg": 28}},            # far too different in energy
+        {"id": "d", "name": "Unknown sodium", "nutrients": {"energy_kcal": 430, "protein_g": 9}},      # not reported: never assumed to be low
+        {"id": "e", "name": "Saltier", "nutrients": {"energy_kcal": 430, "sodium_mg": 1500}},
+        {"id": "a", "name": "Salted crackers", "nutrients": {"energy_kcal": 430, "sodium_mg": 1100}},  # the food itself
+    ]
+    out = calc.rank_swaps(original, candidates, "sodium_mg")
+    assert [s["id"] for s in out] == ["b"]
+    assert out[0]["direction"] == "lower" and round(out[0]["change_pct"]) == -73
+    # for fibre, more is better
+    assert calc.swap_direction("fiber_g") == "higher" and calc.swap_direction("sat_fat_g") == "lower"
+    with pytest.raises(ValueError):
+        calc.rank_swaps(original, candidates, "not_a_nutrient")

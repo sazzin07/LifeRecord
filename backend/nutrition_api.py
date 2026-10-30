@@ -7,12 +7,13 @@ nutrients at the time they were logged, so later changes to food data never rewr
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional
+from types import SimpleNamespace
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import Depends, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,17 @@ from models import Food, FoodFavorite, HydrationEntry, Meal, NutritionProfile, R
 from nutrition_data import BY_KEY, DERIVED, GROUPS, KIND_LABEL, NUTRIENTS, SOURCES, derive, reference_for
 
 ISO_DATE = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def _real_date(v: str) -> str:
+    try:
+        date.fromisoformat(v)
+    except ValueError:
+        raise ValueError("Not a real calendar date.")
+    return v
+
+
+ValidDate = Annotated[str, Field(pattern=ISO_DATE), AfterValidator(_real_date)]  # "2026-13-45" matches the pattern but is not a date
 TIME_RE = r"^([01]\d|2[0-3]):[0-5]\d$"
 MEAL_TYPES = ("breakfast", "lunch", "dinner", "snack", "other")
 BEVERAGES = ("water", "tea", "coffee", "other")
@@ -80,7 +92,7 @@ class FoodBody(BaseModel):
 
 
 class DiaryBody(BaseModel):
-    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
+    date: Optional[ValidDate] = None
     meal_type: Literal["breakfast", "lunch", "dinner", "snack", "other"] = "other"
     meal_label: Optional[str] = Field(default=None, max_length=100)
     eaten_at: Optional[str] = Field(default=None, pattern=TIME_RE)
@@ -97,7 +109,7 @@ class DiaryBody(BaseModel):
 
 
 class DiaryUpdate(BaseModel):
-    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
+    date: Optional[ValidDate] = None
     meal_type: Optional[Literal["breakfast", "lunch", "dinner", "snack", "other"]] = None
     meal_label: Optional[str] = Field(default=None, max_length=100)
     eaten_at: Optional[str] = Field(default=None, pattern=TIME_RE)
@@ -112,7 +124,7 @@ class DiaryUpdate(BaseModel):
 
 
 class MoveBody(BaseModel):
-    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
+    date: Optional[ValidDate] = None
     meal_type: Optional[Literal["breakfast", "lunch", "dinner", "snack", "other"]] = None
     eaten_at: Optional[str] = Field(default=None, pattern=TIME_RE)
 
@@ -120,8 +132,47 @@ class MoveBody(BaseModel):
 class WaterBody(BaseModel):
     amount_ml: int = Field(..., gt=0, le=5000)
     beverage: Literal["water", "tea", "coffee", "other"] = "water"
-    date: Optional[str] = Field(default=None, pattern=ISO_DATE)
+    date: Optional[ValidDate] = None
     eaten_at: Optional[str] = Field(default=None, pattern=TIME_RE)
+
+
+class WaterUpdate(BaseModel):
+    amount_ml: Optional[int] = Field(default=None, gt=0, le=5000)
+    beverage: Optional[Literal["water", "tea", "coffee", "other"]] = None
+    eaten_at: Optional[str] = Field(default=None, pattern=TIME_RE)
+
+
+class CopyBody(BaseModel):
+    from_date: ValidDate
+    to_date: ValidDate
+    meal_type: Optional[Literal["breakfast", "lunch", "dinner", "snack", "other"]] = None  # copy only this meal
+
+
+class RecipeIngredientIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    quantity: float = Field(default=1, ge=0, le=1000000)
+    unit: str = Field(default="unit", max_length=50)
+    food_id: Optional[str] = Field(default=None, max_length=36)
+
+
+class RecipePreviewBody(BaseModel):
+    servings: int = Field(default=1, ge=1, le=1000)
+    ingredients: List[RecipeIngredientIn] = Field(default=[], max_length=100)
+
+
+class RemindersBody(BaseModel):
+    """In-app reminders only: nothing is emailed or pushed. Times are local to the profile's time zone."""
+    enabled: bool = False
+    meals: Dict[Literal["breakfast", "lunch", "dinner", "snack"], str] = {}
+    water_by: Optional[str] = Field(default=None, pattern=TIME_RE)
+
+    @field_validator("meals")
+    @classmethod
+    def _meal_times(cls, v):
+        for t in v.values():
+            if not re.fullmatch(TIME_RE, t or ""):
+                raise ValueError("Use HH:MM (24-hour) for reminder times.")
+        return v
 
 
 # ---------------------------------------------------------------- pure helpers
@@ -226,12 +277,15 @@ def register(router, srv):
     async def get_profile_row(db, uid) -> Optional[NutritionProfile]:
         return (await db.execute(select(NutritionProfile).where(NutritionProfile.user_id == uid))).scalar_one_or_none()
 
-    def local_today(profile: dict) -> date:
+    def local_now(profile: dict) -> datetime:
         tz = profile.get("timezone")
         try:
-            return datetime.now(ZoneInfo(tz)).date() if tz else datetime.now(timezone.utc).date()
+            return datetime.now(ZoneInfo(tz)) if tz else datetime.now(timezone.utc)
         except ZoneInfoNotFoundError:
-            return datetime.now(timezone.utc).date()
+            return datetime.now(timezone.utc)
+
+    def local_today(profile: dict) -> date:
+        return local_now(profile).date()
 
     async def reference(db, uid):
         prof = profile_dict(await get_profile_row(db, uid))
@@ -390,15 +444,23 @@ def register(router, srv):
 
     @router.get("/nutrition/foods/recent")
     async def recent_foods(limit: int = Query(12, ge=1, le=50), user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        """Foods eaten lately, newest first, with the amount last used so they can be logged again in one step."""
         uid = user["_id"]
-        since = (date.today() - timedelta(days=60)).isoformat()
-        rows = (await db.execute(select(Meal.food_id, func.count(Meal.id), func.max(Meal.date)).where(
-            Meal.user_id == uid, Meal.food_id.is_not(None), Meal.date >= since).group_by(Meal.food_id)
-            .order_by(func.max(Meal.date).desc(), func.count(Meal.id).desc()).limit(limit))).all()
-        ids = [r[0] for r in rows]
+        _, _, _, today = await reference(db, uid)
+        since = (today - timedelta(days=60)).isoformat()
+        rows = (await db.execute(select(Meal).where(Meal.user_id == uid, Meal.food_id.is_not(None), Meal.date >= since)
+                                 .order_by(Meal.date.desc(), Meal.created_at.desc()).limit(600))).scalars().all()
+        last: Dict[str, Meal] = {}
+        count: Dict[str, int] = defaultdict(int)
+        for m in rows:
+            last.setdefault(m.food_id, m)
+            count[m.food_id] += 1
+        ids = list(last)[:limit]
         foods = {f.id: f for f in (await db.execute(select(Food).where(Food.id.in_(ids or [""])))).scalars().all()}
         favs = await favorites_of(db, uid)
-        return [{**food_summary(foods[i], uid, favs), "times_logged": c, "last_logged": d} for i, c, d in rows if i in foods]
+        return [{**food_summary(foods[i], uid, favs), "times_logged": count[i], "last_logged": last[i].date,
+                 "last_quantity": float(last[i].quantity) if last[i].quantity is not None else None, "last_unit": last[i].unit,
+                 "last_meal_type": last[i].meal_type} for i in ids if i in foods]
 
     @router.get("/nutrition/foods/mine")
     async def my_foods(user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
@@ -485,12 +547,15 @@ def register(router, srv):
             raise HTTPException(404, "Food not found (shared reference foods cannot be edited; create your own version instead).")
         f.name, f.name_lower, f.brand, f.category = body.name.strip(), body.name.strip().lower()[:255], (body.brand or "").strip() or None, body.category
         f.nutrients, f.portions, f.updated_at = clean_food_nutrients(body.nutrients), clean_portions(body.portions), now_iso()
+        await refresh_recipes_using_food(db, user["_id"], fid)  # recipes built from this food follow its new values
         await db.commit()
         return food_detail(f, user["_id"], await favorites_of(db, user["_id"]))
 
     @router.delete("/nutrition/foods/{fid}")
     async def delete_food(fid: str, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
         r = await db.execute(delete(Food).where(Food.id == fid, Food.user_id == user["_id"]))
+        if r.rowcount:
+            await refresh_recipes_using_food(db, user["_id"], fid)  # the ingredient is now unlinked, so those recipes say so
         await db.commit()
         if r.rowcount == 0:
             raise HTTPException(404, "Food not found (shared reference foods cannot be removed).")
@@ -545,7 +610,73 @@ def register(router, srv):
             None if r.carbs is None else float(r.carbs), None if r.fat is None else float(r.fat)).items()}
         if not per:
             raise HTTPException(422, "This recipe has no nutrition values yet. Add them or link its ingredients to foods first.")
-        return {"description": f"{r.name}", "nutrients": {k: float(v) * servings for k, v in per.items()}, "quality": r.quality or "user"}
+        meta = r.nutrition_meta or {}
+        # calculated from only some of the ingredients: counted, but honestly labelled as an estimate
+        quality = "estimated" if r.nutrients and meta.get("linked") and not meta.get("complete") else (r.quality or "user")
+        return {"description": f"{r.name}", "nutrients": {k: float(v) * servings for k, v in per.items()}, "quality": quality}
+
+    # ------------------------------------------------------------ recipes calculated from foods
+    async def recipe_nutrition(db, uid, ingredients: List[dict], servings: int) -> dict:
+        """Per-serving nutrients of a recipe whose ingredients are linked to foods. An ingredient that is not linked (or whose
+        unit cannot be converted to grams) is listed under `missing` and never counted as zero."""
+        ids = {i["food_id"] for i in ingredients if i.get("food_id")}
+        foods = {f.id: f for f in (await db.execute(select(Food).where(
+            Food.id.in_(ids or {""}), or_(Food.user_id == uid, Food.user_id.is_(None))))).scalars().all()}
+        rows, parts, qualities = [], [], []
+        for ing in ingredients:
+            fid = ing.get("food_id")
+            row = {"name": ing["name"], "quantity": ing.get("quantity"), "unit": ing.get("unit"), "food_id": fid, "grams": None,
+                   "status": "unlinked"}
+            part = {"name": ing["name"], "grams": None, "food_nutrients": None}
+            f = foods.get(fid) if fid else None
+            if fid and not f:
+                row["status"] = "food_missing"
+            elif f:
+                try:
+                    grams, approx = calc.to_grams({"name": f.name, "category": f.category, "nutrients": f.nutrients, "portions": f.portions},
+                                                  float(ing.get("quantity") or 0), ing.get("unit") or "g")
+                except calc.PortionError as exc:
+                    row.update(status="unit_unknown", reason=str(exc), food_name=f.name)
+                else:
+                    row.update(status="ok", grams=round(grams, 1), approximate=approx, food_name=f.name)
+                    part.update(grams=grams, food_nutrients=f.nutrients or {})
+                    qualities.append("estimated" if approx else f.quality)
+            rows.append(row)
+            parts.append(part)
+        res = calc.recipe_totals(parts, servings)
+        return {**res, "total_ingredients": len(ingredients), "quality": calc.combine_quality(qualities) if res["linked"] else None, "ingredients": rows}
+
+    async def apply_recipe_nutrition(db, uid, r: Recipe) -> None:
+        """Keep a recipe's calculated nutrients in step with its ingredients (no commit). Recipes without linked ingredients keep
+        whatever numbers the person typed. When calculated, the whole-recipe numbers the older fields hold follow the calculation."""
+        ings = r.ingredients or []
+        if not any(i.get("food_id") for i in ings):
+            r.nutrients, r.nutrition_meta, r.quality = None, None, None
+            return
+        res = await recipe_nutrition(db, uid, ings, r.servings)
+        r.nutrition_meta = {"linked": res["linked"], "total": res["total_ingredients"], "missing": res["missing"], "complete": res["complete"]}
+        if not res["linked"]:
+            r.nutrients, r.quality = None, None
+            return
+        r.nutrients, r.quality = res["per_serving"], res["quality"]
+        whole = calc.whole_recipe_macros(res["per_serving"], r.servings)
+        r.calories, r.protein, r.carbs, r.fat = whole["calories"], whole["protein"], whole["carbs"], whole["fat"]
+
+    async def refresh_recipes_using_food(db, uid, fid: str) -> int:
+        """A food's values (or existence) changed: recalculate the person's recipes that use it."""
+        n = 0
+        for r in (await db.execute(select(Recipe).where(Recipe.user_id == uid))).scalars().all():
+            if any(i.get("food_id") == fid for i in (r.ingredients or [])):
+                await apply_recipe_nutrition(db, uid, r)
+                n += 1
+        return n
+
+    @router.post("/nutrition/recipe-preview")
+    async def recipe_preview(body: RecipePreviewBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        """What a recipe's ingredients add up to, without saving anything (the recipe form shows this as you type)."""
+        res = await recipe_nutrition(db, user["_id"], [i.model_dump() for i in body.ingredients], body.servings)
+        return {**res, "note": "Calculated from the linked ingredients per serving. Ingredients that are not linked to a food, or whose unit "
+                               "cannot be converted to grams, are left out and listed, not counted as zero."}
 
     async def build_entry(db, uid, body) -> dict:
         """Everything a new/replaced entry needs, from either a food, a recipe or typed numbers."""
@@ -571,6 +702,23 @@ def register(router, srv):
         return {"description": body.description, "nutrients": calc.quick_nutrients(body.calories, body.protein, body.carbs, body.fat),
                 "grams": None, "quality": "user", "source": "quick", "unit": None}
 
+    async def create_diary_entry(db, uid, body: DiaryBody, *, today: Optional[date] = None, source: Optional[str] = None,
+                                 quality: Optional[str] = None, commit: bool = True) -> Meal:
+        """The one place a diary entry is built and stored: the page, the assistant, cooking a recipe and logging a plan all use it."""
+        if today is None:
+            _, _, _, today = await reference(db, uid)
+        e = await build_entry(db, uid, body)
+        m = Meal(id=new_id(), user_id=uid, description=e["description"], date=body.date or today.isoformat(), created_at=now_iso(), updated_at=now_iso(),
+                 meal_type=body.meal_type, meal_label=body.meal_label, eaten_at=body.eaten_at, food_id=body.food_id, recipe_id=body.recipe_id,
+                 quantity=body.quantity, unit=e["unit"], grams=e["grams"], quality=quality or e["quality"], entry_source=source or e["source"],
+                 client_ref=body.client_ref)
+        apply_nutrients(m, e["nutrients"])
+        db.add(m)
+        if commit:
+            await db.commit()
+            await db.refresh(m)
+        return m
+
     @router.post("/nutrition/diary")
     async def add_entry(body: DiaryBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
         uid = user["_id"]
@@ -578,16 +726,33 @@ def register(router, srv):
             dup = (await db.execute(select(Meal).where(Meal.user_id == uid, Meal.client_ref == body.client_ref))).scalar_one_or_none()
             if dup:
                 return {**entry_view(dup), "duplicate": True}
-        _, prof, _, today = await reference(db, uid)
-        e = await build_entry(db, uid, body)
-        m = Meal(id=new_id(), user_id=uid, description=e["description"], date=body.date or today.isoformat(), created_at=now_iso(), updated_at=now_iso(),
-                 meal_type=body.meal_type, meal_label=body.meal_label, eaten_at=body.eaten_at, food_id=body.food_id, recipe_id=body.recipe_id,
-                 quantity=body.quantity, unit=e["unit"], grams=e["grams"], quality=e["quality"], entry_source=e["source"], client_ref=body.client_ref)
-        apply_nutrients(m, e["nutrients"])
-        db.add(m)
+        return entry_view(await create_diary_entry(db, uid, body))
+
+    @router.post("/nutrition/diary/copy")
+    async def copy_entries(body: CopyBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        """Copy a day's entries (or one meal of it) to another day, e.g. "same breakfast as yesterday". Each copy keeps its own snapshot."""
+        uid = user["_id"]
+        valid_date(body.from_date), valid_date(body.to_date)
+        if body.from_date == body.to_date:
+            raise HTTPException(422, "Choose a different day to copy to.")
+        q = select(Meal).where(Meal.user_id == uid, Meal.date == body.from_date).order_by(Meal.eaten_at, Meal.created_at)
+        if body.meal_type:
+            q = q.where(Meal.meal_type == body.meal_type)
+        src = (await db.execute(q.limit(101))).scalars().all()
+        if not src:
+            raise HTTPException(404, "Nothing was logged on that day" + (f" for {body.meal_type}." if body.meal_type else "."))
+        if len(src) > 100:
+            raise HTTPException(422, "That day has more than 100 entries; copy it meal by meal.")
+        copies = []
+        for s in src:
+            m = Meal(id=new_id(), user_id=uid, description=s.description, date=body.to_date, created_at=now_iso(), updated_at=now_iso(),
+                     meal_type=s.meal_type, meal_label=s.meal_label, eaten_at=s.eaten_at, food_id=s.food_id, recipe_id=s.recipe_id,
+                     quantity=s.quantity, unit=s.unit, grams=s.grams, quality=s.quality, entry_source=s.entry_source)
+            apply_nutrients(m, entry_nutrients(s))
+            db.add(m)
+            copies.append(m)
         await db.commit()
-        await db.refresh(m)
-        return entry_view(m)
+        return {"copied": len(copies), "entries": [entry_view(m) for m in copies]}
 
     async def own_entry(db, uid, mid) -> Meal:
         m = (await db.execute(select(Meal).where(Meal.id == mid, Meal.user_id == uid))).scalar_one_or_none()
@@ -669,6 +834,18 @@ def register(router, srv):
         h = HydrationEntry(id=new_id(), user_id=user["_id"], date=body.date or today.isoformat(), eaten_at=body.eaten_at,
                            amount_ml=body.amount_ml, beverage=body.beverage, created_at=now_iso())
         db.add(h)
+        await db.commit()
+        return {"id": h.id, "date": h.date, "eaten_at": h.eaten_at, "amount_ml": h.amount_ml, "beverage": h.beverage}
+
+    @router.put("/nutrition/water/{hid}")
+    async def update_water(hid: str, body: WaterUpdate, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        h = (await db.execute(select(HydrationEntry).where(HydrationEntry.id == hid, HydrationEntry.user_id == user["_id"]))).scalar_one_or_none()
+        if not h:
+            raise HTTPException(404, "Entry not found")
+        for f in ("amount_ml", "beverage", "eaten_at"):
+            v = getattr(body, f)
+            if v is not None:
+                setattr(h, f, v)
         await db.commit()
         return {"id": h.id, "date": h.date, "eaten_at": h.eaten_at, "amount_ml": h.amount_ml, "beverage": h.beverage}
 
@@ -837,4 +1014,68 @@ def register(router, srv):
         return {"nutrient": nutrient, "foods": await suggest_foods(db, nutrient, target, prof, limit),
                 "note": "Whole foods richest in this nutrient per 100 g. Food data can be incomplete, so a food missing from this list is not necessarily low in it."}
 
-    return {"entry_view": entry_view, "entry_nutrients": entry_nutrients}
+    # ------------------------------------------------------------ reminders (in-app only: nothing is emailed or pushed)
+    def reminders_dict(row: Optional[NutritionProfile]) -> dict:
+        r = (row.reminders if row else None) or {}
+        return {"enabled": bool(r.get("enabled")), "meals": r.get("meals") or {}, "water_by": r.get("water_by")}
+
+    @router.get("/nutrition/reminders")
+    async def get_reminders(user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        return reminders_dict(await get_profile_row(db, user["_id"]))
+
+    @router.put("/nutrition/reminders")
+    async def put_reminders(body: RemindersBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        row = await get_profile_row(db, user["_id"])
+        if not row:
+            row = NutritionProfile(id=new_id(), user_id=user["_id"], target_overrides={})
+            db.add(row)
+        row.reminders = {"enabled": body.enabled, "meals": dict(body.meals), "water_by": body.water_by}
+        row.updated_at = now_iso()
+        await db.commit()
+        return reminders_dict(row)
+
+    @router.get("/nutrition/reminders/due")
+    async def reminders_due(user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        """What the person asked to be reminded about that has not happened yet today, by their own clock."""
+        uid = user["_id"]
+        row = await get_profile_row(db, uid)
+        rem = reminders_dict(row)
+        if not rem["enabled"]:
+            return {"enabled": False, "due": []}
+        ref, prof, _, _ = await reference(db, uid)
+        now = local_now(prof)
+        today, hhmm = now.date().isoformat(), now.strftime("%H:%M")
+        meals = (await db.execute(select(Meal).where(Meal.user_id == uid, Meal.date == today))).scalars().all()
+        logged = {m.meal_type for m in meals}
+        due = []
+        for mt in ("breakfast", "lunch", "dinner", "snack"):
+            at = rem["meals"].get(mt)
+            if at and hhmm >= at and mt not in logged:
+                due.append({"id": f"meal:{mt}", "kind": "meal", "meal_type": mt, "time": at,
+                            "text": f"{mt.capitalize()} is not logged yet (reminder set for {at})."})
+        if rem["water_by"] and hhmm >= rem["water_by"]:
+            target = (ref["items"].get("water_ml") or {}).get("target")
+            drinks = (await db.execute(select(func.coalesce(func.sum(HydrationEntry.amount_ml), 0)).where(
+                HydrationEntry.user_id == uid, HydrationEntry.date == today))).scalar_one()
+            food_water = sum(entry_nutrients(m).get("water_g", 0.0) for m in meals)
+            total = float(drinks) + food_water
+            if target and total < target * 0.5:
+                due.append({"id": "water", "kind": "water", "time": rem["water_by"],
+                            "text": f"You have had {total / 1000:.1f} L of about {target / 1000:.1f} L total water; "
+                                    f"you asked to be nudged by {rem['water_by']}."})
+        return {"enabled": True, "date": today, "now": hhmm, "due": due}
+
+    return SimpleNamespace(
+        reference=reference, profile_dict=profile_dict, get_profile_row=get_profile_row, local_today=local_today, local_now=local_now,
+        visible_food=visible_food, food_summary=food_summary, food_detail=food_detail, favorites_of=favorites_of, food_flags=food_flags,
+        entry_view=entry_view, entry_nutrients=entry_nutrients, apply_nutrients=apply_nutrients, build_entry=build_entry,
+        create_diary_entry=create_diary_entry, own_entry=own_entry, recipe_nutrition=recipe_nutrition,
+        apply_recipe_nutrition=apply_recipe_nutrition, day_summary=day_summary, suggest_foods=suggest_foods,
+        # the route functions themselves, so other callers (the assistant) run exactly the same code as the page
+        search_foods=search_foods, recent_foods=recent_foods, get_food=get_food, food_by_barcode=food_by_barcode, create_food=create_food,
+        update_food=update_food, delete_food=delete_food, favorite=favorite, unfavorite=unfavorite, add_entry=add_entry,
+        update_entry=update_entry, delete_entry=delete_entry, duplicate_entry=duplicate_entry, move_entry=move_entry, copy_entries=copy_entries,
+        add_water=add_water, update_water=update_water, delete_water=delete_water, get_day=get_day, trends=trends,
+        contributors=contributors, insights=insights, rich_in=rich_in, get_targets=get_targets, set_target=set_target,
+        clear_target=clear_target, get_profile=get_profile, put_profile=put_profile, get_reminders=get_reminders,
+        put_reminders=put_reminders, reminders_due=reminders_due, recipe_preview=recipe_preview)

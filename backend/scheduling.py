@@ -30,6 +30,7 @@ from markdown_it import MarkdownIt
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 
+import ai_tools_nutrition
 import email_service
 from models import ReportRecipient, ScheduledTask, ScheduledTaskRun, User
 
@@ -219,7 +220,7 @@ SOURCE_TOOLS: Dict[str, List[str]] = {
     "money": ["get_financial_summary", "get_transactions", "get_categories", "get_accounts", "get_people_balances"],
     "people": ["get_people", "get_people_balances"],
     "tasks": ["get_tasks"],
-    "nutrition": ["get_meals", "get_recipes"],
+    "nutrition": ai_tools_nutrition.NUTRITION_READ_TOOLS,
     "fitness": ["get_workouts"],
     "body": ["get_weight_history"],
     "groceries": ["get_groceries", "get_kitchen_overview", "get_expiring_items", "get_shopping_lists", "get_grocery_summary",

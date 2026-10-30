@@ -331,6 +331,7 @@ class Recipe(Base):
     created_at = Column(String(32), nullable=False)
     nutrients = Column(JSON, nullable=True)  # per serving, calculated from the ingredients when they are linked to foods
     quality = Column(String(16), nullable=True)
+    nutrition_meta = Column(JSON, nullable=True)  # {"linked": n, "total": n, "missing": [names], "complete": bool} for calculated recipes
 
 
 class AIAction(Base):
@@ -525,7 +526,34 @@ class NutritionProfile(Base):
     allergies = Column(JSON, nullable=True)  # free-text words to avoid
     target_overrides = Column(JSON, nullable=True)  # {nutrient_key: {"min":..,"target":..,"max":..}} always win over suggestions
     timezone = Column(String(64), nullable=True)
+    reminders = Column(JSON, nullable=True)  # in-app only: {"enabled": bool, "meals": {"lunch": "13:30"}, "water_by": "15:00"}
     updated_at = Column(String(32), nullable=True)
+
+
+class MealPlanEntry(Base):
+    """Something planned to be eaten on a day. Kept apart from the diary (`meals`) so plans never count towards what was
+    eaten; logging a plan entry copies its nutrient snapshot into the diary and marks it logged."""
+    __tablename__ = "meal_plan_entries"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    date = Column(String(10), nullable=False)
+    meal_type = Column(String(20), nullable=False, default="other", server_default="other")
+    eaten_at = Column(String(5), nullable=True)  # planned local time HH:MM
+    description = Column(String(500), nullable=False)
+    food_id = Column(String(36), nullable=True)
+    recipe_id = Column(String(36), nullable=True)
+    quantity = Column(DECIMAL(10, 2), nullable=True)
+    unit = Column(String(50), nullable=True)
+    grams = Column(DECIMAL(10, 2), nullable=True)
+    nutrients = Column(JSON, nullable=True)  # absolute amounts, snapshotted when planned
+    quality = Column(String(16), nullable=True)
+    entry_source = Column(String(16), nullable=True)  # food | recipe | quick
+    note = Column(String(500), nullable=True)
+    status = Column(String(12), nullable=False, default="planned", server_default="planned")  # planned | logged
+    meal_id = Column(String(36), nullable=True)  # the diary entry created when it was logged
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=True)
+    __table_args__ = (Index("ix_meal_plan_user_date", "user_id", "date"),)
 
 
 class HydrationEntry(Base):

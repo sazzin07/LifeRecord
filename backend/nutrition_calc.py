@@ -166,3 +166,82 @@ def progress(totals: dict, reported: dict, entries: int, items: Dict[str, dict],
                     "overridden": bool(ov), "note": ref.get("note", ""), "entries_reporting": got, "entries": entries,
                     "complete": entries > 0 and got == entries}
     return out
+
+
+# ---------------------------------------------------------------- recipes, planning, shopping, swaps
+LOWER_IS_BETTER = {"sodium_mg", "sat_fat_g", "sugars_g", "trans_fat_g", "cholesterol_mg", "alcohol_g"}
+SWAP_ENERGY_BAND_PCT = 35.0  # a swap must stay within this much of the original's energy per 100 g
+_MASS_BASE = {"g": 1.0, "kg": 1000.0}
+_VOLUME_BASE = {"ml": 1.0, "l": 1000.0}
+
+
+def whole_recipe_macros(per_serving: Dict[str, float], servings: int) -> Dict[str, Optional[float]]:
+    """The four whole-recipe numbers the older recipe fields hold, from calculated per-serving nutrients."""
+    n = max(int(servings or 1), 1)
+
+    def whole(key):
+        return round(per_serving[key] * n, 1) if key in per_serving else None
+
+    return {"calories": whole("energy_kcal"), "protein": whole("protein_g"), "carbs": whole("carbs_g"), "fat": whole("fat_g")}
+
+
+def default_meal_type(hour: int) -> str:
+    return "breakfast" if hour < 11 else "lunch" if hour < 15 else "snack" if hour < 18 else "dinner"
+
+
+def merge_needs(needs: Iterable[dict]) -> List[dict]:
+    """Add up shopping needs by name. Mass (g/kg) and volume (ml/l) are summed in grams / millilitres; any other unit is
+    only added to the same unit, because "2 units" of milk and "250 ml" of milk cannot be compared without guessing."""
+    merged: Dict[Tuple[str, str], dict] = {}
+    for n in needs:
+        name = (n.get("name") or "").strip()
+        qty = float(n.get("quantity") or 0)
+        if not name or qty <= 0:
+            continue
+        unit = (n.get("unit") or "unit").strip().lower()
+        if unit in _MASS_BASE:
+            qty, unit = qty * _MASS_BASE[unit], "g"
+        elif unit in _VOLUME_BASE:
+            qty, unit = qty * _VOLUME_BASE[unit], "ml"
+        row = merged.setdefault((name.lower(), unit), {"name": name, "quantity": 0.0, "unit": unit})
+        row["quantity"] += qty
+    return [{**r, "quantity": round(r["quantity"], 3)} for r in merged.values()]
+
+
+def shopping_name(food_name: str) -> str:
+    """A database name such as "Chicken, broilers or fryers, breast, meat only" becomes the generic "Chicken" for a shopping list."""
+    first = (food_name or "").split(",")[0].strip()
+    return first[:120] or "Food"
+
+
+def swap_direction(key: str) -> str:
+    return "lower" if key in LOWER_IS_BETTER else "higher"
+
+
+def rank_swaps(original: dict, candidates: Iterable[dict], key: str, direction: Optional[str] = None, limit: int = 6) -> List[dict]:
+    """Foods that improve one nutrient, per 100 g, while staying close in energy density. Candidates that do not report the
+    nutrient are skipped: missing data is never read as "low". Each result shows both amounts and the change."""
+    if key not in BY_KEY:
+        raise ValueError(f"Unknown nutrient '{key}'.")
+    direction = direction or swap_direction(key)
+    base = (original.get("nutrients") or {}).get(key)
+    base_energy = (original.get("nutrients") or {}).get("energy_kcal")
+    if base is None or base <= 0:
+        return []
+    out = []
+    for c in candidates:
+        if c.get("id") == original.get("id"):
+            continue
+        n = c.get("nutrients") or {}
+        v = n.get(key)
+        if v is None:
+            continue
+        if (direction == "lower" and v >= base) or (direction == "higher" and v <= base):
+            continue
+        e = n.get("energy_kcal")
+        if base_energy and (e is None or abs(e - base_energy) / base_energy * 100.0 > SWAP_ENERGY_BAND_PCT):
+            continue
+        out.append({"id": c["id"], "name": c.get("name"), "per100": v, "original_per100": base, "direction": direction,
+                    "change_pct": (v - base) / base * 100.0, "energy_kcal": e})
+    out.sort(key=lambda s: s["change_pct"] if direction == "lower" else -s["change_pct"])
+    return out[:limit]

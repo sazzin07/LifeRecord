@@ -148,7 +148,7 @@ def test_every_source_tool_is_a_real_read_only_tool():
     import server
     declared = {t["function"]["name"] for t in server.AI_TOOLS}
     for name in sch.ALWAYS_ALLOWED + [n for names in sch.SOURCE_TOOLS.values() for n in names]:
-        assert name in declared and (name.startswith("get_") or name == "suggest_recipes_from_inventory"), name
+        assert name in declared and (name.startswith(("get_", "search_", "suggest_"))), name   # lookups only; every write tool has another verb
 
 
 def test_allowed_tools_follow_the_chosen_sources_and_default_to_all_reads():

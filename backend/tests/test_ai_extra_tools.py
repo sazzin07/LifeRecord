@@ -160,10 +160,10 @@ def test_meal_edit_and_delete_update_the_daily_totals():
     desc = f"{TAG} porridge"
     meal = run(_tool("log_meal", {"description": desc, "calories": 300, "protein": 10, "carbs": 50, "fat": 6}))
     before = run(_tool("get_meals", {}))["totals"]["calories"]
-    run(_tool("update_meal", {"meal_id": meal["id"], "calories": 450}))
+    run(_tool("update_diary_entry", {"entry_id": meal["logged"]["id"], "calories": 450}))
     assert run(_tool("get_meals", {}))["totals"]["calories"] == before + 150
-    preview, final = _confirm_flow("delete_meal", {"meal_id": meal["id"]})
-    assert preview.get("needs_confirmation") and final == {"deleted": desc}
+    preview, final = _confirm_flow("delete_diary_entry", {"entry_id": meal["logged"]["id"]})
+    assert preview.get("needs_confirmation") and desc in final["deleted"]
     assert run(_tool("get_meals", {}))["totals"]["calories"] == before - 300
 
 
@@ -331,6 +331,6 @@ def test_a_delete_preview_is_not_counted_as_a_change(monkeypatch):
 
 
 def test_confirmation_tools_explain_when_confirm_may_be_set():
-    for name in ("delete_task", "delete_person", "delete_meal", "delete_workout", "delete_category"):
+    for name in ("delete_task", "delete_person", "delete_diary_entry", "delete_workout", "delete_category"):
         props = next(t for t in server.AI_TOOLS if t["function"]["name"] == name)["function"]["parameters"]["properties"]
         assert "explicitly agreed" in props["confirm"]["description"]

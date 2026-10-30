@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { QuickAdd } from "./QuickAdd";
+import { Suggestions } from "./Suggestions";
 import { MEALS, MEAL_BY_KEY, MACRO_COLORS, EnergyBar, RangeGauge, QualityBadge, fmt, shiftDate, refreshNutrition } from "./shared";
 
 function EntryRow({ entry, date, onEdit, onDelete }) {
@@ -212,6 +213,8 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
             </>
           )}
         </Card>
+
+        <Suggestions date={date} />
 
         {MEALS.filter((m) => m.key !== "other" || byType.other).map((m) => {
           const g = byType[m.key];

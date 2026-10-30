@@ -18,6 +18,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import nutrition_calc as calc
+import nutrition_insights as ni
 from models import Food, FoodFavorite, HydrationEntry, Meal, NutritionProfile, Recipe, WeightEntry
 from nutrition_data import BY_KEY, DERIVED, GROUPS, KIND_LABEL, NUTRIENTS, SOURCES, reference_for
 
@@ -897,7 +898,7 @@ def register(router, srv):
     # ------------------------------------------------------------ trends, contributors, insights
     @router.get("/nutrition/trends")
     async def trends(days: int = Query(7, ge=1, le=MAX_RANGE_DAYS), end: Optional[str] = Query(None, pattern=ISO_DATE),
-                     user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+                     bucket: Literal["day", "week", "month"] = Query("day"), user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
         uid = user["_id"]
         ref, prof, _, today = await reference(db, uid)
         last = valid_date(end) if end else today
@@ -924,8 +925,8 @@ def register(router, srv):
         avg = {k: (sum(t[k] for _, t in logged if k in t) / reported_days[k]) if reported_days[k] else None for k in TRACKED_KEYS}
         prog = calc.progress({k: v for k, v in avg.items() if v is not None}, {k: reported_days[k] for k in TRACKED_KEYS if avg[k] is not None},
                              len(logged), ref["items"], prof["target_overrides"]) if logged else {}
-        return {"start": s, "end": e, "days": days, "days_logged": len(logged), "series": series, "daily_average": avg, "days_reporting": reported_days,
-                "progress": prog, "note": "Averages use only the days with something logged; a day without entries is not counted as zero."}
+        return {"start": s, "end": e, "days": days, "bucket": bucket, "days_logged": len(logged), "series": ni.aggregate_series(series, bucket), "daily_average": avg,
+                "days_reporting": reported_days, "progress": prog, "note": "Averages use only the days with something logged; a day without entries is not counted as zero."}
 
     @router.get("/nutrition/contributors")
     async def contributors(nutrient: str, start: str = Query(..., pattern=ISO_DATE), end: str = Query(..., pattern=ISO_DATE), limit: int = Query(10, ge=1, le=50),

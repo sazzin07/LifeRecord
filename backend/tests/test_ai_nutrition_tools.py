@@ -603,3 +603,115 @@ def test_the_prompt_tells_the_model_how_to_treat_food_data_and_settings():
     assert "Never state a nutrient value you did not get from a tool" in p
     assert "confirm=true" in p and "exactly the same arguments" in p  # the identical-confirmation rule for profile and targets
     assert "estimates" in p and "search_foods" in p
+
+
+def test_the_overview_counts_todays_meals_on_the_persons_own_day(me):
+    two_step(me, "update_nutrition_profile", {"timezone": "Pacific/Kiritimati"})
+    before = tool(me, "get_overview")["nutrition_today"]["meals"]
+    tool(me, "log_meal", {"description": "overview day check", "calories": 120})
+    assert tool(me, "get_overview")["nutrition_today"]["meals"] == before + 1   # the server's own date would miss it for much of the day
+    two_step(me, "update_nutrition_profile", {"timezone": "Europe/Lisbon"})
+
+
+def test_suggest_meals_reads_the_persons_own_data_and_changes_nothing(other):
+    me = _make_user()   # a fresh day: the shared account has already eaten most of its energy in the earlier tests
+    flour = tool(me, "save_custom_food", {"name": f"Chickpeas {uuid.uuid4().hex[:5]}", "calories": 120, "protein_g": 9, "fiber_g": 8})["created"]
+    r = tool(me, "create_recipe", {"name": f"Chickpea curry {uuid.uuid4().hex[:4]}", "servings": 1, "ingredients": [{"name": "Chickpeas", "quantity": 400, "unit": "g", "food_id": flour["id"]}]})["created"]
+    created = []
+    out = tool(me, "suggest_meals", {"meal_type": "dinner", "limit": 8}, created=created)
+    assert created == []                                                          # a lookup: nothing is written
+    mine = next(i for i in out["ideas"] if i["id"] == r["id"])
+    assert mine["log_with"] == {"recipe_id": r["id"], "quantity": 1, "unit": "serving"} and mine["why"] and mine["covers"]
+    assert out["still_needed"] and out["meal_budget_kcal"] > 0 and out["note"]
+    logged = tool(me, "log_food", {**mine["log_with"], "meal_type": "dinner"})["logged"]     # the suggestion's own arguments really log it
+    assert logged["name"] == r["name"]
+    assert all(i["id"] != r["id"] for i in tool(other, "suggest_meals", {})["ideas"])         # another account never sees it
+    assert "error" in tool(me, "suggest_meals", {"focus": ["unobtainium"]})
+    assert "error" in tool(me, "suggest_meals", {"focus": "protein_g"})
+    assert "error" in tool(me, "suggest_meals", {"date": "2026-13-45"})
+
+
+def test_create_meal_plan_previews_then_saves_only_what_was_previewed_and_can_be_undone(other):
+    me = _make_user()
+    for i in range(5):
+        f = tool(me, "save_custom_food", {"name": f"Plan food {i} {uuid.uuid4().hex[:4]}", "calories": 110 + i, "protein_g": 9, "fiber_g": 8})["created"]
+        tool(me, "create_recipe", {"name": f"Plan recipe {i} {uuid.uuid4().hex[:4]}", "servings": 1, "ingredients": [{"name": "x", "quantity": 400, "unit": "g", "food_id": f["id"]}]})
+    start = (date.fromisoformat(local_today(me)) + timedelta(days=10)).isoformat()
+    args = {"start": start, "days": 3, "meals": ["lunch", "dinner"], "focus": ["fiber_g"], "max_repeats": 2}
+    sess = "plan-" + uuid.uuid4().hex[:5]
+
+    preview = tool(me, "create_meal_plan", args, session=sess)
+    assert preview["needs_confirmation"] and "none of them counted as eaten" in preview["message"] and preview["proposal"]["days"][0]["items"]
+    assert tool(me, "get_meal_plan", {"start": start, "days": 3})["days"][0]["items"] == []                # nothing saved by a preview
+    # different arguments on the confirmation never apply the previewed plan: they only produce another preview
+    other_args = tool(me, "create_meal_plan", {**args, "days": 2, "confirm": True}, session=sess)
+    assert other_args.get("needs_confirmation") and tool(me, "get_meal_plan", {"start": start, "days": 3})["days"][0]["items"] == []
+
+    tool(me, "create_meal_plan", args, session=sess)
+    created = []
+    done = tool(me, "create_meal_plan", {**args, "confirm": True}, session=sess, created=created)
+    assert done["planned"] == len(created) and done["planned"] >= 4 and all(c["collection"] == "meal_plan" for c in created)
+    shown = tool(me, "get_meal_plan", {"start": start, "days": 3})
+    assert sum(len(d["items"]) for d in shown["days"]) == done["planned"] and all(i["status"] == "planned" for d in shown["days"] for i in d["items"])
+    assert day(me, start)["entries"] == 0                                                                    # planned is not eaten
+    assert tool(me, "create_meal_plan", args)["nothing_planned"] is True                                     # those slots are taken now
+    assert "error" in tool(me, "create_meal_plan", {**args, "meals": "lunch"}) and "error" in tool(me, "create_meal_plan", {**args, "days": 40})
+    assert tool(other, "create_meal_plan", {"start": start, "days": 2})["nothing_planned"] is True           # another account has nothing to plan with
+
+
+def test_an_applied_meal_plan_is_undone_in_one_step():
+    me = _make_user()
+    f = tool(me, "save_custom_food", {"name": f"Undo plan food {uuid.uuid4().hex[:4]}", "calories": 120, "protein_g": 9, "fiber_g": 8})["created"]
+    tool(me, "create_recipe", {"name": f"Undo plan recipe {uuid.uuid4().hex[:4]}", "servings": 1, "ingredients": [{"name": "x", "quantity": 400, "unit": "g", "food_id": f["id"]}]})
+    start = (date.fromisoformat(local_today(me)) + timedelta(days=20)).isoformat()
+    args = {"start": start, "days": 2, "meals": ["lunch"], "max_repeats": 2}
+    sess = "plan-undo-" + uuid.uuid4().hex[:5]
+    tool(me, "create_meal_plan", args, session=sess)
+    created = []
+
+    async def apply_and_record():
+        async with AsyncSessionLocal() as db:
+            await server.dispatch_tool(db, "create_meal_plan", {**args, "confirm": True}, created, me, session_id=sess, previewed_this_turn=set())
+            aid = server.new_id()
+            db.add(AIAction(id=aid, user_id=me["_id"], label="p", tools=["create_meal_plan"], created=created, undoable=True, undone=False, created_at=server.now_iso()))
+            await db.commit()
+            return aid
+    aid = run(apply_and_record())
+    assert sum(len(d["items"]) for d in tool(me, "get_meal_plan", {"start": start, "days": 2})["days"]) >= 1
+
+    async def undo():
+        async with AsyncSessionLocal() as db:
+            await server.ai_undo(aid, me, db)
+    run(undo())
+    assert all(d["items"] == [] for d in tool(me, "get_meal_plan", {"start": start, "days": 2})["days"])
+
+
+def test_get_nutrition_patterns_describes_the_period_and_is_read_only(other):
+    me = _make_user()
+    egg = first_food(me, "egg, whole, raw, fresh", "egg, whole, raw")
+    for back in (1, 2, 3, 4):
+        d = (date.fromisoformat(local_today(me)) - timedelta(days=back)).isoformat()
+        tool(me, "log_food", {"food_id": egg["id"], "quantity": 100, "unit": "g", "meal_type": "breakfast", "date": d, "time": "08:00"})
+    created = []
+    out = tool(me, "get_nutrition_patterns", {"days": 14}, created=created)
+    assert created == [] and out["days_logged"] == 4 and out["of_days"] == 14 and out["typical_meal_times"]["breakfast"] == "08:00"
+    assert out["variety"]["food_groups_seen"] == ["Dairy and eggs"] and "Fruits" in out["variety"]["food_groups_not_seen"] and out["insights"]
+    assert tool(other, "get_nutrition_patterns", {})["days_logged"] == 0
+    assert "error" in tool(me, "get_nutrition_patterns", {"end_date": "2026-13-45"})
+    assert tool(me, "get_nutrition_patterns", {"days": 99999})["of_days"] == 366                              # bounded
+
+
+def test_suggest_recipe_alternatives_compares_a_swap_and_reads_only(other):
+    me = _make_user()
+    cracker = tool(me, "save_custom_food", {"name": "Salted cracker", "calories": 430, "sodium_mg": 1100, "protein_g": 9})["created"]
+    tool(me, "save_custom_food", {"name": "Plain cracker", "calories": 420, "sodium_mg": 300, "protein_g": 9})
+    r = tool(me, "create_recipe", {"name": f"Cracker plate {uuid.uuid4().hex[:4]}", "servings": 2, "ingredients": [{"name": "Crackers", "quantity": 100, "unit": "g", "food_id": cracker["id"]},
+                                                                                                      {"name": "Water", "quantity": 100, "unit": "ml"}]})["created"]
+    created = []
+    out = tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "crackers", "nutrient": "sodium_mg"}, created=created)
+    assert created == [] and out["currently"] == "Salted cracker" and out["alternatives"][0]["name"] == "Plain cracker"
+    assert out["alternatives"][0]["recipe_per_serving"] == {"before": 550.0, "after": 150.0, "change_percent": -73.0}
+    assert tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "1", "nutrient": "sodium_mg"})["alternatives"]            # by position
+    assert "error" in tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "water", "nutrient": "sodium_mg"})              # not linked to a food
+    assert "error" in tool(me, "suggest_recipe_alternatives", {"recipe": r["name"], "ingredient": "unicorn", "nutrient": "sodium_mg"})
+    assert "error" in tool(other, "suggest_recipe_alternatives", {"recipe": r["id"], "ingredient": "crackers", "nutrient": "sodium_mg"})         # someone else's recipe

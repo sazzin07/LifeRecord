@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import kitchen_logic
 import nutrition_calc as calc
 from models import Food, Grocery, Meal, MealPlanEntry, Recipe, ShoppingList
-from nutrition_api import DiaryBody, ISO_DATE, TIME_RE, ValidDate, valid_date
+from nutrition_api import DiaryBody, ISO_DATE, TIME_RE, RecipePreviewBody, ValidDate, valid_date
 from nutrition_data import BY_KEY
 
 MAX_PLAN_DAYS = 31
@@ -271,6 +271,15 @@ def register(router, srv, nx):
                         "added twice, and nothing is marked as bought."}
 
     # ------------------------------------------------------------ swaps
+    async def swap_candidates(db, uid, f: Food, nutrient: str, direction: str, limit: int, prof: dict):
+        """Similar foods (same category, similar energy per 100 g) with less or more of one nutrient, diet and allergy words respected."""
+        q = select(Food).where(or_(Food.user_id == uid, Food.user_id.is_(None)), Food.id != f.id)
+        q = q.where(Food.category == f.category) if f.category else q.where(Food.category.is_(None))
+        cands = [c for c in (await db.execute(q.limit(1500))).scalars().all() if not nx.food_flags(c, prof)]
+        ranked = calc.rank_swaps({"id": f.id, "name": f.name, "nutrients": f.nutrients or {}}, [{"id": c.id, "name": c.name, "nutrients": c.nutrients or {}} for c in cands],
+                                 nutrient, direction, limit)
+        return ranked, {c.id: c for c in cands}
+
     @router.get("/nutrition/foods/{fid}/swaps")
     async def food_swaps(fid: str, nutrient: str = Query(..., max_length=40), direction: Optional[Literal["lower", "higher"]] = None,
                          limit: int = Query(6, ge=1, le=20), user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
@@ -286,12 +295,7 @@ def register(router, srv, nx):
         if (f.nutrients or {}).get(nutrient) is None:
             return {"food": f.name, "nutrient": nutrient, "name": info["name"], "unit": info["unit"], "direction": direction, "swaps": [],
                     "note": f"{f.name} has no {info['name'].lower()} value in its source, so nothing can be compared."}
-        q = select(Food).where(or_(Food.user_id == uid, Food.user_id.is_(None)), Food.id != f.id)
-        q = q.where(Food.category == f.category) if f.category else q.where(Food.category.is_(None))
-        cands = (await db.execute(q.limit(1500))).scalars().all()
-        cands = [c for c in cands if not nx.food_flags(c, prof)]
-        ranked = calc.rank_swaps(base, [{"id": c.id, "name": c.name, "nutrients": c.nutrients or {}} for c in cands], nutrient, direction, limit)
-        by_id = {c.id: c for c in cands}
+        ranked, by_id = await swap_candidates(db, uid, f, nutrient, direction, limit, prof)
         favs = await nx.favorites_of(db, uid)
         out = [{**nx.food_summary(by_id[s["id"]], uid, favs), **{k: s[k] for k in ("per100", "original_per100", "change_pct", "energy_kcal")}} for s in ranked]
         return {"food": f.name, "nutrient": nutrient, "name": info["name"], "unit": info["unit"], "direction": direction,
@@ -299,6 +303,53 @@ def register(router, srv, nx):
                 "note": "Compared per 100 g between foods of the same category with similar energy. Foods that clash with your diet or allergy words "
                         "(judged from names only) are left out. This is a comparison, not medical advice."}
 
-    return SimpleNamespace(plan_view=plan_view, get_plan=get_plan, add_plan=add_plan, update_plan=update_plan, delete_plan=delete_plan,
+    class AlternativesBody(RecipePreviewBody):
+        index: int = Field(..., ge=0, le=99)
+        nutrient: str = Field(..., max_length=40)
+        direction: Optional[Literal["lower", "higher"]] = None
+        limit: int = Field(default=6, ge=1, le=12)
+
+    async def recipe_alternatives_for(db, user: dict, body: AlternativesBody) -> dict:
+        """What swapping ONE ingredient for a similar food would do to the whole recipe, per serving. Same weight, same servings; nothing is saved."""
+        uid = user["_id"]
+        if body.nutrient not in BY_KEY:
+            raise HTTPException(404, "Unknown nutrient.")
+        if body.index >= len(body.ingredients):
+            raise HTTPException(422, "That ingredient is not in the recipe.")
+        prev = await nx.recipe_nutrition(db, uid, [i.model_dump() for i in body.ingredients], body.servings)
+        ing = prev["ingredients"][body.index]
+        if ing["status"] != "ok":
+            raise HTTPException(422, "This ingredient is not linked to a food, or its unit cannot be converted to grams, so alternatives cannot be compared.")
+        f = await nx.visible_food(db, uid, ing["food_id"])
+        prof = nx.profile_dict(await nx.get_profile_row(db, uid))
+        info = BY_KEY[body.nutrient]
+        direction = body.direction or calc.swap_direction(body.nutrient)
+        grams, ps, n = ing["grams"], prev["per_serving"], body.servings
+        if (f.nutrients or {}).get(body.nutrient) is None or body.nutrient not in ps:
+            return {"ingredient": ing["name"], "food": f.name, "grams": grams, "nutrient": body.nutrient, "name": info["name"], "unit": info["unit"], "direction": direction, "alternatives": [],
+                    "note": f"{f.name} has no {info['name'].lower()} value in its source, so nothing can be compared."}
+        ranked, by_id = await swap_candidates(db, uid, f, body.nutrient, direction, body.limit, prof)
+
+        def after(key: str, c: Food) -> Optional[float]:
+            fv, cv = (f.nutrients or {}).get(key), (c.nutrients or {}).get(key)
+            if fv is None or cv is None or key not in ps:
+                return None
+            return ps[key] - fv * grams / 100.0 / n + cv * grams / 100.0 / n
+        out = []
+        for r in ranked:
+            c = by_id[r["id"]]
+            a_n, a_e = after(body.nutrient, c), after("energy_kcal", c)
+            out.append({"food_id": c.id, "name": c.name, "brand": c.brand, "quality": c.quality, "per100": r["per100"], "original_per100": r["original_per100"], "change_pct": r["change_pct"],
+                        "recipe_per_serving": {"before": ps[body.nutrient], "after": a_n, "change_pct": ((a_n - ps[body.nutrient]) / ps[body.nutrient] * 100.0) if a_n is not None and ps[body.nutrient] else None},
+                        "energy_per_serving": {"before": ps.get("energy_kcal"), "after": a_e}, "grams": grams})
+        return {"ingredient": ing["name"], "food": f.name, "grams": grams, "nutrient": body.nutrient, "name": info["name"], "unit": info["unit"], "direction": direction, "alternatives": out,
+                "note": "Same weight of the replacement, same number of servings. Foods that do not report the nutrient are skipped, and foods that clash with your diet or allergy words "
+                        "are left out. This is a comparison, not medical advice."}
+
+    @router.post("/nutrition/recipe-alternatives")
+    async def recipe_alternatives(body: AlternativesBody, user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
+        return await recipe_alternatives_for(db, user, body)
+
+    return SimpleNamespace(plan_view=plan_view, recipe_alternatives=recipe_alternatives, AlternativesBody=AlternativesBody, get_plan=get_plan, add_plan=add_plan, update_plan=update_plan, delete_plan=delete_plan,
                            log_plan=log_plan, copy_plan=copy_plan, plan_to_shopping_list=plan_to_shopping_list, food_swaps=food_swaps,
                            own_plan=own_plan, log_plan_entry=log_plan_entry)

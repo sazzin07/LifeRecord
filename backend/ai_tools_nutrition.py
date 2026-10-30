@@ -68,6 +68,11 @@ NUTRITION_TOOLS = [
         "Trend over the last N days (1 to 90): daily energy and macros, averages over the days that were logged (a day without entries is not counted as zero) "
         "compared with the reference. Pass nutrient to also get that nutrient's biggest food sources in the period.",
         {"days": _N, "end_date": _DATE, "nutrient": _NUTRIENT}),
+    _fn("get_nutrition_patterns",
+        "Meal patterns, dietary variety and nutrient density over a period of 7 to 366 days: how energy is spread over meals, typical meal times, how steadily the diary is "
+        "kept, how many different foods and which everyday food groups appeared (and which did not), what each 1,000 kcal brought compared with the user's reference, the "
+        "most nutrient-dense foods eaten, and short insights that state their numbers and what the data cannot say. Descriptions, not medical advice.",
+        {"days": _N, "end_date": _DATE}),
     _fn("get_nutrition_insights",
         "Nutrients that are low so far (or above a guideline limit) on a day, why, and whole foods that are rich in them. Honest about incomplete data.",
         {"date": _DATE}),
@@ -79,6 +84,18 @@ NUTRITION_TOOLS = [
         "Similar foods (same category, similar energy) with less or more of one nutrient than a given food, for example a lower-sodium alternative. "
         "Foods that do not report the nutrient are skipped, and foods that clash with the user's diet or allergy words are left out.",
         {"food_id": _S, "nutrient": _NUTRIENT, "direction": {"type": "string", "enum": ["lower", "higher"]}, "limit": _N}, ["food_id", "nutrient"]),
+    _fn("suggest_meals",
+        "Ideas for what to eat next, from the user's own recipes, favourite and recent foods, plus a few foods that are new to them: ranked by how much of "
+        "what is still needed today each portion covers, how well it fits the energy left for the meal, what the kitchen has (and what expires soon), "
+        "diet and allergies, and what was eaten lately. Every idea comes with its reasons and the exact arguments for log_food. Read-only: present the ideas "
+        "and their reasons, and log one only after the user chooses it. Pass focus (nutrient keys) to aim at specific nutrients.",
+        {"date": _DATE, "meal_type": _MEAL, "focus": {"type": "array", "items": _NUTRIENT}, "limit": _N}),
+    _fn("suggest_recipe_alternatives",
+        "For one ingredient of a saved recipe that is linked to a food, find similar foods with less or more of a nutrient and show what swapping it would do to the "
+        "whole recipe per serving (same weight, same servings, nothing is saved). Diet and allergy words are respected and foods without data for the nutrient are skipped. "
+        "To make the swap, use update_recipe with the new food_id after the user agrees.",
+        {"recipe": _S, "ingredient": {"type": "string", "description": "The ingredient's name, or its position in the list (1 = first)."}, "nutrient": _NUTRIENT,
+         "direction": {"type": "string", "enum": ["lower", "higher"]}, "limit": _N}, ["recipe", "ingredient", "nutrient"]),
     _fn("get_meal_plan", "The meal plan for up to 14 days from a start date: planned items (with id and status), planned totals per day and how they compare with the reference.",
         {"start": _DATE, "days": _N}),
     _fn("get_meals", "List the diary entries (id, description, calories, protein, carbs, fat) for a date with daily totals. Prefer get_nutrition_day for the full picture.",
@@ -141,6 +158,14 @@ NUTRITION_TOOLS = [
         "description with typed calories. Pass plan_id to change an existing planned item.",
         {"plan_id": _S, "food_id": _S, "recipe_id": _S, "quantity": _N, "unit": _S, "description": _S, "calories": _N, "protein": _N, "carbs": _N, "fat": _N,
          "meal_type": _MEAL, "date": _DATE, "time": _TIME, "note": _S}),
+    _fn("create_meal_plan",
+        "Build a meal plan for up to 14 days from the user's OWN recipes and foods (never made-up dishes), aimed at the nutrients they want (focus, e.g. fiber_g for "
+        "a high-fibre plan), without repeating things more than max_repeats times and leaving slots that already have a plan alone. The first call only previews: "
+        "it shows the proposed week and how it compares with their references. After the user agrees on a later message, call it again with exactly the same "
+        "arguments and confirm=true to save it. If their recipes or plan changed in between, you get a new preview instead. Set use_database_foods to fill gaps "
+        "with reference foods when they have few recipes.",
+        {"start": _DATE, "days": _N, "meals": {"type": "array", "items": {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"]}},
+         "focus": {"type": "array", "items": _NUTRIENT}, "max_repeats": _N, "use_database_foods": _B, "confirm": _CONFIRM}),
     _fn("remove_plan_entry", "Remove a planned item by id (preview first, then confirm).", {"plan_id": _S, "confirm": _CONFIRM}, ["plan_id"]),
     _fn("log_planned_meal", "Log a planned item as eaten, using the nutrients saved when it was planned. Safe to repeat: it is logged once.",
         {"plan_id": _S, "date": _DATE, "meal_type": _MEAL, "time": _TIME}, ["plan_id"]),
@@ -160,7 +185,7 @@ NUTRITION_TOOLS = [
 NUTRITION_NAMES = {t["function"]["name"] for t in NUTRITION_TOOLS}
 # the read-only subset a scheduled report may use
 NUTRITION_READ_TOOLS = ["get_nutrition_day", "get_nutrition_report", "get_nutrition_insights", "get_nutrition_targets", "get_meal_plan", "get_meals",
-                        "get_recipes", "search_foods", "get_food", "suggest_food_swaps"]
+                        "get_recipes", "search_foods", "get_food", "suggest_food_swaps", "suggest_meals", "get_nutrition_patterns", "suggest_recipe_alternatives"]
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +354,7 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
     if name == "get_nutrition_report":
         days = max(1, min(int(_num(args.get("days"), "days") or 7), 90))
         end = _day(args.get("end_date"), today)
-        tr = await nx.trends(days=days, end=end, user=user, db=db)
+        tr = await nx.trends(days=days, end=end, bucket="day", user=user, db=db)
         out = {"start": tr["start"], "end": tr["end"], "days_logged": tr["days_logged"], "of_days": days,
                "daily": [{"date": s["date"], "logged": s["logged"], "energy_kcal": _r(s["energy_kcal"]), "protein_g": _r(s["protein_g"]), "carbs_g": _r(s["carbs_g"]),
                           "fat_g": _r(s["fat_g"]), "fiber_g": _r(s["fiber_g"]), "drinks_ml": s["drinks_ml"]} for s in tr["series"]],
@@ -340,6 +365,17 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
             out["sources_of"] = {"nutrient": c["name"], "unit": c["unit"], "total": _r(c["total"], 2), "entries_without_data": c["entries_without_data"],
                                  "top": [{"food": x["description"], "amount": _r(x["amount"], 2), "share_pct": _r(x["share_pct"], 0)} for x in c["top"]]}
         return out
+    if name == "get_nutrition_patterns":
+        r = await srv.nutrition_insights_ns.patterns(days=max(7, min(int(_num(args.get("days"), "days") or 30), 366)), end=_day(args.get("end_date"), today), user=user, db=db)
+        p, v = r["patterns"], r["variety"]
+        return {"from": r["start"], "to": r["end"], "days_logged": p["days_logged"], "of_days": p["days_in_range"], "streak_now": p["current_streak"], "longest_streak": p["longest_streak"],
+                "energy_by_meal_percent": {m: _r(x * 100, 0) for m, x in p["meal_share"].items()}, "typical_meal_times": p["typical_time"], "days_each_meal_logged": p["meal_days"],
+                "weekday_avg_kcal": _r(p["weekday_avg_kcal"], 0), "weekend_avg_kcal": _r(p["weekend_avg_kcal"], 0),
+                "variety": {"different_foods": v["distinct_items"], "per_logged_day": _r(v["per_logged_day"], 1), "most_repeated": v["top"][:3], "food_groups_seen": v["groups_seen"],
+                            "food_groups_not_seen": v["groups_missing"], "entries_that_could_not_be_classified_percent": _r((1 - v["classified_share"]) * 100, 0) if v["classified_share"] is not None else None},
+                "nutrient_density_vs_reference": [{"nutrient": d["name"], "per_1000_kcal": _r(d["per_1000_kcal"], 1), "reference_per_1000_kcal": _r(d["reference_per_1000_kcal"], 1),
+                                                   "percent_of_reference": _r(d["ratio"] * 100, 0), "enough_data": d["reliable"]} for d in r["density"]],
+                "most_nutrient_dense_foods": r["dense_foods"], "insights": [{"title": i["title"], "why": i["why"]} for i in r["insights"]], "note": r["basis"]}
     if name == "get_nutrition_insights":
         i = await nx.insights(date_=_day(args.get("date"), today), user=user, db=db)
         return {"date": i["date"], "insights": [{"nutrient": x["nutrient"], "title": x["title"], "why": x["why"], "rich_foods": [
@@ -360,6 +396,45 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
         return {"food": s["food"], "nutrient": s["name"], "unit": s["unit"], "direction": s["direction"], "original_per_100g": _r(s.get("original_per100"), 2),
                 "swaps": [{"food_id": x["id"], "name": x["name"], "per_100g": _r(x["per100"], 2), "change_pct": _r(x["change_pct"], 0), "energy_kcal_per_100g": _r(x["energy_kcal"], 0),
                            "quality": x["quality"]} for x in s["swaps"]], "note": s["note"]}
+    if name == "suggest_meals":
+        focus = args.get("focus") or []
+        if not isinstance(focus, list):
+            return {"error": "focus must be a list of nutrient keys."}
+        r = await srv.nutrition_suggest.suggestions(date_=_day(args.get("date"), today), meal_type=args.get("meal_type"), focus=",".join(str(k) for k in focus) or None,
+                                                    limit=max(1, min(int(_num(args.get("limit"), "limit") or 5), 8)), user=user, db=db)
+
+        def idea(x):
+            return {"kind": x["kind"], "id": x["id"], "name": x["name"], "portion": x["portion"], "energy_kcal": _r(x["nutrients"].get("energy_kcal"), 0),
+                    "covers": [{"nutrient": c["name"], "percent_of_what_is_left": _r(c["percent_of_remaining"], 0)} for c in x["covers"]],
+                    "watch": [{"nutrient": w["name"], "amount": _r(w["amount"], 1), "unit": w["unit"]} for w in x["watch"]], "not_reported": x["unknown"],
+                    "kitchen": ({"can_cook_now": x["pantry"]["can_cook_now"], "missing": x["pantry"]["missing"][:5]} if x.get("pantry") else None),
+                    "why": x["why"], "log_with": x["log"]}
+        ctx = r["context"] or {}
+        return {"date": r["date"], "meal": r["meal_type"], "energy_left_kcal": ctx.get("remaining_kcal"), "meal_budget_kcal": ctx.get("budget_kcal"),
+                "still_needed": [{"nutrient": f["name"], "left": f["remaining"], "unit": f["unit"]} for f in ctx.get("focus", [])],
+                "ideas": [idea(x) for x in r["suggestions"]], "new_to_you": [idea(x) for x in r["discover"]], "left_out_for_diet_or_allergy": r["excluded_for_diet"],
+                "note": r.get("note") or r.get("basis")}
+    if name == "suggest_recipe_alternatives":
+        key = str(args.get("recipe") or "").strip()
+        r = (await db.execute(select(Recipe).where(Recipe.user_id == uid, (Recipe.id == key) | Recipe.name.ilike(key)))).scalars().first()
+        if not r:
+            return {"error": f"No recipe matching '{key}'"}
+        ings = r.ingredients or []
+        ref = str(args.get("ingredient") or "").strip().lower()
+        idx = int(ref) - 1 if ref.isdigit() else next((i for i, x in enumerate(ings) if x.get("name", "").strip().lower() == ref), None)
+        if idx is None:
+            idx = next((i for i, x in enumerate(ings) if ref and ref in x.get("name", "").lower()), None)
+        if idx is None or not (0 <= idx < len(ings)):
+            return {"error": f"The recipe has no ingredient '{args.get('ingredient')}'. Its ingredients are: " + ", ".join(x.get("name", "?") for x in ings) + "."}
+        body = pl.AlternativesBody(servings=r.servings, ingredients=[{"name": i["name"], "quantity": i.get("quantity", 1), "unit": i.get("unit") or "unit", "food_id": i.get("food_id")} for i in ings],
+                                   index=idx, nutrient=str(args.get("nutrient") or ""), direction=args.get("direction"), limit=max(1, min(int(_num(args.get("limit"), "limit") or 5), 8)))
+        res = await pl.recipe_alternatives(body=body, user=user, db=db)
+        return {"recipe": r.name, "ingredient": res["ingredient"], "currently": res["food"], "grams": res["grams"], "nutrient": res["name"], "unit": res["unit"], "direction": res["direction"],
+                "alternatives": [{"food_id": a["food_id"], "name": a["name"], "per_100g": _r(a["per100"], 2), "now_per_100g": _r(a["original_per100"], 2),
+                                  "recipe_per_serving": {"before": _r(a["recipe_per_serving"]["before"], 1), "after": _r(a["recipe_per_serving"]["after"], 1),
+                                                         "change_percent": _r(a["recipe_per_serving"]["change_pct"], 0)},
+                                  "energy_per_serving": {"before": _r(a["energy_per_serving"]["before"], 0), "after": _r(a["energy_per_serving"]["after"], 0)}} for a in res["alternatives"]],
+                "note": res["note"]}
     if name == "get_meal_plan":
         start = _day(args.get("start"), today) or today.isoformat()
         days = max(1, min(int(_num(args.get("days"), "days") or 7), 14))
@@ -600,6 +675,36 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
         p = await pl.add_plan(body=body, user=user, db=db)
         created.append({"collection": "meal_plan", "id": p["id"]})
         return {"planned": p}
+    if name == "create_meal_plan":
+        gen = srv.nutrition_plan_gen
+        meals = args.get("meals") or ["breakfast", "lunch", "dinner"]
+        focus = args.get("focus") or []
+        if not isinstance(meals, list) or not isinstance(focus, list):
+            return {"error": "meals and focus must be lists."}
+        body = gen.GenerateBody(start=_day(args.get("start"), today) or today.isoformat(), days=int(_num(args.get("days"), "days") or 7), slots=meals,
+                                focus=[str(k) for k in focus], max_repeats=int(_num(args.get("max_repeats"), "max_repeats") or 2),
+                                use_database_foods=bool(args.get("use_database_foods")))
+        res = await gen.generate(db, user, body)
+        if not res["placed"]:
+            return {"nothing_planned": True, "notes": res["notes"] or ["Every chosen slot in that range already has something planned, or nothing suitable was found."]}
+
+        def short(iso):
+            return _date.fromisoformat(iso).strftime("%a %d %b")
+        outline = "; ".join(f"{short(d['date'])}: " + ", ".join(f"{i['meal_type']} {i['name']}" for i in d["items"]) for d in res["days"] if d["items"])
+        focus_text = "; ".join(f"{f['name']} averages {f['average_percent']}% of the daily reference" for f in res["focus"] if f["average_percent"] is not None)
+        gate = await _gate(srv, db, user, session_id, previewed, name, "genplan:" + res["digest"], args,
+                           f"This will add {res['placed']} planned items ({short(res['start'])} to {short(res['end'])}), none of them counted as eaten: {outline[:1400]}. "
+                           f"{focus_text}. {' '.join(res['notes'])} Ask the user to confirm.")
+        if gate:
+            return {**gate, "proposal": {"days": [{"date": d["date"], "items": [{"meal": i["meal_type"], "name": i["name"], "energy_kcal": _r(i["nutrients"].get("energy_kcal"), 0),
+                                                                                  "covers": [c["name"] for c in i["covers"]]} for i in d["items"]],
+                                                    "open_slots": d["unfilled"]} for d in res["days"]],
+                                         "focus": res["focus"], "notes": res["notes"], "left_out_for_diet_or_allergy": res["excluded_for_diet"]}}
+        items = [gen.BulkItem(date=i["date"], meal_type=i["meal_type"], **i["log"]) for d in res["days"] for i in d["items"]]
+        rows = await gen.bulk_create(db, uid, items)
+        created.extend({"collection": "meal_plan", "id": r["id"]} for r in rows)
+        return {"planned": len(rows), "from": res["start"], "to": res["end"], "focus": res["focus"], "notes": res["notes"],
+                "note": "Planned items are not counted as eaten until they are logged."}
     if name == "remove_plan_entry":
         p = await pl.own_plan(db, uid, str(args.get("plan_id") or ""))
         gate = await _gate(srv, db, user, session_id, previewed, name, p.id, args, f"This will remove '{p.description}' from the plan for {p.date}. Ask the user to confirm.")

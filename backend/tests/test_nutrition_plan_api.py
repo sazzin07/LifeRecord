@@ -314,3 +314,25 @@ def test_recent_foods_remember_the_last_amount_used(a):
     a.post(f"{N}/diary", json={"food_id": f["id"], "quantity": 3, "unit": "1 tbsp", "meal_type": "lunch"})
     rec = next(x for x in a.get(f"{N}/foods/recent").json() if x["id"] == f["id"])
     assert rec["times_logged"] == 2 and rec["last_unit"] == "1 tbsp" and rec["last_quantity"] == 3 and rec["last_meal_type"] == "lunch"
+
+
+# ---------------------------------------------------------------- Delivery 3: older endpoints follow the profile's day and stay bounded
+def test_the_older_meal_endpoint_uses_the_profile_day_and_a_sensible_meal(c):
+    assert c.put(f"{N}/profile", json={"timezone": "Pacific/Kiritimati"}).status_code == 200   # UTC+14: usually a different date from UTC
+    m = c.post(f"{BASE_URL}/api/meals", json={"description": "Quick add from the header", "calories": 200}).json()
+    now = datetime.now(ZoneInfo("Pacific/Kiritimati"))   # taken right after the request; the two only differ if the hour changes in between
+    assert m["date"] == now.date().isoformat()
+    assert m["meal_type"] == ("breakfast" if now.hour < 11 else "lunch" if now.hour < 15 else "snack" if now.hour < 18 else "dinner")
+    day = c.get(f"{N}/day").json()
+    assert day["today"] == m["date"] and any(e["id"] == m["id"] for mt in day["meals"] for e in mt["entries"])   # shows on the Nutrition page's today
+    c.put(f"{N}/profile", json={"timezone": "Europe/Lisbon"})
+
+
+def test_the_older_meal_list_is_bounded_when_no_day_is_given(c):
+    for i in range(3):
+        assert c.post(f"{BASE_URL}/api/meals", json={"description": f"bounded {i}", "calories": 10, "date": "2020-01-0%d" % (i + 1)}).status_code == 200
+    assert len(c.get(f"{BASE_URL}/api/meals", params={"limit": 2}).json()) == 2
+    assert len(c.get(f"{BASE_URL}/api/meals", params={"date": "2020-01-01", "limit": 1}).json()) == 1   # a named day is always complete
+    assert c.get(f"{BASE_URL}/api/meals", params={"limit": 0}).status_code == 422
+    assert c.get(f"{BASE_URL}/api/meals", params={"limit": 5000}).status_code == 422
+    assert c.post(f"{BASE_URL}/api/meals", json={"description": "bad date", "calories": 1, "date": "2026-13-45"}).status_code == 422

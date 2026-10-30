@@ -10,7 +10,7 @@ const MAX_HEIGHT = 168;
  * The box grows with the text and the draft is kept by the parent, so closing the panel never loses it.
  */
 export const Composer = forwardRef(function Composer(
-  { value, onChange, onSend, onStop, busy, image, onPickImage, onClearImage, onScan, scanning, recording, onToggleRecord, lastSent },
+  { value, onChange, onSend, onStop, busy, image, imageLoading, onPickImage, onClearImage, onScan, scanning, recording, onToggleRecord, lastSent },
   ref,
 ) {
   const area = useRef(null);
@@ -34,6 +34,11 @@ export const Composer = forwardRef(function Composer(
 
   return (
     <div className="border-t border-border bg-background/60 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+      {imageLoading && !image && (
+        <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-card p-2 text-xs text-muted-foreground" role="status" data-testid="ai-image-loading">
+          <span className="h-10 w-10 animate-pulse rounded-lg bg-muted" aria-hidden="true" /><span>Reading the image…</span>
+        </div>
+      )}
       {image && (
         <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-card p-2 text-xs text-muted-foreground">
           <img src={image} alt="Attached preview" className="h-10 w-10 rounded-lg object-cover" />

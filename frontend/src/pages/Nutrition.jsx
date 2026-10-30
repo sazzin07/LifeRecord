@@ -48,7 +48,7 @@ export default function Nutrition() {
   const go = (d) => setUrl({ date: d === today ? null : d });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 sm:pb-0" /* room for the floating assistant button under the last row on a phone */>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0 basis-64 flex-1">
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">Nutrition</h2>

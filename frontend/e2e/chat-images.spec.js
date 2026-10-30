@@ -64,7 +64,7 @@ test.describe("Images in saved chats (real assistant)", () => {
     await openWide(page);
     await page.getByTestId("ai-file-input").setInputFiles({ name: "notes.png", mimeType: "image/png", buffer: Buffer.from("just some text, not a picture") });
     await page.getByTestId("ai-input").fill(`${tag} image check`);
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");   // pressed at once on purpose: the send waits for the file instead of dropping it
     await expect(page.getByTestId("ai-error")).toContainText("not a supported image");
     const found = await (await apiContext.get(`/api/ai/conversations?q=${tag}`)).json();
     expect(found).toHaveLength(0);

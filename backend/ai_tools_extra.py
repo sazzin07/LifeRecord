@@ -113,7 +113,8 @@ async def _overview(srv, db, user):
     summary = await srv.analytics_summary(month=month, user=user, db=db)
     tasks = (await db.execute(select(Task).where(Task.user_id == user["_id"]))).scalars().all()
     open_t = [t for t in tasks if not t.done]
-    meals = (await db.execute(select(Meal).where(Meal.user_id == user["_id"], Meal.date == today))).scalars().all()
+    _, _, _, nutrition_today = await srv.nutrition.reference(db, user["_id"])  # the person's own day, not the server's
+    meals = (await db.execute(select(Meal).where(Meal.user_id == user["_id"], Meal.date == nutrition_today.isoformat()))).scalars().all()
     weight = (await db.execute(select(WeightEntry).where(WeightEntry.user_id == user["_id"]).order_by(WeightEntry.date.desc()))).scalars().first()
     people = await srv.people_balances(db, user["_id"])
     kitchen = await srv.kitchen_overview(db, user["_id"])

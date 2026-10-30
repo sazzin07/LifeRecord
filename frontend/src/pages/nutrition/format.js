@@ -39,6 +39,10 @@ export const weekStart = (iso) => {
 export const mealForHour = (h) => (h < 11 ? "breakfast" : h < 15 ? "lunch" : h < 18 ? "snack" : "dinner");
 export const defaultMeal = () => mealForHour(new Date().getHours());
 
+/** What a swap can improve (and the plain words for it). Shared by the food swaps and the recipe form. */
+export const SWAP_NUTRIENTS = [["sodium_mg", "less sodium"], ["sat_fat_g", "less saturated fat"], ["sugars_g", "less sugar"], ["fiber_g", "more fibre"], ["protein_g", "more protein"],
+  ["calcium_mg", "more calcium"], ["iron_mg", "more iron"], ["potassium_mg", "more potassium"]];
+
 export const shortName = (name) => (name || "").split(",").slice(0, 2).join(",");
 
 /** The amount to log on a single tap: what was used last time, else the food's first portion, else 100 g. */

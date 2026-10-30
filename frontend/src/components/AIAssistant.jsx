@@ -128,6 +128,8 @@ export function AIAssistant() {
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("lm_ai_wide") === "1"; } catch { return false; } });
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem("lm_ai_draft") || ""; } catch { return ""; } });
   const [image, setImage] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false); // the chosen file is still being read
+  const [sendWhenReady, setSendWhenReady] = useState(false); // Enter was pressed while it was
   const [recording, setRecording] = useState(false);
   const [actions, setActions] = useState([]);
   const [receipt, setReceipt] = useState({ data: null, open: false, scanning: false });
@@ -197,7 +199,9 @@ export function AIAssistant() {
 
   const submit = (text) => {
     const message = (text ?? draft).trim();
-    if (!message && !image) return;
+    if (!message && !image && !imageLoading) return;
+    // Pressing Enter right after choosing a file used to send the message without the picture: wait for the file, then send.
+    if (imageLoading) { setSendWhenReady(true); return; }
     if (send(message, image)) {
       setDraft(""); setImage(null); stick.current = true; setStuck(true);
       setTimeout(() => toBottom(true), 0);
@@ -224,11 +228,21 @@ export function AIAssistant() {
     catch { chat.setTitle(before); toast.error("Could not rename this chat"); }
   };
 
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    if (sendWhenReady && !imageLoading) { setSendWhenReady(false); submitRef.current(); }
+  }, [sendWhenReady, imageLoading, image]);
+
   const pickImage = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = () => setImage(reader.result);
+    setImageLoading(true);
+    reader.onload = () => { setImage(reader.result); setImageLoading(false); };
+    const failed = () => { setImageLoading(false); setSendWhenReady(false); toast.error("Could not read that file"); };
+    reader.onerror = failed;
+    reader.onabort = failed;
     reader.readAsDataURL(f);
   };
 
@@ -397,7 +411,7 @@ export function AIAssistant() {
 
                 <div hidden={view !== "chat"}>
                   <Composer ref={composer} value={draft} onChange={setDraft} onSend={() => submit()} onStop={stop} busy={busy} lastSent={lastSent}
-                    image={image} onPickImage={pickImage} onClearImage={() => setImage(null)} onScan={scanReceipt} scanning={receipt.scanning}
+                    image={image} imageLoading={imageLoading} onPickImage={pickImage} onClearImage={() => setImage(null)} onScan={scanReceipt} scanning={receipt.scanning}
                     recording={recording} onToggleRecord={toggleRecord} />
                 </div>
 

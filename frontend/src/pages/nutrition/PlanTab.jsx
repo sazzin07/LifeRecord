@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CalendarCheck, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, Pencil, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarCheck, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, Pencil, Plus, ShoppingCart, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { PlanGenerator } from "./PlanGenerator";
 import { MEALS, MEAL_BY_KEY, STATUS_LABEL, fmt, prettyDate, shiftDate, shortDate, weekStart, refreshNutrition } from "./shared";
 
 const MEAL_ORDER = Object.fromEntries(MEALS.map((m, i) => [m.key, i]));
@@ -163,6 +164,7 @@ export function PlanTab({ anchor, today, onAdd, onEdit }) {
   const [toDelete, setToDelete] = useState(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(false);
   const thisWeek = weekStart(today);
   const total = plan ? plan.days.reduce((s, d) => s + d.entries.length, 0) : 0;
 
@@ -187,6 +189,7 @@ export function PlanTab({ anchor, today, onAdd, onEdit }) {
           {start !== thisWeek && <Button variant="outline" size="sm" onClick={() => setStart(thisWeek)}>This week</Button>}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => setGenOpen(true)} className="bg-emerald-600 text-white hover:bg-emerald-700" data-testid="plan-generate"><Sparkles className="mr-1.5 h-4 w-4" />Suggest a week</Button>
           <Button variant="outline" size="sm" disabled={!total} onClick={() => setCopyOpen(true)} data-testid="plan-copy-week"><Copy className="mr-1.5 h-4 w-4" />Copy to next week</Button>
           <Button variant="outline" size="sm" disabled={!total} onClick={() => setShopOpen(true)} data-testid="plan-shopping"><ShoppingCart className="mr-1.5 h-4 w-4" />Shopping list</Button>
         </div>
@@ -200,7 +203,7 @@ export function PlanTab({ anchor, today, onAdd, onEdit }) {
           {total === 0 && (
             <Card className="p-6 text-center text-sm text-slate-500" data-testid="plan-empty">
               <CalendarPlus className="mx-auto mb-2 h-6 w-6 text-slate-400" aria-hidden="true" />
-              Nothing planned for this week. Tap <strong>Plan</strong> on any day to add a food or a recipe, then build a shopping list from it.
+              Nothing planned for this week. Tap <strong>Plan</strong> on any day to add a food or a recipe, or <strong>Suggest a week</strong> to get a proposal you can review first. A shopping list can be built from either.
             </Card>
           )}
           <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -211,6 +214,7 @@ export function PlanTab({ anchor, today, onAdd, onEdit }) {
 
       <ConfirmDialog open={!!toDelete} onOpenChange={(v) => !v && setToDelete(null)} title="Remove from the plan?" description={toDelete ? `"${toDelete.description}" will be removed from ${prettyDate(toDelete.date, today)}. Your diary is not touched.` : ""} onConfirm={remove} confirmText="Remove" variant="danger" />
       <ConfirmDialog open={copyOpen} onOpenChange={setCopyOpen} title="Copy this week's plan to next week?" description="Everything planned this week is added to the same days next week, as new planned items. What is already planned next week stays." onConfirm={copyWeek} confirmText="Copy" />
+      <PlanGenerator open={genOpen} onOpenChange={setGenOpen} start={start} today={today} />
       <ShoppingDialog open={shopOpen} onOpenChange={setShopOpen} start={start} end={end} />
     </div>
   );

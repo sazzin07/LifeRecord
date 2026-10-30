@@ -11,11 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RecipeDialog } from "./RecipeDialog";
-import { QualityBadge, fmt, logFoodNow, shortName, useNutrientMeta, refreshNutrition } from "./shared";
+import { QualityBadge, SWAP_NUTRIENTS, fmt, logFoodNow, shortName, useNutrientMeta, refreshNutrition } from "./shared";
 
 const FORM_FIELDS = ["energy_kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugars_g", "sat_fat_g", "sodium_mg", "calcium_mg", "iron_mg", "vit_c_mg", "vit_d_ug", "vit_b12_ug", "potassium_mg"];
-
-const SWAP_NUTRIENTS = [["sodium_mg", "less sodium"], ["sat_fat_g", "less saturated fat"], ["sugars_g", "less sugar"], ["fiber_g", "more fibre"], ["protein_g", "more protein"], ["calcium_mg", "more calcium"], ["iron_mg", "more iron"], ["potassium_mg", "more potassium"]];
 
 /** Similar foods with less or more of one nutrient. Foods that do not report it are skipped, never assumed to be low. */
 function Swaps({ food, onOpen }) {

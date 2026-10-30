@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Link2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Link2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,49 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fmt, shortName, refreshNutrition } from "./shared";
+import { SWAP_NUTRIENTS, fmt, shortName, refreshNutrition } from "./shared";
 
 const blankIngredient = () => ({ key: Math.random().toString(36).slice(2), name: "", quantity: "1", unit: "unit", food_id: null, food: null });
 const unitsFor = (food) => ["g", "kg", "oz", "lb", ...(food?.portions || []).map((p) => p.label), ...(food?.liquid ? ["ml", "l"] : [])];
 const STATUS_TEXT = { unlinked: "not linked to a food", food_missing: "its food was removed", unit_unknown: null };
+
+/** What swapping one ingredient for a similar food would do to the whole recipe, per serving. Nothing changes until "Use" is tapped, and the recipe is saved with its own Save. */
+function Alternatives({ ingredient, nutrients, onUse }) {
+  const options = SWAP_NUTRIENTS.filter(([k]) => ingredient.food?.nutrients?.find((n) => n.key === k)?.per100 != null);
+  const [key, setKey] = useState(options[0]?.[0] || "");
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!options.length) return <p className="col-span-12 text-xs text-slate-500">This food does not report the nutrients swaps compare, so no alternatives can be suggested.</p>;
+  const go = async () => {
+    setBusy(true);
+    try { const { data } = await api.post("/nutrition/recipe-alternatives", { ...nutrients, nutrient: key, limit: 5 }); setRes(data); }
+    catch (err) { toast.error(errorMessage(err, "Could not look for alternatives")); } finally { setBusy(false); }
+  };
+  return (
+    <div className="col-span-12 rounded-lg border border-dashed border-border p-2" data-testid="alternatives">
+      <div className="flex gap-2">
+        <Select value={key} onValueChange={(v) => { setKey(v); setRes(null); }}><SelectTrigger className="h-9" aria-label="What the swap should improve" data-testid="alt-nutrient"><SelectValue /></SelectTrigger>
+          <SelectContent>{options.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
+        <Button type="button" variant="outline" size="sm" className="h-9" onClick={go} disabled={busy} data-testid="alt-go">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}</Button>
+      </div>
+      {res && (res.alternatives.length === 0 ? <p className="mt-2 text-xs text-slate-500" data-testid="alt-none">{res.note.startsWith(res.food) ? res.note : "No similar food of the same kind does better here."}</p> : (
+        <ul className="mt-2 divide-y divide-border" aria-live="polite">
+          {res.alternatives.map((a) => (
+            <li key={a.food_id} className="flex items-center gap-2 py-1.5" data-testid={`alt-${a.food_id}`}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{a.name}</p>
+                <p className="text-xs text-slate-500">Recipe {res.name.toLowerCase()}: <span className="stat-num">{fmt(a.recipe_per_serving.before)} → {a.recipe_per_serving.after == null ? "n/a" : fmt(a.recipe_per_serving.after)} {res.unit}</span> per serving
+                  {a.recipe_per_serving.change_pct != null ? ` (${a.recipe_per_serving.change_pct > 0 ? "+" : ""}${Math.round(a.recipe_per_serving.change_pct)}%)` : ""}
+                  {a.energy_per_serving.after != null ? ` · ${fmt(a.energy_per_serving.before)} → ${fmt(a.energy_per_serving.after)} kcal` : ""}</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" className="h-8 shrink-0" onClick={() => onUse(a, res.grams)} data-testid={`alt-use-${a.food_id}`}>Use</Button>
+            </li>
+          ))}
+        </ul>
+      ))}
+    </div>
+  );
+}
 
 function FindFood({ onPick }) {
   const [q, setQ] = useState("");
@@ -49,13 +87,14 @@ function FindFood({ onPick }) {
 export function RecipeDialog({ open, onOpenChange, editing }) {
   const [f, setF] = useState({ name: "", servings: "1", ingredients: [], calories: "", protein: "", carbs: "", fat: "", notes: "" });
   const [finding, setFinding] = useState(null);
+  const [swapping, setSwapping] = useState(null); // the ingredient whose alternatives are shown
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const linked = f.ingredients.filter((i) => i.food_id);
 
   useEffect(() => {
     if (!open) return;
-    setFinding(null); setPreview(null);
+    setFinding(null); setSwapping(null); setPreview(null);
     const base = { name: editing?.name || "", servings: String(editing?.servings || 1), calories: editing?.calories ?? "", protein: editing?.protein ?? "", carbs: editing?.carbs ?? "", fat: editing?.fat ?? "", notes: editing?.notes || "" };
     const ings = (editing?.ingredients || []).map((i) => ({ ...blankIngredient(), name: i.name, quantity: String(i.quantity ?? 1), unit: i.unit || "unit", food_id: i.food_id || null }));
     setF({ ...base, ingredients: ings });
@@ -79,6 +118,14 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
       const { data } = await api.get(`/nutrition/foods/${summary.id}`);
       setF((x) => ({ ...x, ingredients: x.ingredients.map((it) => (it.key === key ? { ...it, food_id: data.id, food: data, name: it.name.trim() ? it.name : shortName(data.name), unit: "g", quantity: it.unit === "unit" ? "100" : it.quantity } : it)) }));
     } catch (err) { toast.error(errorMessage(err, "Could not link this food")); }
+  };
+  const use = async (key, alt, grams, oldFood) => {
+    try {
+      const { data } = await api.get(`/nutrition/foods/${alt.food_id}`);
+      setF((x) => ({ ...x, ingredients: x.ingredients.map((it) => (it.key !== key ? it : { ...it, food_id: data.id, food: data, unit: "g", quantity: String(Math.round(grams * 10) / 10),
+        name: it.name.trim() === shortName(oldFood?.name || "") ? shortName(data.name) : it.name })) }));
+      setSwapping(null); toast.success(`Now using ${shortName(data.name)}. Save the recipe to keep the change.`);
+    } catch (err) { toast.error(errorMessage(err, "Could not use this food")); }
   };
   const num = (v) => (v === "" || v == null ? null : parseFloat(v));
   const submit = async (e) => {
@@ -128,6 +175,15 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
                   ) : <button type="button" className="inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline dark:text-emerald-400" onClick={() => setFinding(finding === it.key ? null : it.key)} data-testid="ing-link"><Link2 className="h-3 w-3" aria-hidden="true" />Link to a food for nutrition</button>}
                 </div>
                 {finding === it.key && <FindFood onPick={(food) => link(it.key, food)} />}
+                {it.food_id && it.food && (
+                  <button type="button" className="col-span-12 -mt-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 focus-visible:underline focus-visible:outline-none dark:hover:text-slate-200"
+                    aria-expanded={swapping === it.key} onClick={() => setSwapping(swapping === it.key ? null : it.key)} data-testid="ing-swap"><ArrowLeftRight className="h-3 w-3" aria-hidden="true" />Find a swap</button>
+                )}
+                {swapping === it.key && it.food && (
+                  <Alternatives ingredient={it} onUse={(a, g) => use(it.key, a, g, it.food)}
+                    nutrients={{ servings: parseInt(f.servings, 10) || 1, index: f.ingredients.filter((i) => i.name.trim() || i.food_id).findIndex((i) => i.key === it.key),
+                      ingredients: f.ingredients.filter((i) => i.name.trim() || i.food_id).map((i) => ({ name: i.name || "?", quantity: parseFloat(i.quantity) || 0, unit: i.unit || "unit", food_id: i.food_id })) }} />
+                )}
               </div>
             ))}
           </div>

@@ -27,12 +27,16 @@ if (-not (Test-Port 3306)) {
 
 
 
+# Logs live in one folder and are rotated when they get big; stray *.log files from earlier runs are moved in, not deleted.
+New-Item -ItemType Directory -Force -Path "$PSScriptRoot\logs" | Out-Null
+& "$backendDir\.venv\Scripts\python.exe" "$PSScriptRoot\tools\rotate_logs.py"
+
 # Ensure liferecord database exists (check first to avoid MySQL warning)
 & "$backendDir\.venv\Scripts\python.exe" "$PSScriptRoot\tools\ensure_db.py"
 
 # 2. Backend
 if (-not (Test-Port 8000)) {
-    Start-Process -FilePath "$backendDir\.venv\Scripts\python.exe" -ArgumentList "-m","uvicorn","server:app","--host","0.0.0.0","--port","8000","--log-level","info" -WorkingDirectory $backendDir -WindowStyle Hidden
+    Start-Process -FilePath "$backendDir\.venv\Scripts\python.exe" -ArgumentList "-m","uvicorn","server:app","--host","0.0.0.0","--port","8000","--log-level","info" -WorkingDirectory $backendDir -WindowStyle Hidden -RedirectStandardOutput "$PSScriptRoot\logs\backend.log" -RedirectStandardError "$PSScriptRoot\logs\backend.err.log"
     Write-Host "Backend starting on port 8000..."
     Start-Sleep -Seconds 2
 } else {
@@ -41,7 +45,7 @@ if (-not (Test-Port 8000)) {
 
 # 3. Frontend
 if (-not (Test-Port 3000)) {
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c yarn start > frontend.log 2>&1" -WorkingDirectory $frontendDir -WindowStyle Hidden
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c yarn start > ..\logs\frontend.log 2>&1" -WorkingDirectory $frontendDir -WindowStyle Hidden
     Write-Host "Frontend starting on port 3000..."
 } else {
     Write-Host "Frontend already running on port 3000."

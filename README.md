@@ -440,7 +440,7 @@ cd frontend
 yarn build
 ```
 
-The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `python ..\backend\local_secrets.py run -- npx playwright test` (the store supplies `TEST_PASSWORD`) after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
+The build runs ESLint and should complete with no warnings. The visual and accessibility rules (colour tokens, the contrast floor, navigation, motion) are written down in `design_guidelines.json`, and a unit test checks that file against the code. On Node 24 it also prints `[DEP0176] DeprecationWarning: fs.F_OK is deprecated`: that comes from a package inside Create React App 5's own toolchain, not from this project's code. It is harmless (the build still succeeds and warnings-as-errors only concerns ESLint) and cannot be removed without leaving Create React App, which is out of scope (roadmap S-15). `tools\ci_local.ps1` runs the whole check (backend suite, unit tests, this build, browser specs) in one go; `.github/workflows/ci.yml` runs the same on every push once the repository is pushed to GitHub. Playwright e2e specs are in `frontend/e2e/` and can be run with `python ..\backend\local_secrets.py run -- npx playwright test` (the store supplies `TEST_PASSWORD`) after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
 
 ```powershell
 python ..\backend\local_secrets.py run -- npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/nutrition.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
@@ -486,6 +486,8 @@ python tools\restore_check.py --dest D:\Backups\LifeRecord   # rehearse: restore
   | Progress-photo uploads (`/photos`) | 20 | 100 | `LIMIT_PHOTO_UPLOAD_…` |
 
   An unreadable value falls back to the default. One assistant message can make up to 7 model calls. Sign-in has its own limiter (10 attempts a minute per address and email).
+- **Your data** (Settings, "Your data"): *Download my data* gives one .zip with `data.json` (every record, grouped by table) and your original photos and chat pictures, never your password or sign-in codes (`GET /account/export`, 3 a minute, 10 a day). *Delete my account* removes the account and everything in it, including the files, after the current password and the exact words DELETE MY ACCOUNT (`DELETE /account`); a notice is emailed. The owner account cannot be deleted from the app (use `backend/owner_admin.py`). The list of what counts as your data comes from the database models, so a table added later is included automatically.
+- **Errors**: an unexpected server error is answered with a short plain sentence (`503` if the database is unreachable), never a stack trace or a database message; the detail goes to the server log. See `docs/testing/failure-sweep.md`.
 - Never commit `.env` files. They are ignored by Git.
 - Progress photos are served via `Authorization: Bearer <token>` header, not query-string tokens.
 - Demo credentials have been removed from the login screen.

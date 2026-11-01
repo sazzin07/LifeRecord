@@ -1,0 +1,116 @@
+# Continuous integration (roadmap S-10). Every push and pull request runs the same checks as tools/ci_local.ps1:
+# the backend suite on a throw-away schema, the frontend unit tests and strict build, and the browser specs (including
+# the accessibility audits) against a throw-away stack. No secret is needed: the test stack uses random keys, its AI
+# provider and its mail are dead ends, and the database is a disposable MySQL container.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ADMIN_DATABASE_USER: root
+  ADMIN_DATABASE_PASSWORD: ""
+  LR_ISOLATED: "1"
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=5s --health-timeout=5s --health-retries=24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: Reference foods (USDA, public domain), cached between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/LifeRecord/datasets
+          key: usda-2025-12-18-2018-04
+      - name: Run the suite on a scratch schema
+        working-directory: backend
+        run: python -m pytest tests -q -p no:cacheprovider
+
+  frontend:
+    name: Frontend unit tests and strict build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - working-directory: frontend
+        run: yarn install --frozen-lockfile
+      - name: Unit tests
+        working-directory: frontend
+        run: CI=true yarn test --watchAll=false
+      - name: Production build (warnings are errors)
+        working-directory: frontend
+        run: CI=true yarn build
+
+  browser:
+    name: Browser specs (including accessibility audits)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=5s --health-timeout=5s --health-retries=24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: pip install -r backend/requirements.txt
+      - working-directory: frontend
+        run: yarn install --frozen-lockfile && npx playwright install --with-deps chromium
+      - name: Start the throw-away stack (backend + dev server)
+        run: |
+          cd backend
+          python tests/isolated_env.py serve > "$RUNNER_TEMP/stack.log" 2>&1 &
+          for i in $(seq 1 120); do [ -f /tmp/liferecord-scratch-stack.json ] && break; sleep 3; done
+          cat "$RUNNER_TEMP/stack.log"; test -f /tmp/liferecord-scratch-stack.json
+      - name: Playwright (the specs that never call a live model)
+        working-directory: frontend
+        run: >-
+          python ../backend/tests/isolated_env.py run --
+          npx playwright test --grep-invert "real assistant|real model|live data|real report"
+          $(ls e2e/*.spec.js | grep -v saved-chats)
+      - name: Stop the stack
+        if: always()
+        run: touch /tmp/liferecord-scratch-stack.json.stop && sleep 10
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: frontend/test-results

@@ -54,3 +54,6 @@ LifeRecord/
 
 # User uploads (progress photos, chat images) - private, never commit
 backend/storage/
+
+# Service logs (rotated by tools/rotate_logs.py)
+logs/

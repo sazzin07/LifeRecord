@@ -56,6 +56,40 @@ def test_every_name_other_code_takes_from_server_still_exists_there():
     assert gone == {}, f"server.py no longer provides: {gone}"
 
 
+def shadowed_routes(routes):
+    """Routes that an earlier route would answer instead. FastAPI uses the FIRST route that matches, so registering
+    `/things/{id}` before `/things/mine` makes the second unreachable, silently."""
+    import re
+    shadowed = []
+    for route in routes:
+        concrete = re.sub(r"\{[^}/]+(:path)?\}", "x", route.path)
+        for method in route.methods - {"HEAD", "OPTIONS"}:
+            scope = {"type": "http", "method": method, "path": concrete, "root_path": "", "query_string": b"", "headers": []}
+            first = next((r for r in routes if method in r.methods and r.matches(scope)[0].name == "FULL"), None)
+            if first is not route and not (first and first.path == route.path):
+                shadowed.append(f"{method} {route.path} is answered by {first.path if first else None}")
+    return shadowed
+
+
+def test_no_route_is_shadowed_by_an_earlier_one():
+    """Moving routes between modules changes registration order; this resolves a concrete URL for every route and checks
+    that the route which would answer is the route itself."""
+    import server
+    routes = [r for r in server.api_router.routes if hasattr(r, "methods")]
+    assert len(routes) > 150
+    assert shadowed_routes(routes) == []
+
+
+def test_the_shadowing_check_can_fail():
+    """Negative control: a broad route registered ahead of a narrow one must be reported."""
+    from fastapi import APIRouter
+    router = APIRouter()
+    router.get("/things/{item_id}")(lambda item_id: item_id)
+    router.get("/things/mine")(lambda: "mine")
+    found = shadowed_routes([r for r in router.routes if hasattr(r, "methods")])
+    assert found == ["GET /things/mine is answered by /things/{item_id}"]
+
+
 if __name__ == "__main__" and "--write" in sys.argv:
     import os
     sys.path.insert(0, str(BACKEND))

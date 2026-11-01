@@ -25,7 +25,7 @@ from fastapi import FastAPI, APIRouter, BackgroundTasks, Request, HTTPException,
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, delete, update, func, desc, asc
+from sqlalchemy import select, delete, update, func, desc, asc, case
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -915,42 +915,29 @@ def txn_to_dict(txn: Transaction, rmap: Dict[str, float] = None, account_types: 
 
 
 async def compute_account_balance(db: AsyncSession, account: str, user_id: str) -> float:
+    """Opening balance, minus what was spent from the account, plus income, plus and minus transfers, plus settlements.
+
+    The sums are done by the database. This used to load every transaction as an object, three times per account, and
+    add them up in Python: with two years of history the Money page spent over a second on it (test_money_performance.py)."""
     acc = (await db.execute(
         select(Account).where(Account.id == account, Account.user_id == user_id)
     )).scalar_one_or_none()
     bal = float(acc.opening_balance) if acc else 0.0
 
-    result = await db.execute(select(Transaction).where(
-        (Transaction.user_id == user_id) &
-        (Transaction.type == "expense") & (Transaction.paid_by == "me") & (Transaction.account == account)
-    ))
-    for t in result.scalars():
-        bal -= float(t.gross_amount)
+    def total(*conditions):
+        return select(func.coalesce(func.sum(Transaction.gross_amount), 0)).where(Transaction.user_id == user_id, *conditions)
 
-    result = await db.execute(select(Transaction).where(
-        (Transaction.user_id == user_id) &
-        (Transaction.type == "income") & (Transaction.account == account)
-    ))
-    for t in result.scalars():
-        bal += float(t.gross_amount)
-
-    result = await db.execute(select(Transaction).where(
-        (Transaction.user_id == user_id) & (Transaction.type == "transfer")
-    ))
-    for t in result.scalars():
-        if t.from_account == account:
-            bal -= float(t.gross_amount)
-        if t.to_account == account:
-            bal += float(t.gross_amount)
-
+    spent = (await db.execute(total(Transaction.type == "expense", Transaction.paid_by == "me", Transaction.account == account))).scalar()
+    income = (await db.execute(total(Transaction.type == "income", Transaction.account == account))).scalar()
+    moved_out = (await db.execute(total(Transaction.type == "transfer", Transaction.from_account == account))).scalar()
+    moved_in = (await db.execute(total(Transaction.type == "transfer", Transaction.to_account == account))).scalar()
     # Settlements that created their own income/expense transaction are already counted above.
-    result = await db.execute(select(Settlement).where(
-        (Settlement.user_id == user_id) & (Settlement.account == account) &
-        (Settlement.balance_transaction_id == None)
-    ))
-    for s in result.scalars():
-        bal += float(s.amount) if s.direction == "in" else -float(s.amount)
+    settled = (await db.execute(
+        select(func.coalesce(func.sum(case((Settlement.direction == "in", Settlement.amount), else_=-Settlement.amount)), 0)).where(
+            Settlement.user_id == user_id, Settlement.account == account, Settlement.balance_transaction_id == None)  # noqa: E711
+    )).scalar()
 
+    bal += float(income) + float(moved_in) + float(settled) - float(spent) - float(moved_out)
     return round(bal, 2)
 
 

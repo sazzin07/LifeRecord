@@ -363,7 +363,9 @@ def run_command(command: list) -> int:
         raise SystemExit("no scratch stack is running (start one with: python tests/isolated_env.py serve)")
     state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
     admin_user, admin_password = admin_credentials()
-    env = {**baseline_environ(), **state["settings"], "DATABASE_USER": admin_user, "DATABASE_PASSWORD": admin_password,
+    # Test-tool switches (A11Y_LIST, PWDEBUG, DEBUG, CI, ...) pass through; nothing else from the caller's environment does.
+    passthrough = {k: v for k, v in os.environ.items() if k.startswith(("A11Y_", "PW", "PLAYWRIGHT_", "DEBUG")) or k == "CI"}
+    env = {**baseline_environ(), **passthrough, **state["settings"], "DATABASE_USER": admin_user, "DATABASE_PASSWORD": admin_password,
            "ADMIN_DATABASE_USER": admin_user, "ADMIN_DATABASE_PASSWORD": admin_password,
            "TEST_EMAIL": state["test_email"], "TEST_PASSWORD": state["test_password"], "API_URL": state["api_url"],
            "REACT_APP_BACKEND_URL": state["api_url"]}

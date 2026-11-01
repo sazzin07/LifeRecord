@@ -1,6 +1,6 @@
 """Give the database a least-privilege app login and a password for root. Safe to run more than once.
 
-- DATABASE_USER (default liferecord_app) gets SELECT/INSERT/UPDATE/DELETE/CREATE/INDEX/REFERENCES on the
+- DATABASE_USER (app login "liferecord") gets SELECT/INSERT/UPDATE/DELETE/CREATE/INDEX/REFERENCES on the
   liferecord database only. It cannot alter or drop tables, read other databases, or manage accounts.
 - root keeps full rights but is only used for migrations, tests' cleanup and administration
   (ADMIN_DATABASE_USER / ADMIN_DATABASE_PASSWORD).
@@ -19,7 +19,7 @@ import local_secrets  # noqa: E402
 import pymysql  # noqa: E402
 
 DB_NAME = "liferecord"
-APP_USER = "liferecord_app"
+APP_USER = "liferecord"
 HOST = "127.0.0.1"
 
 
@@ -69,7 +69,7 @@ def main() -> int:
         cur.execute("SELECT COUNT(*) FROM users")
     app.close()
     print(f"root now requires a password (stored encrypted); app login '{APP_USER}' works. "
-          "Set DATABASE_USER=liferecord_app and ADMIN_DATABASE_USER=root in backend/.env.")
+          "Set DATABASE_USER=liferecord and ADMIN_DATABASE_USER=root in backend/.env.")
     return 0
 
 

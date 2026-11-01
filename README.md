@@ -6,10 +6,10 @@ A private, multi-user personal life-management application. It unifies personal/
 
 - **Backend:** FastAPI + async SQLAlchemy + aiomysql + MariaDB/MySQL
 - **Frontend:** React 19 + Tailwind CSS + shadcn/ui + framer-motion + recharts
-- **AI:** Google Gemini (`google-genai` SDK), server-side only
-- **Auth:** JWT (HS256, access tokens), bcrypt password hashes
+- **AI:** chat on OpenCode Go (`gpt-6-luna`, default) or Gemini (`AI_PROVIDER`); voice transcription and receipt scanning on Gemini (`google-genai` SDK); all server-side only
+- **Auth:** JWT (HS256) access tokens, refresh token in an HttpOnly cookie, bcrypt password hashes
 - **Storage:** Local filesystem for progress photos
-- **Email:** Async SMTP via `aiosmtplib` with a console fallback for development
+- **Email:** SendGrid through its SMTP relay (`aiosmtplib`); nothing is sent when no provider is configured
 
 ## Multi-user architecture
 
@@ -27,7 +27,7 @@ Life Record now supports multiple independent accounts. Each user owns their dat
 - Node.js 18+ and Yarn
 - MariaDB or MySQL 8.0+ running on `localhost:3306`
 - (Optional) PHP 8+ if you want to run the bundled phpMyAdmin
-- A Google Gemini API key for AI features
+- An OpenCode API key for the chat assistant and a Gemini API key for voice and receipts (both optional; the app runs without them)
 - SMTP credentials for email verification and password-reset emails (optional in dev; see Email configuration)
 
 ## Run the app
@@ -96,7 +96,7 @@ cd backend
 
 If you change the owner password, also run `local_secrets.py set TEST_PASSWORD` so the tests can log in. On Linux/production there is no store: provide the same names as environment variables or from your secret manager.
 
-The app connects to MySQL as `liferecord_app`, which can read and write the `liferecord` database only (no DROP/ALTER, no other databases, no account management). `root` has a password and is used only for migrations, setup and test cleanup. `tools/provision_db.py` sets this up (safe to re-run). MySQL listens on `127.0.0.1` only (`tools/mysql-data/my.cnf` contains `bind-address=127.0.0.1` and `mysqlx=OFF`; that file is git-ignored, so repeat those two lines on a new machine). Use `DATABASE_HOST=127.0.0.1`, not `localhost`: on Windows `localhost` tries IPv6 first and every connection waits for a timeout.
+The app connects to MySQL as `liferecord`, which can read and write the `liferecord` database only (no DROP/ALTER, no other databases, no account management). `root` has a password and is used only for migrations, setup and test cleanup. `tools/provision_db.py` sets this up (safe to re-run). MySQL listens on `127.0.0.1` only (`tools/mysql-data/my.cnf` contains `bind-address=127.0.0.1` and `mysqlx=OFF`; that file is git-ignored, so repeat those two lines on a new machine). Use `DATABASE_HOST=127.0.0.1`, not `localhost`: on Windows `localhost` tries IPv6 first and every connection waits for a timeout.
 
 ## Quick start
 
@@ -172,7 +172,7 @@ Required backend environment variables:
 
 ### 3. phpMyAdmin (optional)
 
-A local phpMyAdmin 5.2.3 is bundled in `tools/phpmyadmin` and configured for `127.0.0.1:3306` and asks for a login (use `root` or `liferecord_app` with the password from the secrets store: `python -c "import local_secrets as l; print(l.read_store()['ADMIN_DATABASE_PASSWORD'])"` from `backend/`; nothing is saved in the config). Start it with PHP's built-in server:
+A local phpMyAdmin 5.2.3 is bundled in `tools/phpmyadmin` and configured for `127.0.0.1:3306` and asks for a login (use `root` or `liferecord` with the password from the secrets store: `python -c "import local_secrets as l; print(l.read_store()['ADMIN_DATABASE_PASSWORD'])"` from `backend/`; nothing is saved in the config). Start it with PHP's built-in server:
 
 ```bash
 cd tools/phpmyadmin
@@ -315,10 +315,6 @@ Run it manually after backing up data:
 
 A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the original migration.
 
-## Testing
-
-See [Testing](#testing-1) below.
-
 ## Features
 
 ### Money
@@ -339,10 +335,10 @@ See [Testing](#testing-1) below.
 - Recurring shopping list templates and frequently bought suggestions.
 - Interactive kitchen: storage spaces are doors on a kitchen wall; tap one to zoom in, see what is inside, use/add/move items, and switch spaces from a speed-dial rail. "More details" opens the full list with search, filters and bulk actions.
 - AI can manage lists, inventory, storage locations (add, rename, move items, consume, discard with confirmation) and expiry dates, give a whole-kitchen overview, and suggest recipes from available ingredients.
-- Realistic demo data: `cd backend && .venv\Scripts\python.exe seed_groceries.py --reset` (expiry dates are relative to today).
+- Realistic demo data for every module comes from `backend/seed_john.py` (see Testing; expiry dates are relative to today). The old `seed_groceries.py` was removed.
 
 ### Nutrition
-A food diary backed by real reference data (details, limits and test results in `APPLICATION_COMPLETION_ROADMAP.md` §17). The page is at `/nutrition`; the tab and the day are in the address (`?tab=plan&date=2026-10-30`).
+A food diary backed by real reference data (details, limits and test results in [`docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md`](docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md) §17 and §17b; open work in [`APPLICATION_COMPLETION_ROADMAP.md`](APPLICATION_COMPLETION_ROADMAP.md)). The page is at `/nutrition`; the tab and the day are in the address (`?tab=plan&date=2026-10-30`).
 - **Today:** quick add (type a few letters and tap Add, or tap a food you eat often to repeat its last amount, with Undo), the day as one energy bar split by meal, macronutrient range gauges, meals with add/edit/duplicate/move/delete and "copy yesterday", editable drinks, insights that say why something is shown, and **ideas for the next meal**: your own recipes, foods and usual meals ranked by how much of what you still need they cover, with the reason for each and a note when nothing fits (never invented dishes).
 - **Plan:** a week of planned food and recipes, kept apart from the diary until you tap "I ate this". Copy a week, move items between days, and build a shopping list from the plan (minus what the kitchen already has; nothing is marked as bought). **Suggest a week** previews a plan built only from your own recipes and foods (diet, allergies and recently eaten meals respected); you drop what you do not want and only the rest is planned.
 - **Foods:** about 8,000 USDA reference foods (public domain) with portions, your own foods, favourites, and packaged foods by barcode (typed or scanned with the camera; Open Food Facts values are marked estimated). Find similar foods with less sodium, sugar or saturated fat, or more fibre or protein. A nutrient a source does not report shows "not reported", never zero.
@@ -369,12 +365,12 @@ The AI assistant is accessed through the floating sparkle button in the app. It 
 
 AI-recorded financial transactions (expenses, income, transfers, person payments) use the same validated backend endpoints as manual entry, are saved to the database, and appear immediately in the Transactions table and Home dashboard.
 
-All AI requests are made server-side. The Gemini API key must be set in `backend/.env` as `GEMINI_API_KEY`. The key is never sent to the browser. AI requests time out after `GEMINI_TIMEOUT_SECONDS` to prevent the UI from hanging when Gemini is overloaded.
+All AI requests are made server-side. API keys are kept in the encrypted secrets store (or the environment) and are never sent to the browser. Gemini requests time out after `GEMINI_TIMEOUT_SECONDS` and OpenCode requests after `OPENCODE_TIMEOUT_SECONDS`, so the UI does not hang when a provider is overloaded.
 
 ### Assistant
 
 - **Streaming:** `POST /api/ai/chat/stream` (server-sent events: `session`, `delta`, `tool`, `done`, `error`). `POST /api/ai/chat` still returns the whole reply and is used as a fallback by the UI. `GET /api/ai/history?session_id=` restores a conversation when the panel opens.
-- **Coverage:** about 70 tools across Home (`get_overview`), Money (transactions, accounts, spaces, income, transfers, categories and budgets), People, Tasks and Calendar (a task's due date is its calendar entry), Groceries and Kitchen, Nutrition (meals, recipes), Fitness and Body. Tools call the same functions as the REST endpoints, so validation, ownership and balance logic are shared. Deleting anything needs a preview and a confirmation on a later message.
+- **Coverage:** 101 tools across Home (`get_overview`), Money (transactions, accounts, spaces, income, transfers, categories and budgets), People, Tasks and Calendar (a task's due date is its calendar entry), Groceries and Kitchen, Nutrition (diary, foods, targets, plan, suggestions, patterns, recipes), Fitness and Body. Tools call the same functions as the REST endpoints, so validation, ownership and balance logic are shared. Deleting anything needs a preview and a confirmation on a later message.
 - **Context:** each turn includes the current page and short notes on what the assistant changed earlier in the conversation, so "that expense" or "the rest" can be resolved.
 - **Formatting:** the prompt asks for amounts as `€14.00`; the UI also tidies `**2.00€**`-style output and sets amounts in the mono face.
 - **Voice and receipt scanning** still use Gemini (`/ai/transcribe`, `/ai/receipt`).
@@ -423,10 +419,10 @@ cd frontend
 yarn build
 ```
 
-The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `python ..ackend\local_secrets.py run -- npx playwright test` (the store supplies `TEST_PASSWORD`) after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
+The build runs ESLint and should complete with no warnings. Playwright e2e specs are in `frontend/e2e/` and can be run with `python ..\backend\local_secrets.py run -- npx playwright test` (the store supplies `TEST_PASSWORD`) after starting the backend and frontend. Specs whose describe block says "real model" / "real assistant" (and `saved-chats.spec.js`) call the live AI provider; to skip them:
 
 ```powershell
-python ..ackend\local_secrets.py run -- npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/nutrition.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
+python ..\backend\local_secrets.py run -- npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/nutrition.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
 ```
 
 ## Production deployment checklist

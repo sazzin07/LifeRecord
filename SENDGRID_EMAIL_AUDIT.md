@@ -1,6 +1,6 @@
 # SendGrid Email Verification & Delivery Audit
 
-**Date:** 2026-10-29 · **Branch:** `feature/roadmap-completion` · **Linked from:** [APPLICATION_COMPLETION_ROADMAP.md](APPLICATION_COMPLETION_ROADMAP.md) §16
+**Date:** 2026-10-29 · **Branch:** `feature/roadmap-completion` · **Linked from:** [APPLICATION_COMPLETION_ROADMAP.md](APPLICATION_COMPLETION_ROADMAP.md) S-06 (history: [archive §16](docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md))
 **Status of this document:** findings only. **No email changes were made.** No email was sent, no DNS or SendGrid setting was changed, no credential was printed.
 
 ## How this audit was done (and what it cannot tell you)

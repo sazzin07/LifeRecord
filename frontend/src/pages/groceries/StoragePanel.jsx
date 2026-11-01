@@ -53,7 +53,7 @@ export function StoragePanel({ title, kind, items, locations, currentName, onAdd
         {onEditLocation && (
           <Button variant="ghost" size="sm" onClick={onEditLocation} aria-label={`Edit ${title}`}><Settings2 className="h-4 w-4 mr-1" />Edit space</Button>
         )}
-        <Button size="sm" onClick={onAddItem} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" />Add item</Button>
+        <Button size="sm" onClick={onAddItem} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" />Add item</Button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2">

@@ -96,7 +96,7 @@ export function ChatSidebar({ view, onView, activeId, busy, onNew, onOpen, onDel
     <div className="flex h-full min-h-0 flex-col" data-testid="ai-sidebar">
       <div className="space-y-1 p-3">
         <button type="button" onClick={onNew} data-testid="ai-sidebar-new"
-          className="flex w-full items-center gap-2.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700">
+          className="flex w-full items-center gap-2.5 rounded-xl bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700">
           <SquarePen className="h-4 w-4" />New chat
         </button>
         <div className="pt-1">

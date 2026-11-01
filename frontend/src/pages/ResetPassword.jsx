@@ -69,7 +69,7 @@ export default function ResetPassword() {
       <div className="flex items-center justify-center p-8">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
+            <div className="h-9 w-9 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
             <span className="font-bold text-lg">Life Record</span>
           </div>
 
@@ -83,20 +83,20 @@ export default function ResetPassword() {
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Enter a new password for your account.</p>
               <form onSubmit={submit} className="mt-8 space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">New password</label>
+                  <label htmlFor="reset-password" className="text-sm font-medium text-slate-700 dark:text-slate-300">New password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
+                    <Input id="reset-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm password</label>
+                  <label htmlFor="reset-confirm" className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
+                    <Input id="reset-confirm" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
                   </div>
                 </div>
-                <Button type="submit" disabled={loading || !token} className="w-full h-11 mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                <Button type="submit" disabled={loading || !token} className="w-full h-11 mt-6 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset password"}
                 </Button>
               </form>

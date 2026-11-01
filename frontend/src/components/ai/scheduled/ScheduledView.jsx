@@ -91,7 +91,7 @@ export function ScheduledView() {
       <header className="flex items-center gap-3 border-b border-border px-4 py-3">
         <p className="min-w-0 text-sm text-muted-foreground">Reports that read your data on a schedule and can be emailed to you.</p>
         <button type="button" onClick={() => setMode({ name: "wizard" })} data-testid="scheduled-new"
-          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"><Plus className="h-4 w-4" />New</button>
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"><Plus className="h-4 w-4" />New</button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4" aria-busy={loading}>
         {tasks === null && loading && <div className="space-y-2.5" aria-hidden="true">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-24 w-full" />)}</div>}
@@ -100,7 +100,7 @@ export function ScheduledView() {
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CalendarClock className="h-6 w-6" /></div>
             <h3 className="mt-4 text-lg font-semibold tracking-tight">Put your reports on autopilot</h3>
             <p className="mt-1 text-sm text-muted-foreground">Tell me what to look at and when, for example “every Monday at 9:00, review last week’s spending”. I’ll run it for you and can email the results.</p>
-            <button type="button" onClick={() => setMode({ name: "wizard" })} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Create your first task</button>
+            <button type="button" onClick={() => setMode({ name: "wizard" })} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Create your first task</button>
           </div>
         )}
         <ul className="space-y-2.5">

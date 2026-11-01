@@ -96,7 +96,7 @@ export default function Signup() {
       <div className="flex items-center justify-center p-8">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
+            <div className="h-9 w-9 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
             <span className="font-bold text-lg">Life Record</span>
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Create your account</h2>
@@ -126,7 +126,7 @@ export default function Signup() {
                 </div>
                 <p className="mt-1 text-xs text-slate-500">At least 8 characters with a letter and a number.</p>
               </div>
-              <Button type="submit" disabled={loading} className="w-full h-11 mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+              <Button type="submit" disabled={loading} className="w-full h-11 mt-6 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Create account <ArrowRight className="h-4 w-4 ml-1" /></>}
               </Button>
               <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
@@ -157,7 +157,7 @@ export default function Signup() {
                     inputMode="numeric"
                     className="h-12 text-center text-2xl tracking-[0.5em] font-semibold"
                   />
-                  <Button type="submit" disabled={codeLoading || code.length < 6} className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                  <Button type="submit" disabled={codeLoading || code.length < 6} className="w-full h-11 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
                     {codeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify email"}
                   </Button>
                 </form>

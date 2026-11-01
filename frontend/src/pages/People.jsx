@@ -180,7 +180,7 @@ export default function People() {
             <Button variant="outline" onClick={() => setClearAllOpen(true)} className="h-9" data-testid="clear-all-debts-btn">
               <Receipt className="h-4 w-4 mr-1" /> Clear all debts
             </Button>
-            <Button onClick={startAdd} data-testid="add-person-btn" className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button onClick={startAdd} data-testid="add-person-btn" className="h-9 bg-emerald-700 hover:bg-emerald-800 text-white">
               <Plus className="h-4 w-4 mr-1" /> Add person
             </Button>
           </div>
@@ -208,7 +208,7 @@ export default function People() {
             </div>
             <div className="flex gap-2">
               <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-44" aria-label="Sort people"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SORTS.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
                 </SelectContent>
@@ -236,13 +236,13 @@ export default function People() {
                 icon={Users}
                 title="No people yet"
                 sub="Add people to split expenses and track who owes what."
-                action={<Button onClick={startAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" /> Add person</Button>}
+                action={<Button onClick={startAdd} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" /> Add person</Button>}
               />
             </Card>
           ) : (
             <>
               <div className="flex items-center gap-2 px-1">
-                <Checkbox id="select-all" checked={allSelected} onCheckedChange={toggleSelectAll} data-testid="select-all" />
+                <Checkbox id="select-all" aria-label="Select all people" checked={allSelected} onCheckedChange={toggleSelectAll} data-testid="select-all" />
                 <Label htmlFor="select-all" className="text-sm text-slate-500 cursor-pointer">Select all</Label>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -263,7 +263,7 @@ export default function People() {
                     >
                       <div className="flex items-start gap-3">
                         <div onClick={(e) => e.stopPropagation()} className="pt-1">
-                          <Checkbox checked={selected} onCheckedChange={() => toggleSelection(p.id)} />
+                          <Checkbox aria-label={`Select ${p.name}`} checked={selected} onCheckedChange={() => toggleSelection(p.id)} />
                         </div>
                         <Avatar name={p.name} photo={p.photo} size="h-12 w-12" />
                         <div className="flex-1 min-w-0">
@@ -322,7 +322,7 @@ export default function People() {
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setFormOpen(false)} data-testid="person-form-cancel">Cancel</Button>
-              <Button onClick={savePerson} className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!form.name.trim()} data-testid="person-form-save">
+              <Button onClick={savePerson} className="bg-emerald-700 hover:bg-emerald-800 text-white" disabled={!form.name.trim()} data-testid="person-form-save">
                 {editing ? "Save changes" : "Add person"}
               </Button>
             </div>

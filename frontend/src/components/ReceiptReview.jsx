@@ -92,7 +92,7 @@ export function ReceiptReview({ data, open, setOpen }) {
           <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 text-sm">
             <span className="text-slate-500">Total</span><span className="stat-num font-bold">{eur(total)}</span>
           </div>
-          <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="receipt-save">
+          <Button onClick={save} disabled={saving} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="receipt-save">
             {saving ? "Saving…" : "Confirm & save expense"}
           </Button>
         </div>

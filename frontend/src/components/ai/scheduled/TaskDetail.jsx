@@ -15,7 +15,7 @@ function Action({ icon: Icon, children, onClick, busy, primary, danger, testid, 
   return (
     <button type="button" onClick={onClick} disabled={busy || disabled} data-testid={testid}
       className={cn("inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors disabled:opacity-50",
-        primary ? "bg-emerald-600 text-white hover:bg-emerald-700" : danger ? "border border-border text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10" : "border border-border hover:border-emerald-500/60")}>
+        primary ? "bg-emerald-700 text-white hover:bg-emerald-700" : danger ? "border border-border text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10" : "border border-border hover:border-emerald-500/60")}>
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}{children}
     </button>
   );

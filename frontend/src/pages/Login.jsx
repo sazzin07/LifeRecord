@@ -99,7 +99,7 @@ export default function Login() {
         <motion.form initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           onSubmit={submit} className="w-full max-w-sm" data-testid="login-form">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
+            <div className="h-9 w-9 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
             <span className="font-bold text-lg">Life Record</span>
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Welcome back</h2>
@@ -107,17 +107,17 @@ export default function Login() {
 
           <div className="mt-8 space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+              <label htmlFor="login-email" className="text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input data-testid="login-email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="mt-1.5 h-11 pl-10" />
+                <Input id="login-email" autoComplete="username" data-testid="login-email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="mt-1.5 h-11 pl-10" />
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+              <label htmlFor="login-password" className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input data-testid="login-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" />
+                <Input id="login-password" autoComplete="current-password" data-testid="login-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" />
               </div>
             </div>
           </div>
@@ -126,7 +126,7 @@ export default function Login() {
             <Link to="/forgot-password" className="text-sm font-medium text-emerald-600 hover:text-emerald-700">Forgot password?</Link>
           </div>
 
-          <Button data-testid="login-submit" type="submit" disabled={loading} className="w-full h-11 mt-6 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+          <Button data-testid="login-submit" type="submit" disabled={loading} className="w-full h-11 mt-6 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Enter <ArrowRight className="h-4 w-4 ml-1" /></>}
           </Button>
 
@@ -160,11 +160,12 @@ export default function Login() {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder="000000"
+                  aria-label="6-digit verification code"
                   maxLength={6}
                   inputMode="numeric"
                   className="h-12 text-center text-2xl tracking-[0.5em] font-semibold"
                 />
-                <Button type="submit" disabled={codeLoading || code.length < 6} className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                <Button type="submit" disabled={codeLoading || code.length < 6} className="w-full h-11 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
                   {codeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify email"}
                 </Button>
               </form>

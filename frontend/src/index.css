@@ -61,6 +61,30 @@
   .font-mono, .stat-num { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 }
 
+/* ---- Contrast floor (WCAG AA, roadmap D-01 / D-04) --------------------------------------------------------------
+   Secondary and accent text is written all over the app as text-slate-400/500, text-emerald-600, text-red-500 and
+   text-amber-600. On white those fall below 4.5:1 (slate-400 is 2.6:1) and on the dark cards slate-500 is 3.9:1, so the
+   fix lives here, once, instead of in several hundred class lists. The selectors use :where(), so they carry the same
+   specificity as the utility they adjust: an explicit dark:text-*, hover:text-* or focus:text-* on the same element still
+   wins. Add a colour here only when the audit (e2e/a11y-*.spec.js) finds it failing. */
+/* Text in a data colour (a category, a workout type): the colour arrives as --tint and is darkened in the light theme, or
+   lightened in the dark one, until it reads at 4.5:1 on its own pale tint. The raw colour stays for dots, bars and icons. */
+.tint-text { color: color-mix(in srgb, var(--tint) 58%, black); }
+:where(.dark) .tint-text { color: color-mix(in srgb, var(--tint) 58%, white); }
+
+@layer utilities {
+  :where(:root:not(.dark)) .text-slate-400,
+  :where(:root:not(.dark)) .text-slate-500 { color: hsl(var(--muted-foreground)); }
+  :where(:root:not(.dark)) .text-emerald-600 { color: #047857; }
+  :where(:root:not(.dark)) .text-red-500 { color: #dc2626; }
+  :where(:root:not(.dark)) .text-amber-600 { color: #b45309; }
+  :where(.dark) .text-slate-500,
+  :where(.dark) .text-slate-600 { color: hsl(var(--muted-foreground)); }
+  :where(.dark) .text-emerald-600 { color: #34d399; }
+  :where(.dark) .text-red-500 { color: #f87171; }
+  :where(.dark) .text-amber-600 { color: #fbbf24; }
+}
+
 /* Selective liquid glass */
 .glass {
   background: rgba(255, 255, 255, 0.72);

@@ -157,7 +157,7 @@ export default function Home() {
         <Card className="p-5 lm-in">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Utensils className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Nutrition today</h3></div>
-            <button onClick={() => nav("/nutrition")} className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
+            <button onClick={() => nav("/nutrition")} aria-label="Open Nutrition" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
           <div className="grid grid-cols-4 gap-1">
             <Ring value={nutri.cal} max={nutri.calMax} color="#10B981" label="kcal" />
@@ -171,7 +171,7 @@ export default function Home() {
         <Card className="p-5 lm-in">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Users className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">People</h3></div>
-            <button onClick={() => nav("/people")} className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
+            <button onClick={() => nav("/people")} aria-label="Open People" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
           <div className="space-y-2">
             {(people || []).filter((p) => Math.abs(p.net) > 0.005).slice(0, 4).map((p) => (
@@ -189,7 +189,7 @@ export default function Home() {
         <Card className="p-5 lm-in">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Groceries</h3></div>
-            <button onClick={() => nav("/groceries")} className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
+            <button onClick={() => nav("/groceries")} aria-label="Open Groceries" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
           <div className="flex gap-6">
             <div><div className="stat-num text-2xl font-extrabold">{(groceries || []).length}</div><Label>In inventory</Label></div>

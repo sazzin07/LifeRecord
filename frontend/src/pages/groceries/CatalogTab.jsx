@@ -43,10 +43,10 @@ const sortFns = {
 function SectionHeader({ group, open, onToggle }) {
   const meta = group.category ? CAT_META[group.category] : null;
   return (
-    <button type="button" onClick={onToggle} aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} ${group.title}`}
+    <button type="button" onClick={onToggle} aria-expanded={open}
       className="flex w-full items-center gap-2.5 rounded-xl px-1 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       {group.category && <CatIcon category={group.category} className="h-8 w-8" />}
-      <h3 className="text-base font-semibold" style={meta ? { color: meta.color } : undefined}>{group.title}</h3>
+      <h3 className={cn("text-base font-semibold", meta && "tint-text")} style={meta ? { "--tint": meta.color } : undefined}>{group.title}</h3>
       <span className="text-sm text-muted-foreground tabular-nums">{group.items.length}</span>
       <span className="h-px flex-1 bg-border" aria-hidden="true" />
       <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", !open && "-rotate-90")} aria-hidden="true" />
@@ -197,12 +197,12 @@ export function CatalogTab({ products, inventory = [], listItems = [], selectedL
             {[["cards", "Cards", LayoutGrid], ["list", "List", List]].map(([id, label, Icon]) => (
               <button key={id} type="button" onClick={() => setView(id)} aria-pressed={view === id}
                 className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  view === id ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-accent/50")}>
+                  view === id ? "bg-emerald-700 text-white" : "text-muted-foreground hover:bg-accent/50")}>
                 <Icon className="h-4 w-4" aria-hidden="true" />{label}
               </button>
             ))}
           </div>
-          <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setDialog({ open: true, product: null })}><Plus className="mr-1.5 h-4 w-4" />Add product</Button>
+          <Button className="bg-emerald-700 text-white hover:bg-emerald-700" onClick={() => setDialog({ open: true, product: null })}><Plus className="mr-1.5 h-4 w-4" />Add product</Button>
         </div>
       </div>
 

@@ -44,7 +44,7 @@ export const Composer = forwardRef(function Composer(
           <img src={image} alt="Attached preview" className="h-10 w-10 rounded-lg object-cover" />
           <span>Image attached</span>
           <button type="button" onClick={onScan} disabled={scanning} data-testid="ai-scan-receipt"
-            className="ml-auto inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+            className="ml-auto inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
             <ScanLine className="h-3.5 w-3.5" />{scanning ? "Reading…" : "Scan receipt"}
           </button>
           <button type="button" onClick={onClearImage} aria-label="Remove image" className="grid h-7 w-7 place-items-center rounded-lg hover:bg-muted">
@@ -81,7 +81,7 @@ export const Composer = forwardRef(function Composer(
           </Hint>
         ) : (
           <button type="button" data-testid="ai-send" aria-label="Send message" onClick={onSend} disabled={!canSend}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white transition-all hover:bg-emerald-700 active:scale-95 disabled:bg-muted disabled:text-muted-foreground">
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-700 text-white transition-all hover:bg-emerald-700 active:scale-95 disabled:bg-muted disabled:text-muted-foreground">
             <ArrowUp className="h-4 w-4" />
           </button>
         )}

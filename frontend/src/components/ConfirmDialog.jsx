@@ -27,7 +27,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={cn(
               variant === "danger" && "bg-red-500 hover:bg-red-600 text-white",
-              variant === "primary" && "bg-emerald-600 hover:bg-emerald-700 text-white"
+              variant === "primary" && "bg-emerald-700 hover:bg-emerald-800 text-white"
             )}
           >
             {confirmText}

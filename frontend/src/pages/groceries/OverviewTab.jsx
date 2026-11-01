@@ -181,7 +181,7 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
               </Button>
             );
           })}
-          <Button className="rounded-full bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setTab("storage")}>
+          <Button className="rounded-full bg-emerald-700 text-white hover:bg-emerald-700" onClick={() => setTab("storage")}>
             <Refrigerator className="mr-1.5 h-4 w-4" />Open the kitchen
           </Button>
         </div>

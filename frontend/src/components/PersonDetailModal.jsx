@@ -196,7 +196,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
 
                 <div className="flex flex-wrap gap-2 mt-5">
                   {theyOwe && (
-                    <Button onClick={() => openPay("in")} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="record-payment-btn">
+                    <Button onClick={() => openPay("in")} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="record-payment-btn">
                       <HandCoins className="h-4 w-4 mr-1" /> Record payment
                     </Button>
                   )}
@@ -236,7 +236,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium text-sm">{item.merchant}</p>
                               {item.category && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: (CATEGORY_COLORS[item.category] || "#94A3B8") + "22", color: CATEGORY_COLORS[item.category] || "#94A3B8" }}>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium tint-text" style={{ background: (CATEGORY_COLORS[item.category] || "#94A3B8") + "22", "--tint": CATEGORY_COLORS[item.category] || "#94A3B8" }}>
                                   {item.category}
                                 </span>
                               )}
@@ -294,7 +294,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={recordPayment} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="payment-save">
+            <Button onClick={recordPayment} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="payment-save">
               Record {amount ? eur(parseFloat(amount)) : ""} {payMode === "in" ? "received" : "sent"}
             </Button>
           </div>
@@ -326,7 +326,7 @@ export default function PersonDetailModal({ personId, open, onClose, onEdit, onD
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setClearConfirm(false)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={clearBalance} className="bg-emerald-600 hover:bg-emerald-700 text-white">Clear balance</AlertDialogAction>
+            <AlertDialogAction onClick={clearBalance} className="bg-emerald-700 hover:bg-emerald-800 text-white">Clear balance</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

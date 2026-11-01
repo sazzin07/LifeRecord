@@ -123,7 +123,7 @@ export function TaskWizard({ task, options, initialStep, onClose, onSaved }) {
           {STEPS.map((s, i) => (
             <li key={s} aria-current={i === step ? "step" : undefined}>
               <button type="button" disabled={i > step || (editing && i === 0)} onClick={() => setStep(i)} aria-label={s}
-                className={cn("h-1.5 rounded-full transition-all", i === step ? "w-6 bg-emerald-600" : i < step ? "w-3 bg-emerald-500/60" : "w-3 bg-muted")} />
+                className={cn("h-1.5 rounded-full transition-all", i === step ? "w-6 bg-emerald-700" : i < step ? "w-3 bg-emerald-500/60" : "w-3 bg-muted")} />
             </li>
           ))}
         </ol>
@@ -145,7 +145,7 @@ export function TaskWizard({ task, options, initialStep, onClose, onSaved }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={draft} disabled={drafting || request.trim().length < 5} data-testid="wizard-draft"
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
                 {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}{drafting ? "Drafting…" : "Draft it for me"}
               </button>
               <button type="button" onClick={() => setStep(1)} data-testid="wizard-manual" className="h-10 rounded-xl px-3 text-sm font-medium text-muted-foreground hover:text-foreground">Set it up myself</button>
@@ -219,13 +219,13 @@ export function TaskWizard({ task, options, initialStep, onClose, onSaved }) {
             <>
               <button type="button" onClick={() => finish(false)} disabled={saving} data-testid="wizard-save-draft" className="h-10 rounded-xl border border-border px-4 text-sm font-medium hover:border-emerald-500/60 disabled:opacity-50">Save as draft</button>
               <button type="button" onClick={() => finish(true)} disabled={saving || !confirm || !scheduleOk} data-testid="wizard-activate"
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Activate
               </button>
             </>
           ) : step > 0 && (
             <button type="button" onClick={() => setStep(step + 1)} disabled={!canNext} data-testid="wizard-next"
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">Next<ArrowRight className="h-4 w-4" /></button>
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">Next<ArrowRight className="h-4 w-4" /></button>
           )}
         </div>
       </footer>

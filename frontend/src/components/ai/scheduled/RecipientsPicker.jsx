@@ -72,7 +72,7 @@ export function RecipientsPicker({ selected, onChange, email }) {
                 <input value={codes[r.id] || ""} onChange={(e) => setCodes((c) => ({ ...c, [r.id]: e.target.value.replace(/\D/g, "") }))} inputMode="numeric" maxLength={6}
                   placeholder="6-digit code" aria-label={`Code for ${r.email}`} className={`${inputClass} h-9 w-32 font-mono`} />
                 <button type="button" onClick={() => verify(r)} disabled={busy === r.id || (codes[r.id] || "").length < 4}
-                  className="h-9 rounded-xl bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Verify</button>
+                  className="h-9 rounded-xl bg-emerald-700 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Verify</button>
                 <button type="button" onClick={() => resend(r)} disabled={busy === r.id || !ready} className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-300">Send a new code</button>
               </div>
             )}

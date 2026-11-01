@@ -127,7 +127,7 @@ export function WorkoutDialog({ open, setOpen, workout = null }) {
             <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setExs((a) => [...a, { name: "New exercise", sets: 3, reps: 10, weight: 0 }])}><Plus className="h-4 w-4 mr-1" />Add exercise</Button>
           </div>
           <div><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="How did it go?" className="mt-1" data-testid="workout-notes" /></div>
-          <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="workout-save">{editing ? "Save changes" : "Save session"}</Button>
+          <Button onClick={save} disabled={saving} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="workout-save">{editing ? "Save changes" : "Save session"}</Button>
         </div>
       </DialogContent>
     </Dialog>

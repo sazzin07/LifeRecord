@@ -39,7 +39,7 @@ export default function Fitness() {
       <SectionHeading title="Fitness" sub="Calisthenics — log sessions and track personal bests"
         action={<div className="flex gap-2">
           <Button variant="outline" className="h-9" onClick={() => openAI("Log today's workout: ")}><Sparkles className="h-4 w-4 mr-1 text-emerald-600" />AI</Button>
-          <Button className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setLogOpen(true)} data-testid="log-workout-btn"><Play className="h-4 w-4 mr-1" />Log session</Button>
+          <Button className="h-9 bg-emerald-700 hover:bg-emerald-800 text-white" onClick={() => setLogOpen(true)} data-testid="log-workout-btn"><Play className="h-4 w-4 mr-1" />Log session</Button>
         </div>} />
 
       <div className="grid lg:grid-cols-3 gap-4">
@@ -83,13 +83,13 @@ export default function Fitness() {
           <div className="skeleton m-5 mt-0 h-40 rounded-2xl" aria-busy="true" />
         ) : history.length === 0 ? (
           <EmptyState icon={Dumbbell} title="Your training history starts here" sub="Log your first session to build up your personal-best records."
-            action={<Button onClick={() => setLogOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Play className="h-4 w-4 mr-1" />Log session</Button>} />
+            action={<Button onClick={() => setLogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Play className="h-4 w-4 mr-1" />Log session</Button>} />
         ) : (
           <div className="divide-y divide-border">
             {history.map((w) => (
               <div key={w.id} data-testid={`workout-${w.id}`} className="px-5 py-3 group">
                 <div className="flex items-center gap-3">
-                  <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full")} style={{ background: (TEMPLATES[w.type]?.color || "#94A3B8") + "22", color: TEMPLATES[w.type]?.color || "#64748B" }}>{w.type}</span>
+                  <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full tint-text")} style={{ background: (TEMPLATES[w.type]?.color || "#94A3B8") + "22", "--tint": TEMPLATES[w.type]?.color || "#64748B" }}>{w.type}</span>
                   <span className="text-sm text-slate-500 flex-1">{w.date}</span>
                   <button onClick={() => setEditing(w)} aria-label={`Edit ${w.type} session from ${w.date}`} data-testid={`workout-edit-${w.id}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-emerald-600"><Pencil className="h-4 w-4" /></button>
                   <button onClick={() => { setDeleteId(w.id); setDeleteOpen(true); }} aria-label={`Delete ${w.type} session from ${w.date}`} data-testid={`workout-delete-${w.id}`} className="sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>

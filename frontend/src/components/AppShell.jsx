@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { prefetchRoute, warmAllRoutes } from "@/lib/routes";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell,
   HeartPulse, CheckSquare, Calendar, Settings as SettingsIcon,
-  Plus, Search, Sparkles, LogOut, Sun, Moon,
+  Plus, Search, Sparkles, LogOut, Sun, Moon, Ellipsis,
 } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { AIAssistant } from "@/components/AIAssistant";
@@ -27,7 +28,10 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
+// The phone's bottom bar has room for four pages and the quick-add button; every other page is behind "More".
+const BAR_PATHS = ["/", "/money", "/people", "/tasks"];
 const MOBILE_NAV = [NAV[0], NAV[1], null, NAV[2], NAV[7]];
+const MORE_NAV = NAV.filter((n) => !BAR_PATHS.includes(n.to));   // derived, so a page added to NAV can never be unreachable on a phone
 
 export function openAI(prompt) {
   window.dispatchEvent(new CustomEvent("lm:openAI", { detail: { prompt } }));
@@ -63,6 +67,9 @@ export function AppShell({ children }) {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButton = useRef(null);
+  const inMore = MORE_NAV.some((n) => loc.pathname === n.to || loc.pathname.startsWith(n.to + "/"));
 
   // Once things are quiet after sign-in, download every page and warm its data, one page at a time.
   useEffect(() => {
@@ -102,7 +109,7 @@ export function AppShell({ children }) {
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 border-r border-border bg-card/60 backdrop-blur-sm z-30">
         <div className="h-16 flex items-center gap-2 px-5 border-b border-border">
-          <div className="h-8 w-8 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
+          <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
           <span className="font-bold tracking-tight text-slate-900 dark:text-slate-50">Life Record</span>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -129,7 +136,7 @@ export function AppShell({ children }) {
       {/* Top bar */}
       <header className="glass sticky top-0 z-20 h-16 border-b border-border lg:pl-60 flex items-center px-4 sm:px-6 gap-3">
         <div className="lg:hidden flex items-center gap-2">
-          <div className="h-8 w-8 rounded-xl bg-emerald-600 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
+          <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
           <span className="font-bold tracking-tight">Life Record</span>
         </div>
         <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
@@ -176,7 +183,38 @@ export function AppShell({ children }) {
             </NavLink>
           )
         )}
+        <button ref={moreButton} type="button" data-testid="mnav-more" aria-haspopup="dialog" aria-expanded={moreOpen} aria-current={inMore ? "page" : undefined}
+          onClick={() => setMoreOpen(true)}
+          className={cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
+            inMore ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
+          <Ellipsis className="h-5 w-5" aria-hidden="true" />More
+        </button>
       </nav>
+
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        {/* Opened from state rather than a Trigger, so Radix cannot return the focus by itself: put it back by hand. */}
+        <SheetContent side="bottom" className="lg:hidden rounded-t-2xl pb-8" data-testid="more-sheet"
+          onCloseAutoFocus={(e) => { e.preventDefault(); moreButton.current?.focus(); }}>
+          <SheetHeader>
+            <SheetTitle>More</SheetTitle>
+            <SheetDescription className="sr-only">The other pages, and sign out</SheetDescription>
+          </SheetHeader>
+          <nav aria-label="More pages" className="mt-4 grid grid-cols-3 gap-2">
+            {MORE_NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} data-testid={`more-${n.label.toLowerCase()}`} onClick={() => setMoreOpen(false)}
+                className={({ isActive }) => cn("flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs font-medium",
+                  isActive ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
+                           : "border-border text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
+                <n.icon className="h-5 w-5" aria-hidden="true" />{n.label}
+              </NavLink>
+            ))}
+          </nav>
+          <button type="button" data-testid="more-signout" onClick={logout}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <LogOut className="h-4 w-4" aria-hidden="true" />Sign out
+          </button>
+        </SheetContent>
+      </Sheet>
 
       <AIAssistant />
       <CommandBar open={cmdOpen} setOpen={setCmdOpen} onQuickAdd={() => setQuickOpen(true)} />

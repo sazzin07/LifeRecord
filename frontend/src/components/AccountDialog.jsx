@@ -130,7 +130,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="account-save">Save</Button>
+          <Button onClick={save} disabled={saving} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="account-save">Save</Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -72,7 +72,7 @@ function TaskDialog({ task, onClose }) {
             </Select>
             <p className="mt-1 text-xs text-slate-500">{f.due ? "When you complete a repeating task, the next one is added automatically." : "Set a due date to make the task repeat."}</p>
           </div>
-          <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="task-edit-save">Save changes</Button>
+          <Button onClick={save} disabled={saving} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="task-edit-save">Save changes</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -104,7 +104,7 @@ export default function Tasks() {
       <Card className="p-4">
         <div className="flex gap-2">
           <Input placeholder="Add a task…" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} data-testid="task-input" />
-          <Button onClick={add} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="task-add" aria-label="Add task"><Plus className="h-4 w-4" /></Button>
+          <Button onClick={add} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="task-add" aria-label="Add task"><Plus className="h-4 w-4" /></Button>
         </div>
       </Card>
       {loading ? <div className="skeleton h-40 rounded-2xl" /> : (

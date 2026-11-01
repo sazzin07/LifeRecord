@@ -79,7 +79,7 @@ export function ScheduleFields({ schedule, onChange, timezone, onTimezone }) {
               return (
                 <button key={d} type="button" role="checkbox" aria-checked={on} aria-label={WEEKDAYS_LONG[i]} onClick={() => toggleDay(i)} data-testid={`weekday-${i}`}
                   className={cn("h-9 min-w-[3rem] rounded-xl border px-2.5 text-sm font-medium transition-colors",
-                    on ? "border-emerald-600 bg-emerald-600 text-white" : "border-border bg-background hover:border-emerald-500/60")}>{d}</button>
+                    on ? "border-emerald-600 bg-emerald-700 text-white" : "border-border bg-background hover:border-emerald-500/60")}>{d}</button>
               );
             })}
           </div>

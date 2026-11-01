@@ -80,7 +80,7 @@ function RecipeCard({ e, onAddMissing, onCook }) {
       </ul>
 
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
-        <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => onCook(e)}><ChefHat className="mr-1.5 h-4 w-4" />Cook this</Button>
+        <Button size="sm" className="bg-emerald-700 text-white hover:bg-emerald-700" onClick={() => onCook(e)}><ChefHat className="mr-1.5 h-4 w-4" />Cook this</Button>
         {e.missing.length > 0 && (
           <Button size="sm" variant="outline" onClick={() => onAddMissing(e)}><ShoppingCart className="mr-1.5 h-4 w-4" />Add {e.missing.length} to a list</Button>
         )}
@@ -143,7 +143,7 @@ function AddMissingDialog({ evaluation, lists, defaultListId, open, setOpen }) {
           </ul>
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled={!chosen.length || saving} onClick={submit}>
+            <Button className="bg-emerald-700 text-white hover:bg-emerald-700" disabled={!chosen.length || saving} onClick={submit}>
               {saving ? "Adding…" : `Add ${chosen.length} to list`}
             </Button>
           </div>
@@ -175,7 +175,7 @@ function ApplianceDialog({ appliance, open, setOpen, onSave }) {
             <Input value={f.notes} onChange={(e) => setF((x) => ({ ...x, notes: e.target.value }))} placeholder="Optional, e.g. 5 L basket" /></label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 text-white hover:bg-emerald-700">{appliance ? "Save changes" : "Add appliance"}</Button>
+            <Button type="submit" className="bg-emerald-700 text-white hover:bg-emerald-700">{appliance ? "Save changes" : "Add appliance"}</Button>
           </div>
         </form>
       </DialogContent>
@@ -229,7 +229,7 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
           </div>
           <div className="flex items-center gap-2">
             {["all", "ready"].map((f) => (
-              <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} className={cn("rounded-full", filter === f && "bg-emerald-600 text-white hover:bg-emerald-700")} onClick={() => setFilter(f)}>
+              <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} className={cn("rounded-full", filter === f && "bg-emerald-700 text-white hover:bg-emerald-700")} onClick={() => setFilter(f)}>
                 {f === "all" ? "All recipes" : "Ready to cook"}
               </Button>
             ))}

@@ -75,7 +75,7 @@ function EditEntryDialog({ entry, kind, onClose }) {
           )}
           <div><Label>Date</Label><DatePicker value={form.date} onChange={(v) => v && setForm((f) => ({ ...f, date: v }))} clearable={false} className="mt-1" aria-label="Date" /></div>
           <div><Label>Note</Label><Input value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} placeholder="Optional" className="mt-1" data-testid="body-edit-note" /></div>
-          <Button onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="body-edit-save">Save changes</Button>
+          <Button onClick={save} disabled={saving} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="body-edit-save">Save changes</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -129,7 +129,7 @@ export default function Body() {
       <Card className="p-4">
         <div className="flex gap-2">
           <Input placeholder="Weight in kg" type="number" step="0.1" value={w} onChange={(e) => setW(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} data-testid="body-weight-input" />
-          <Button onClick={add} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="body-weight-add"><Plus className="h-4 w-4 mr-1" />Check in</Button>
+          <Button onClick={add} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="body-weight-add"><Plus className="h-4 w-4 mr-1" />Check in</Button>
         </div>
       </Card>
 

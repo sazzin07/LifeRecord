@@ -133,14 +133,14 @@ export function ExpenseDialog({ open, setOpen }) {
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger data-testid="expense-category" className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectTrigger data-testid="expense-category" aria-label="Category" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Paid with</label>
               <Select value={account} onValueChange={setAccount}>
-                <SelectTrigger data-testid="expense-account" className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectTrigger data-testid="expense-account" aria-label="Paid with" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person").map((a) => (
                     <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
@@ -213,7 +213,7 @@ export function ExpenseDialog({ open, setOpen }) {
             {gross - myShare > 0.005 && <div className="text-right text-emerald-600 dark:text-emerald-400 font-semibold">+{eur(gross - myShare)}<div className="text-xs text-slate-500 font-normal">to receive</div></div>}
           </div>
 
-          <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11">
+          <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save expense"}
           </Button>
         </div>

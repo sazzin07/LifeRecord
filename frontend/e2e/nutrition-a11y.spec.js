@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import AxeBuilder from "@axe-core/playwright";
+import { audit, prepare, THEMES, WIDTHS } from "./support/a11y";
 
 // Automated accessibility audit (axe-core, WCAG 2.0/2.1/2.2 A and AA rules) of every Nutrition tab and dialog at desktop, tablet and phone
 // widths, in the light and the dark theme. It finds what a machine can find (contrast, names, roles, labels, landmarks, focus order hints);
@@ -7,25 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 // data a test adds is removed again. Set A11Y_LIST=1 to print one line per offending element (rule, selector, colours) while fixing findings.
 
 const DAY = "2019-03-04";
-const WIDTHS = [["desktop", { width: 1280, height: 800 }], ["tablet", { width: 820, height: 1180 }], ["phone", { width: 390, height: 844 }]];
-const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
-
-async function audit(page, label) {
-  const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
-  const lines = results.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n   ${v.nodes.slice(0, 4).map((n) => n.target.join(" ")).join("\n   ")}`);
-  if (process.env.A11Y_LIST) for (const v of results.violations) for (const n of v.nodes) console.log(`A11Y|${label}|${v.id}|${v.impact}|${n.target.join(" ")}|${(n.any[0] || n.all[0] || n.none[0] || {}).message || ""}|${n.html.slice(0, 110).replace(/\s+/g, " ")}`);
-  expect.soft(lines, `${label}: ${results.violations.length} accessibility violation(s)\n${lines.join("\n")}`).toEqual([]);
-  const sideways = await page.evaluate(() => {
-    const dlg = document.querySelector("[role=dialog]");
-    return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, dialog: dlg ? dlg.scrollWidth - dlg.clientWidth : 0 };
-  });
-  expect.soft(sideways.page, `${label}: the page scrolls sideways`).toBeLessThanOrEqual(0);
-  expect.soft(sideways.dialog, `${label}: the dialog scrolls sideways`).toBeLessThanOrEqual(1);
-}
-
-async function setTheme(page, theme) {
-  await page.addInitScript((t) => { try { localStorage.setItem("lm_theme", JSON.stringify(t)); } catch { /* storage unavailable */ } }, theme);
-}
+const setTheme = (page, theme) => prepare(page, theme);   // theme (and no welcome splash) before any page script runs
 
 async function search(api, q, starts) {
   const res = await (await api.get(`/api/nutrition/foods/search?q=${encodeURIComponent(q)}&limit=30`)).json();
@@ -53,7 +35,7 @@ test.describe("Nutrition accessibility (axe-core)", () => {
     for (const f of foods) await apiContext.delete(`/api/nutrition/foods/${f.id}`);
   });
 
-  for (const theme of ["light", "dark"]) {
+  for (const theme of THEMES) {
     for (const [size, viewport] of WIDTHS) {
       test(`tabs, ${theme} theme, ${size}`, async ({ authenticatedPage: page }) => {
         await setTheme(page, theme);

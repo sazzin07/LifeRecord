@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { CATS, UNITS, CatIcon, quantityText } from "./groceries/shared";
@@ -79,7 +79,7 @@ function GroceryDialog({ item, prefill, locations, defaultLocation, open, setOpe
             </Field>
             <Field label="Unit">
               <Select value={f.unit || "unit"} onValueChange={(v) => setF((x) => ({ ...x, unit: v }))}>
-                <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
+                <SelectTrigger aria-label="Unit"><SelectValue placeholder="Unit" /></SelectTrigger>
                 <SelectContent>{UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
@@ -101,7 +101,7 @@ function GroceryDialog({ item, prefill, locations, defaultLocation, open, setOpe
           </div>
           <Field label="Category">
             <Select value={f.category || "Other"} onValueChange={(v) => setF((x) => ({ ...x, category: v }))}>
-              <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectTrigger aria-label="Category"><SelectValue placeholder="Category" /></SelectTrigger>
               <SelectContent>{CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
@@ -125,7 +125,7 @@ function GroceryDialog({ item, prefill, locations, defaultLocation, open, setOpe
           </label>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">{item ? "Save changes" : "Add to inventory"}</Button>
+            <Button type="submit" className="bg-emerald-700 hover:bg-emerald-800 text-white">{item ? "Save changes" : "Add to inventory"}</Button>
           </div>
         </form>
       </DialogContent>
@@ -159,7 +159,7 @@ function ShoppingItemDialog({ item, listId, open, setOpen, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <Input type="number" min={0} step="0.01" placeholder="Quantity" value={f.quantity} onChange={(e) => setF((x) => ({ ...x, quantity: e.target.value }))} />
             <Select value={f.unit} onValueChange={(v) => setF((x) => ({ ...x, unit: v }))}>
-              <SelectTrigger><SelectValue placeholder="Unit" /></SelectTrigger>
+              <SelectTrigger aria-label="Unit"><SelectValue placeholder="Unit" /></SelectTrigger>
               <SelectContent>
                 {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
               </SelectContent>
@@ -170,7 +170,7 @@ function ShoppingItemDialog({ item, listId, open, setOpen, onSave }) {
             <Input placeholder="Store" value={f.store || ""} onChange={(e) => setF((x) => ({ ...x, store: e.target.value }))} />
           </div>
           <Select value={f.category || "Other"} onValueChange={(v) => setF((x) => ({ ...x, category: v }))}>
-            <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+            <SelectTrigger aria-label="Category"><SelectValue placeholder="Category" /></SelectTrigger>
             <SelectContent>
               {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
@@ -178,7 +178,7 @@ function ShoppingItemDialog({ item, listId, open, setOpen, onSave }) {
           <Input placeholder="Note" value={f.note || ""} onChange={(e) => setF((x) => ({ ...x, note: e.target.value }))} />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Save</Button>
+            <Button type="submit" className="bg-emerald-700 hover:bg-emerald-800 text-white">Save</Button>
           </div>
         </form>
       </DialogContent>
@@ -198,7 +198,7 @@ function ListDialog({ open, setOpen, onSave }) {
           <Input placeholder="List name" value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button>
+            <Button type="submit" className="bg-emerald-700 hover:bg-emerald-800 text-white">Create</Button>
           </div>
         </form>
       </DialogContent>
@@ -234,7 +234,7 @@ function SubmitReviewDialog({ open, setOpen, items, onSubmit }) {
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => onSubmit(recordExpense)} className="bg-emerald-600 hover:bg-emerald-700 text-white">Confirm purchase</Button>
+          <Button onClick={() => onSubmit(recordExpense)} className="bg-emerald-700 hover:bg-emerald-800 text-white">Confirm purchase</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -322,7 +322,7 @@ function RecurringDialog({ open, setOpen, onSave, editing }) {
         <form onSubmit={submit} className="space-y-3 mt-2">
           <Input placeholder="Template name" value={f.name} onChange={(e) => setF((x) => ({ ...x, name: e.target.value }))} required />
           <Select value={f.schedule} onValueChange={(v) => setF((x) => ({ ...x, schedule: v }))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Repeat"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="weekly">Weekly</SelectItem>
               <SelectItem value="biweekly">Bi-weekly</SelectItem>
@@ -339,19 +339,19 @@ function RecurringDialog({ open, setOpen, onSave, editing }) {
                 <Input className="col-span-4 h-9" placeholder="Name" value={it.name} onChange={(e) => updateItem(i, "name", e.target.value)} />
                 <Input className="col-span-2 h-9" type="number" min={0} placeholder="Qty" value={it.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)} />
                 <Select value={it.unit} onValueChange={(v) => updateItem(i, "unit", v)}>
-                  <SelectTrigger className="col-span-2 h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="col-span-2 h-9" aria-label={`Unit for item ${i + 1}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input className="col-span-3 h-9" type="number" min={0} step="0.01" placeholder="€" value={it.estimated_price} onChange={(e) => updateItem(i, "estimated_price", e.target.value)} />
-                <Button type="button" variant="ghost" size="icon" className="col-span-1 h-9 w-9 text-red-500" onClick={() => removeItem(i)}><Trash2 className="h-4 w-4" /></Button>
+                <Button type="button" variant="ghost" size="icon" className="col-span-1 h-9 w-9 text-red-500" aria-label={`Remove item ${i + 1}`} onClick={() => removeItem(i)}><Trash2 className="h-4 w-4" /></Button>
               </div>
             ))}
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Save template</Button>
+            <Button type="submit" className="bg-emerald-700 hover:bg-emerald-800 text-white">Save template</Button>
           </div>
         </form>
       </DialogContent>
@@ -643,204 +643,205 @@ export default function Groceries() {
           <TabsTrigger value="catalog" className="flex-1 shrink-0 sm:flex-none gap-1.5"><BookMarked className="h-4 w-4" />Catalog</TabsTrigger>
           <TabsTrigger value="kitchen" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ChefHat className="h-4 w-4" />Kitchen</TabsTrigger>
         </TabsList>
-      </Tabs>
+        <TabsContent value={tab} className="mt-6">
+          {!ready ? (
+            <TabSkeleton />
+          ) : tab === "overview" ? (
+            <OverviewTab lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
+              onOpenSpace={(id) => { if (id) { setSelectedSpaceId(id); setTab("storage"); } }}
+              onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
+          ) : tab === "catalog" ? (
+            <CatalogTab products={products} inventory={inventory} listItems={listItems} selectedListName={currentList?.name}
+              onAddToInventory={(p) => { setEditingGrocery(null); setDefaultLocation(""); setPrefill({ name: p.name, unit: p.default_unit || "unit", category: CATS.includes(p.category) ? p.category : "Other", quantity: p.typical_quantity ?? "", is_favorite: !!p.is_favorite }); setGroceryDialogOpen(true); }}
+              onAddToList={(p) => addSuggestion({ name: p.name, default_quantity: p.typical_quantity || 1, unit: p.default_unit, category: p.category })} />
+          ) : tab === "kitchen" ? (
+            <KitchenTab suggestions={recipeIdeas} appliances={appliances} lists={shopping?.lists || []} selectedListId={selectedListId} />
+          ) : tab === "storage" ? (
+            <StorageTab locations={locations} inventory={inventory}
+              selectedId={selectedSpaceId} setSelectedId={setSelectedSpaceId} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen}
+              onAddItem={(loc) => { setEditingGrocery(null); setPrefill(null); setDefaultLocation(loc || ""); setGroceryDialogOpen(true); }}
+              onEditItem={(g) => { setEditingGrocery(g); setPrefill(null); setGroceryDialogOpen(true); }} />
+          ) : (
+            <>
+              <div className="flex flex-col lg:flex-row gap-5">
+                {/* Left sidebar */}
+                <div className="lg:w-64 space-y-4">
+                  <Card className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Lists</Label>
+                      <Button variant="ghost" size="sm" className="h-8" aria-label="New list" onClick={() => setListDialogOpen(true)}><Plus className="h-4 w-4" /></Button>
+                    </div>
+                    <div className="space-y-1">
+                      {shopping?.lists?.map((lst) => (
+                        <button key={lst.id} onClick={() => setSelectedListId(lst.id)}
+                          className={cn("w-full text-left px-3 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center justify-between",
+                            selectedListId === lst.id
+                              ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                              : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-300")}>
+                          <span className="truncate">{lst.name}</span>
+                          {selectedListId === lst.id && <ChevronDown className="h-4 w-4" />}
+                        </button>
+                      ))}
+                      {!shopping?.lists?.length && <p className="text-sm text-slate-400 px-2">No lists yet.</p>}
+                    </div>
+                  </Card>
 
-      {!ready ? (
-        <TabSkeleton />
-      ) : tab === "overview" ? (
-        <OverviewTab lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
-          onOpenSpace={(id) => { if (id) { setSelectedSpaceId(id); setTab("storage"); } }}
-          onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
-      ) : tab === "catalog" ? (
-        <CatalogTab products={products} inventory={inventory} listItems={listItems} selectedListName={currentList?.name}
-          onAddToInventory={(p) => { setEditingGrocery(null); setDefaultLocation(""); setPrefill({ name: p.name, unit: p.default_unit || "unit", category: CATS.includes(p.category) ? p.category : "Other", quantity: p.typical_quantity ?? "", is_favorite: !!p.is_favorite }); setGroceryDialogOpen(true); }}
-          onAddToList={(p) => addSuggestion({ name: p.name, default_quantity: p.typical_quantity || 1, unit: p.default_unit, category: p.category })} />
-      ) : tab === "kitchen" ? (
-        <KitchenTab suggestions={recipeIdeas} appliances={appliances} lists={shopping?.lists || []} selectedListId={selectedListId} />
-      ) : tab === "storage" ? (
-        <StorageTab locations={locations} inventory={inventory}
-          selectedId={selectedSpaceId} setSelectedId={setSelectedSpaceId} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen}
-          onAddItem={(loc) => { setEditingGrocery(null); setPrefill(null); setDefaultLocation(loc || ""); setGroceryDialogOpen(true); }}
-          onEditItem={(g) => { setEditingGrocery(g); setPrefill(null); setGroceryDialogOpen(true); }} />
-      ) : (
-        <>
-          <div className="flex flex-col lg:flex-row gap-5">
-            {/* Left sidebar */}
-            <div className="lg:w-64 space-y-4">
-              <Card className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Lists</Label>
-                  <Button variant="ghost" size="sm" className="h-8" onClick={() => setListDialogOpen(true)}><Plus className="h-4 w-4" /></Button>
-                </div>
-                <div className="space-y-1">
-                  {shopping?.lists?.map((lst) => (
-                    <button key={lst.id} onClick={() => setSelectedListId(lst.id)}
-                      className={cn("w-full text-left px-3 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center justify-between",
-                        selectedListId === lst.id
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                          : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-300")}>
-                      <span className="truncate">{lst.name}</span>
-                      {selectedListId === lst.id && <ChevronDown className="h-4 w-4" />}
-                    </button>
-                  ))}
-                  {!shopping?.lists?.length && <p className="text-sm text-slate-400 px-2">No lists yet.</p>}
-                </div>
-              </Card>
-
-              {currentList && (
-                <Card className="p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>List budget</Label>
-                    <Button variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-600" onClick={() => setDeleteListId(currentList.id)}><Trash2 className="h-4 w-4" /></Button>
-                  </div>
-                  <BudgetField summary={shopping?.budget_summary} listId={selectedListId} onCommit={updateBudget} />
-                </Card>
-              )}
-
-              <Card className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="flex items-center gap-1"><Repeat className="h-3.5 w-3.5" /> Recurring</Label>
-                  <Button variant="ghost" size="sm" className="h-8" onClick={() => { setEditingRecurring(null); setRecurringOpen(true); }}><Plus className="h-4 w-4" /></Button>
-                </div>
-                <div className="space-y-1.5">
-                  {recurring.map((rl) => (
-                    <div key={rl.id} className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <span className="text-sm truncate">{rl.name}</span>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Hint label="Spawn now"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Spawn now" onClick={() => spawnRecurring(rl.id)}><RotateCcw className="h-3.5 w-3.5" /></Button></Hint>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingRecurring(rl); setRecurringOpen(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => setDeleteRecurringId(rl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  {currentList && (
+                    <Card className="p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>List budget</Label>
+                        <Button variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-600" aria-label={`Delete list ${currentList.name}`} onClick={() => setDeleteListId(currentList.id)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
-                    </div>
-                  ))}
-                  {!recurring.length && <p className="text-xs text-slate-400 px-1">No recurring templates.</p>}
-                </div>
-              </Card>
-            </div>
-
-            {/* Main shopping area */}
-            <div className="flex-1 space-y-4">
-              <div className="flex flex-col sm:flex-row gap-3 justify-between">
-                <div className="flex gap-2 flex-1">
-                  <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input placeholder="Search list..." value={searchShop} onChange={(e) => setSearchShop(e.target.value)} className="pl-9" />
-                    {searchShop && <button onClick={() => setSearchShop("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><X className="h-3.5 w-3.5" /></button>}
-                  </div>
-                  <Select value={catShopFilter} onValueChange={setCatShopFilter}>
-                    <SelectTrigger className="w-36"><SelectValue placeholder="Category" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={generateList} disabled={generating || !selectedListId}>
-                    {generating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />} Generate
-                  </Button>
-                  <Button size="sm" onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                    <Plus className="h-4 w-4 mr-1" /> Add item
-                  </Button>
-                </div>
-              </div>
-
-              {filteredShopItems.length > 0 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                  <div className="flex items-center gap-3">
-                    <Checkbox id="select-all" checked={allSelected} onCheckedChange={() => allSelected ? deselectAll() : selectAll()} />
-                    <Label htmlFor="select-all">{allSelected ? "Deselect all" : "Select all"}</Label>
-                    <span className="text-xs text-slate-400">{selectedCount} selected</span>
-                  </div>
-                  {selectedCount > 0 && (
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setBulkDeleteOpen(true)}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
-                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setSubmitOpen(true)}>
-                        <Receipt className="h-4 w-4 mr-1" /> Submit {selectedCount}
-                      </Button>
-                    </div>
+                      <BudgetField summary={shopping?.budget_summary} listId={selectedListId} onCommit={updateBudget} />
+                    </Card>
                   )}
-                </div>
-              )}
 
-              {filteredShopItems.length === 0 && !loading ? (
-                <EmptyState icon={ShoppingCart} title="Your list is empty"
-                  sub={currentList ? "Add items, generate from inventory, or pick from suggestions." : "Create a list to get started."}
-                  action={currentList ? (
-                    <div className="flex gap-2 flex-wrap justify-center">
-                      <Button variant="outline" onClick={generateList} disabled={generating}>
+                  <Card className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="flex items-center gap-1"><Repeat className="h-3.5 w-3.5" /> Recurring</Label>
+                      <Button variant="ghost" size="sm" className="h-8" aria-label="New recurring list" onClick={() => { setEditingRecurring(null); setRecurringOpen(true); }}><Plus className="h-4 w-4" /></Button>
+                    </div>
+                    <div className="space-y-1.5">
+                      {recurring.map((rl) => (
+                        <div key={rl.id} className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <span className="text-sm truncate">{rl.name}</span>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                            <Hint label="Spawn now"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Spawn now" onClick={() => spawnRecurring(rl.id)}><RotateCcw className="h-3.5 w-3.5" /></Button></Hint>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${rl.name}`} onClick={() => { setEditingRecurring(rl); setRecurringOpen(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" aria-label={`Delete ${rl.name}`} onClick={() => setDeleteRecurringId(rl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </div>
+                      ))}
+                      {!recurring.length && <p className="text-xs text-slate-400 px-1">No recurring templates.</p>}
+                    </div>
+                  </Card>
+                </div>
+
+                {/* Main shopping area */}
+                <div className="flex-1 space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-3 justify-between">
+                    <div className="flex gap-2 flex-1">
+                      <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <Input placeholder="Search list..." value={searchShop} onChange={(e) => setSearchShop(e.target.value)} className="pl-9" />
+                        {searchShop && <button onClick={() => setSearchShop("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><X className="h-3.5 w-3.5" /></button>}
+                      </div>
+                      <Select value={catShopFilter} onValueChange={setCatShopFilter}>
+                        <SelectTrigger className="w-36" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={generateList} disabled={generating || !selectedListId}>
                         {generating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />} Generate
                       </Button>
-                      <Button onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" /> Add item</Button>
+                      <Button size="sm" onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-700 hover:bg-emerald-800 text-white">
+                        <Plus className="h-4 w-4 mr-1" /> Add item
+                      </Button>
                     </div>
-                  ) : <Button onClick={() => setListDialogOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" /> Create list</Button>} />
-              ) : (
-                <div className="space-y-2">
-                  {filteredShopItems.map((it) => {
-                    const selected = selectedIds.has(it.id);
-                    const conf = it.known ? PRICE_CONF.known : it.estimated_price ? PRICE_CONF.estimated : PRICE_CONF.unknown;
-                    return (
-                      <div key={it.id} className={cn("group flex items-center gap-3 p-3 rounded-xl border transition-all",
-                        selected ? "bg-emerald-50/60 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" : "bg-card border-border hover:border-slate-300 dark:hover:border-slate-600")}>
-                        <Checkbox checked={selected} onCheckedChange={() => toggleSelect(it.id)} aria-label={`Select ${it.name}`} className="shrink-0" />
-                        <CatIcon category={it.category || "Other"} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={cn("font-medium text-sm", selected && "line-through text-slate-400")}>{it.name}</span>
-                            <ConfidenceBadge type={conf.type}>{conf.label}</ConfidenceBadge>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-                            <span>{quantityText(it.quantity, it.unit)}</span>
-                            {it.best ? <span className="flex items-center gap-1"><Store className="h-3 w-3" />{it.best.store} {eur(it.best.price)}</span> : null}
-                            {it.note && <span className="truncate max-w-[200px]">{it.note}</span>}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold">{eur((it.estimated_price || 0) * Number(it.quantity))}</p>
-                          {it.estimated_price && <p className="text-xs text-slate-400">{eur(it.estimated_price)} / {it.unit || "unit"}</p>}
-                        </div>
-                        <div className="flex gap-1">
-                          <Hint label="Price history"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button></Hint>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${it.name}`} onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${it.name}`} onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
-                        </div>
+                  </div>
+
+                  {filteredShopItems.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                      <div className="flex items-center gap-3">
+                        <Checkbox id="select-all" checked={allSelected} onCheckedChange={() => allSelected ? deselectAll() : selectAll()} />
+                        <Label htmlFor="select-all">{allSelected ? "Deselect all" : "Select all"}</Label>
+                        <span className="text-xs text-slate-400">{selectedCount} selected</span>
                       </div>
-                    );
-                  })}
+                      {selectedCount > 0 && (
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setBulkDeleteOpen(true)}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
+                          <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800 text-white" onClick={() => setSubmitOpen(true)}>
+                            <Receipt className="h-4 w-4 mr-1" /> Submit {selectedCount}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredShopItems.length === 0 && !loading ? (
+                    <EmptyState icon={ShoppingCart} title="Your list is empty"
+                      sub={currentList ? "Add items, generate from inventory, or pick from suggestions." : "Create a list to get started."}
+                      action={currentList ? (
+                        <div className="flex gap-2 flex-wrap justify-center">
+                          <Button variant="outline" onClick={generateList} disabled={generating}>
+                            {generating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />} Generate
+                          </Button>
+                          <Button onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" /> Add item</Button>
+                        </div>
+                      ) : <Button onClick={() => setListDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" /> Create list</Button>} />
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredShopItems.map((it) => {
+                        const selected = selectedIds.has(it.id);
+                        const conf = it.known ? PRICE_CONF.known : it.estimated_price ? PRICE_CONF.estimated : PRICE_CONF.unknown;
+                        return (
+                          <div key={it.id} className={cn("group flex items-center gap-3 p-3 rounded-xl border transition-all",
+                            selected ? "bg-emerald-50/60 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" : "bg-card border-border hover:border-slate-300 dark:hover:border-slate-600")}>
+                            <Checkbox checked={selected} onCheckedChange={() => toggleSelect(it.id)} aria-label={`Select ${it.name}`} className="shrink-0" />
+                            <CatIcon category={it.category || "Other"} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={cn("font-medium text-sm", selected && "line-through text-slate-400")}>{it.name}</span>
+                                <ConfidenceBadge type={conf.type}>{conf.label}</ConfidenceBadge>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                                <span>{quantityText(it.quantity, it.unit)}</span>
+                                {it.best ? <span className="flex items-center gap-1"><Store className="h-3 w-3" />{it.best.store} {eur(it.best.price)}</span> : null}
+                                {it.note && <span className="truncate max-w-[200px]">{it.note}</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-semibold">{eur((it.estimated_price || 0) * Number(it.quantity))}</p>
+                              {it.estimated_price && <p className="text-xs text-slate-400">{eur(it.estimated_price)} / {it.unit || "unit"}</p>}
+                            </div>
+                            <div className="flex gap-1">
+                              <Hint label="Price history"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button></Hint>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${it.name}`} onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${it.name}`} onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {shopping?.recommendation && (
+                    <Card className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800">
+                      <div className="flex items-start gap-3">
+                        <Sparkles className="h-5 w-5 text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
+                        <p className="text-sm text-indigo-800 dark:text-indigo-300">{shopping.recommendation}</p>
+                      </div>
+                    </Card>
+                  )}
+
+                  {suggestions.length > 0 && (
+                    <Card className="p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Lightbulb className="h-4 w-4 text-amber-500" />
+                        <Label>Suggestions</Label>
+                        <span className="text-xs text-slate-400">Frequently bought or favorite</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {suggestions.map((s) => (
+                          <button key={s.id} onClick={() => addSuggestion(s)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-medium hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
+                            <Plus className="h-3 w-3 text-emerald-600" /> {s.name}
+                            <span className="text-slate-400">· {s.reason}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
                 </div>
-              )}
-
-              {shopping?.recommendation && (
-                <Card className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800">
-                  <div className="flex items-start gap-3">
-                    <Sparkles className="h-5 w-5 text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
-                    <p className="text-sm text-indigo-800 dark:text-indigo-300">{shopping.recommendation}</p>
-                  </div>
-                </Card>
-              )}
-
-              {suggestions.length > 0 && (
-                <Card className="p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Lightbulb className="h-4 w-4 text-amber-500" />
-                    <Label>Suggestions</Label>
-                    <span className="text-xs text-slate-400">Frequently bought or favorite</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestions.map((s) => (
-                      <button key={s.id} onClick={() => addSuggestion(s)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-medium hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
-                        <Plus className="h-3 w-3 text-emerald-600" /> {s.name}
-                        <span className="text-slate-400">· {s.reason}</span>
-                      </button>
-                    ))}
-                  </div>
-                </Card>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+              </div>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <GroceryDialog item={editingGrocery} prefill={prefill} locations={locations} defaultLocation={defaultLocation} open={groceryDialogOpen} setOpen={setGroceryDialogOpen} onSave={saveGrocery} />
       <ShoppingItemDialog item={editingItem} listId={selectedListId} open={itemDialogOpen} setOpen={setItemDialogOpen} onSave={saveShoppingItem} />

@@ -62,7 +62,7 @@ export function DietMarks({ tags, max = 3, nowrap = false, className }) {
 
 function StockNote({ stock, onList, className }) {
   if (stock) {
-    return <span className={cn("whitespace-nowrap rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-medium text-white", className)}>{+Number(stock.quantity).toFixed(2)} {stock.unit || ""} in stock</span>;
+    return <span className={cn("whitespace-nowrap rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-medium text-white", className)}>{+Number(stock.quantity).toFixed(2)} {stock.unit || ""} in stock</span>;
   }
   if (onList) return <span className={cn("whitespace-nowrap rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-medium text-white", className)}>On your list</span>;
   return null;
@@ -72,7 +72,7 @@ function ProductMenu({ product, onEdit, onRemove }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`More actions for ${product.name}`}><MoreHorizontal className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`More actions for ${product.name}`}><MoreHorizontal className="h-4 w-4" /></Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => onEdit(product)}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
@@ -123,7 +123,7 @@ export function ProductCard({ product: p, stock, onList, selectedListName, onTog
         <Button variant="ghost" size="sm" className="h-8 flex-1 gap-1 px-2 text-xs" aria-label={`Add ${p.name} to inventory`} onClick={() => onAddToInventory(p)}>
           <PackagePlus className="h-4 w-4" />Inventory
         </Button>
-        <Button variant="ghost" size="sm" className="h-8 flex-1 gap-1 px-2 text-xs" aria-label={`Add ${p.name} to ${selectedListName || "the shopping list"}`} onClick={() => onAddToList(p)}>
+        <Button variant="ghost" size="sm" className="h-8 flex-1 gap-1 px-2 text-xs" aria-label={`Add ${p.name} to ${selectedListName || "the shopping"} list`} onClick={() => onAddToList(p)}>
           <ShoppingCart className="h-4 w-4" />List
         </Button>
         <ProductMenu product={p} onEdit={onEdit} onRemove={onRemove} />
@@ -165,8 +165,8 @@ export function ProductRow({ product: p, stock, onList, selectedListName, onTogg
       </div>
       <div className="flex shrink-0 items-center justify-end">
         <FavButton product={p} onToggle={onToggleFav} />
-        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Add ${p.name} to inventory`} title="Add to inventory" onClick={() => onAddToInventory(p)}><PackagePlus className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Add ${p.name} to ${selectedListName || "the shopping list"}`} title="Add to shopping list" onClick={() => onAddToList(p)}><ShoppingCart className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`Add ${p.name} to inventory`} title="Add to inventory" onClick={() => onAddToInventory(p)}><PackagePlus className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`Add ${p.name} to ${selectedListName || "the shopping list"}`} title="Add to shopping list" onClick={() => onAddToList(p)}><ShoppingCart className="h-4 w-4" /></Button>
         <ProductMenu product={p} onEdit={onEdit} onRemove={onRemove} />
       </div>
     </li>
@@ -269,7 +269,7 @@ export function ProductDialog({ product, products, open, setOpen, onSave }) {
           </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 text-white hover:bg-emerald-700">{product ? "Save changes" : "Add product"}</Button>
+            <Button type="submit" className="bg-emerald-700 text-white hover:bg-emerald-700">{product ? "Save changes" : "Add product"}</Button>
           </div>
         </form>
       </DialogContent>

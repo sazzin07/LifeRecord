@@ -266,16 +266,16 @@ export default function Money() {
     return [
       { label: "Daily average", value: eur(sum.daily_average), icon: CalendarDays, hint: "Over selected period" },
       { label: "Projected monthly", value: eur(sum.projected_month_spend), icon: TrendingUp, hint: "At current pace" },
-      { label: "vs previous period", value: trendPct == null ? "—" : `${Math.abs(trendPct)}%`, icon: trendPct > 0 ? ArrowUpRight : ArrowDownRight, hint: trendPct == null ? "No prior data" : (trendPct > 0 ? "Spending more" : "Spending less"), accent: trendPct > 0 ? "text-red-500" : trendPct < 0 ? "text-emerald-500" : "" },
+      { label: "vs previous period", value: trendPct == null ? "—" : `${Math.abs(trendPct)}%`, icon: trendPct > 0 ? ArrowUpRight : ArrowDownRight, hint: trendPct == null ? "No prior data" : (trendPct > 0 ? "Spending more" : "Spending less"), accent: trendPct > 0 ? "text-red-600 dark:text-red-400" : trendPct < 0 ? "text-emerald-700 dark:text-emerald-400" : "" },
       { label: "Top category", value: top ? top.name : "—", icon: Target, hint: top ? eur(top.value) : "" },
     ];
   }, [sum, trendPct]);
 
   const BalanceSection = ({ icon: Icon, label, amount, color, children, onEdit, onAddSub, onTransferIn, testid }) => (
     <Card className={cn("p-4 flex flex-col gap-3 h-full", color && "border-l-4")} style={color ? { borderLeftColor: color } : {}} data-testid={testid}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center">
             <Icon className="h-5 w-5 text-slate-600 dark:text-slate-300" />
           </div>
           <div>
@@ -363,7 +363,7 @@ export default function Money() {
             <Button variant="outline" size="sm" onClick={onExport} className="h-9">
               <Download className="h-4 w-4 mr-1" /> Export
             </Button>
-            <Button data-testid="add-expense-btn" onClick={() => setExpenseOpen(true)} className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button data-testid="add-expense-btn" onClick={() => setExpenseOpen(true)} className="h-9 bg-emerald-700 hover:bg-emerald-800 text-white">
               <Plus className="h-4 w-4 mr-1" />Add expense
             </Button>
           </div>
@@ -611,21 +611,21 @@ export default function Money() {
           <Card>
             <div className="p-4 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="font-semibold">Transactions</h3>
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-48" />
-                  {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>}
+                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>}
                 </div>
                 <Select value={catFilter} onValueChange={setCatFilter}>
-                  <SelectTrigger className="h-9 w-full sm:w-40"><SelectValue placeholder="Category" /></SelectTrigger>
+                  <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
                     {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={sort} onValueChange={setSort}>
-                  <SelectTrigger className="h-9 w-full sm:w-40"><SelectValue placeholder="Sort" /></SelectTrigger>
+                  <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Sort transactions"><SelectValue placeholder="Sort" /></SelectTrigger>
                   <SelectContent>
                     {SORTS.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
                   </SelectContent>
@@ -653,7 +653,7 @@ export default function Money() {
 
             {groupedExpenses.length === 0 ? (
               <EmptyState icon={Wallet} title="No transactions here" sub="Add an expense or change the filters above."
-                action={<Button onClick={() => setExpenseOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" />Add expense</Button>} />
+                action={<Button onClick={() => setExpenseOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" />Add expense</Button>} />
             ) : (
               <div className="divide-y divide-border">
                 {groupedExpenses.map(([date, group]) => (
@@ -698,8 +698,8 @@ export default function Money() {
                             {isExpense && t.reimbursable_amount > 0.005 && <p className="text-xs text-amber-600 dark:text-amber-400">{eur(t.remaining_refund)} owed</p>}
                           </div>
                           <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                            {isExpense && <button data-testid={`edit-txn-${t.id}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>}
-                            <button data-testid={`del-txn-${t.id}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
+                            {isExpense && <button data-testid={`edit-txn-${t.id}`} aria-label={`Edit ${t.merchant || t.description || "transaction"}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>}
+                            <button data-testid={`del-txn-${t.id}`} aria-label={`Delete ${t.merchant || t.description || "transaction"}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
                           </div>
                         </div>
                       );
@@ -750,7 +750,7 @@ export default function Money() {
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setBudgetOpen(false)}>Cancel</Button>
-            <Button onClick={saveBudgets} className="bg-emerald-600 hover:bg-emerald-700 text-white">Save budgets</Button>
+            <Button onClick={saveBudgets} className="bg-emerald-700 hover:bg-emerald-800 text-white">Save budgets</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -788,7 +788,7 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
       <div>
         <Label className="text-xs">From</Label>
         <Select value={from} onValueChange={setFrom}>
-          <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+          <SelectTrigger aria-label="Move money from"><SelectValue placeholder="Select source" /></SelectTrigger>
           <SelectContent>
             {accounts.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
           </SelectContent>
@@ -797,7 +797,7 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
       <div>
         <Label className="text-xs">To</Label>
         <Select value={to} onValueChange={setTo}>
-          <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+          <SelectTrigger aria-label="Move money to"><SelectValue placeholder="Select destination" /></SelectTrigger>
           <SelectContent>
             {accounts.filter((a) => a.value !== from).map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
           </SelectContent>
@@ -809,7 +809,7 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to} className="bg-emerald-600 hover:bg-emerald-700 text-white">Transfer</Button>
+        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to} className="bg-emerald-700 hover:bg-emerald-800 text-white">Transfer</Button>
       </div>
     </div>
   );

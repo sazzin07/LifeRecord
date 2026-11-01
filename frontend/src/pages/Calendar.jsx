@@ -124,7 +124,7 @@ export default function CalendarPage() {
           <div className="inline-flex rounded-xl border border-border p-0.5" role="group" aria-label="View">
             {["month", "week"].map((v) => (
               <button key={v} type="button" onClick={() => changeView(v)} aria-pressed={view === v} data-testid={`calendar-view-${v}`}
-                className={cn("rounded-lg px-3 py-1.5 text-sm capitalize", view === v ? "bg-emerald-600 text-white" : "text-slate-600 dark:text-slate-300")}>{v}</button>
+                className={cn("rounded-lg px-3 py-1.5 text-sm capitalize", view === v ? "bg-emerald-700 text-white" : "text-slate-600 dark:text-slate-300")}>{v}</button>
             ))}
           </div>
         </div>
@@ -154,19 +154,20 @@ export default function CalendarPage() {
               const max = view === "month" ? 3 : 8;
               return (
                 <button key={key} type="button" onClick={() => pick(key)} data-testid={`calendar-day-${key}`}
-                  aria-label={`${format(d, "EEEE d MMMM")}${evs.length ? `, ${evs.length} item${evs.length > 1 ? "s" : ""}` : ""}`}
                   aria-pressed={selected === key} aria-current={key === today ? "date" : undefined}
                   className={cn("flex flex-col items-stretch gap-1 border-b border-r border-border p-1 sm:p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500",
                     view === "month" ? "min-h-[3.5rem] sm:min-h-[6.5rem]" : "min-h-[8rem] sm:min-h-[14rem]",
                     outside && "bg-slate-50/50 dark:bg-slate-900/40 text-slate-400",
                     selected === key ? "bg-emerald-50 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
+                  {/* The name comes from the content (so it always contains the visible text); this adds the full date and the count. */}
+                  <span className="sr-only">{format(d, "EEEE d MMMM")}{evs.length ? `, ${evs.length} item${evs.length > 1 ? "s" : ""}` : ""}. </span>
                   <span className={cn("grid h-6 w-6 place-items-center rounded-full text-xs font-medium",
-                    key === today && "bg-emerald-600 text-white")}>{format(d, "d")}</span>
+                    key === today && "bg-emerald-700 text-white")}>{format(d, "d")}</span>
                   {/* Phones: coloured dots; wider screens: labelled chips */}
                   <span className="flex flex-wrap gap-0.5 sm:hidden" aria-hidden="true">
                     {evs.slice(0, 6).map((e) => <span key={`${e.kind}-${e.id}`} className={cn("h-1.5 w-1.5 rounded-full", KINDS[e.kind].dot)} />)}
                   </span>
-                  <span className="hidden sm:flex flex-col gap-0.5" aria-hidden="true">
+                  <span className="hidden sm:flex flex-col gap-0.5">
                     {evs.slice(0, max).map((e) => <EventChip key={`${e.kind}-${e.id}`} e={e} />)}
                     {evs.length > max && <span className="px-1 text-[11px] text-slate-500">+{evs.length - max} more</span>}
                   </span>

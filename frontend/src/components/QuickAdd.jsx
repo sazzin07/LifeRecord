@@ -112,7 +112,7 @@ export function QuickAdd({ open, setOpen }) {
               <Input placeholder="Task title" onChange={set("title")} data-testid="task-title" />
               <div className="grid grid-cols-2 gap-2">
                 <Select onValueChange={(v) => setForm((f) => ({ ...f, priority: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+                  <SelectTrigger aria-label="Priority"><SelectValue placeholder="Priority" /></SelectTrigger>
                   <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectContent>
                 </Select>
                 <DatePicker value={form.due || ""} onChange={(v) => set("due")({ target: { value: v } })} aria-label="Due date" placeholder="Due date" presets={[{ label: "Today", days: 0 }, { label: "Tomorrow", days: 1 }, { label: "Next week", days: 7 }]} />
@@ -122,17 +122,17 @@ export function QuickAdd({ open, setOpen }) {
           {mode === "payment" && (
             <div className="space-y-3">
               <Select onValueChange={(v) => setForm((f) => ({ ...f, person: v }))}>
-                <SelectTrigger data-testid="payment-person"><SelectValue placeholder="Person" /></SelectTrigger>
+                <SelectTrigger data-testid="payment-person" aria-label="Person"><SelectValue placeholder="Person" /></SelectTrigger>
                 <SelectContent>{people.map((p) => <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
               <Input placeholder="Amount" type="number" onChange={set("amount")} data-testid="payment-amount" />
               <div className="grid grid-cols-2 gap-2">
                 <Select onValueChange={(v) => setForm((f) => ({ ...f, method: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Method" /></SelectTrigger>
+                  <SelectTrigger aria-label="Payment method"><SelectValue placeholder="Method" /></SelectTrigger>
                   <SelectContent><SelectItem value="Revolut">Revolut</SelectItem><SelectItem value="MB WAY">MB WAY</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent>
                 </Select>
                 <Select onValueChange={(v) => setForm((f) => ({ ...f, account: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Into" /></SelectTrigger>
+                  <SelectTrigger aria-label="Into account"><SelectValue placeholder="Into" /></SelectTrigger>
                   <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
@@ -140,7 +140,7 @@ export function QuickAdd({ open, setOpen }) {
           )}
           {mode === "person" && <Input placeholder="Name" onChange={set("name")} data-testid="person-name" />}
 
-          {mode && <Button onClick={submit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white mt-2" data-testid="qa-submit">Save</Button>}
+          {mode && <Button onClick={submit} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white mt-2" data-testid="qa-submit">Save</Button>}
         </DialogContent>
       </Dialog>
       <ExpenseDialog open={expenseOpen} setOpen={setExpenseOpen} />

@@ -151,7 +151,7 @@ function Shelves({ items, shelves, mode, onEdit, onMore }) {
       ))}
       {hero && hidden > 0 && (
         <button type="button" onClick={onMore}
-          className="absolute -bottom-1 right-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">
+          className="absolute -bottom-1 right-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">
           +{hidden} more
         </button>
       )}
@@ -291,7 +291,7 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
                   </div>
                   <div className="flex w-full gap-2">
                     <Button variant="outline" size="sm" className="flex-1 bg-background/80" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />All spaces</Button>
-                    <Button size="sm" className="flex-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={onToggleDetails} aria-expanded={detailsOpen}>
+                    <Button size="sm" className="flex-1 bg-emerald-700 text-white hover:bg-emerald-700" onClick={onToggleDetails} aria-expanded={detailsOpen}>
                       {detailsOpen ? <>Hide details<ChevronUp className="ml-1 h-4 w-4" /></> : <>More details<ChevronDown className="ml-1 h-4 w-4" /></>}
                     </Button>
                   </div>

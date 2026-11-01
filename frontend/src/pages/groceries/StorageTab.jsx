@@ -36,7 +36,7 @@ function LocationDialog({ location, open, setOpen, onSave }) {
           </Select>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Save</Button>
+            <Button type="submit" className="bg-emerald-700 hover:bg-emerald-800 text-white">Save</Button>
           </div>
         </form>
       </DialogContent>

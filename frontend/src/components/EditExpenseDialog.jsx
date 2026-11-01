@@ -146,7 +146,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
               <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-500/30" onClick={() => setConfirmDelete(true)} data-testid="edit-delete">
                 <Trash2 className="h-4 w-4 mr-1" />Delete
               </Button>
-              <Button onClick={save} disabled={saving} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="edit-save">
+              <Button onClick={save} disabled={saving} className="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="edit-save">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
               </Button>
             </div>
@@ -175,7 +175,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
                 <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <Button onClick={recordRefund} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="refund-submit">Record</Button>
+            <Button onClick={recordRefund} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="refund-submit">Record</Button>
           </div>
         </DialogContent>
       </Dialog>

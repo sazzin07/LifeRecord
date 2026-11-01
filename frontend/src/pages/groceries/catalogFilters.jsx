@@ -86,7 +86,7 @@ export function FiltersPopover({ filters, setFilters, counts, subCounts, presets
       <PopoverTrigger asChild>
         <Button variant="outline" className="shrink-0 gap-2" aria-label={n ? `Filters, ${n} on` : "Filters"}>
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />Filters
-          {n > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-emerald-600 px-1 text-[11px] font-semibold text-white">{n}</span>}
+          {n > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-emerald-700 px-1 text-[11px] font-semibold text-white">{n}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" collisionPadding={12} className="max-h-[75vh] w-[min(94vw,30rem)] space-y-4 overflow-y-auto p-4">
@@ -188,7 +188,7 @@ export function ActiveFilters({ filters, onClearOne, onClearAll, onSavePreset })
               <span className="text-xs font-medium text-muted-foreground">Name this combination</span>
               <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="e.g. Vegetarian snacks" aria-label="Saved filter name" autoFocus />
             </label>
-            <Button type="submit" size="sm" disabled={!name.trim()} className="w-full bg-emerald-600 text-white hover:bg-emerald-700">Save and pin</Button>
+            <Button type="submit" size="sm" disabled={!name.trim()} className="w-full bg-emerald-700 text-white hover:bg-emerald-700">Save and pin</Button>
           </form>
         </PopoverContent>
       </Popover>

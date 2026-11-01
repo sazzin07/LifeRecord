@@ -18,8 +18,8 @@ export function ConfidenceBadge({ type = "exact", children }) {
 
 export function SectionHeading({ title, sub, action }) {
   return (
-    <div className="flex items-end justify-between gap-4 mb-4">
-      <div>
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 mb-4">
+      <div className="min-w-0">
         <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">{title}</h2>
         {sub && <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{sub}</p>}
       </div>
@@ -41,13 +41,15 @@ export function Card({ className, children, ...props }) {
 }
 
 export function StatCard({ label, value, hint, icon: Icon, accent = "text-slate-900 dark:text-slate-50", testid, className }) {
+  // An amount or a percentage is set large; a word (a category name) is set as text, or "Entertainment" outgrows its card.
+  const wordy = typeof value === "string" && /[A-Za-z]{4,}/.test(value);
   return (
-    <Card className={cn("p-5 lm-in", className)} data-testid={testid}>
+    <Card className={cn("p-4 sm:p-5 lm-in", className)} data-testid={testid}>
       <div className="flex items-center justify-between">
         <Label>{label}</Label>
         {Icon && <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />}
       </div>
-      <div className={cn("mt-2 stat-num text-2xl sm:text-3xl font-extrabold tracking-tight", accent)}>{value}</div>
+      <div className={cn("mt-2 stat-num font-extrabold tracking-tight break-words", wordy ? "text-base sm:text-lg" : "text-xl sm:text-3xl", accent)}>{value}</div>
       {hint && <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</div>}
     </Card>
   );

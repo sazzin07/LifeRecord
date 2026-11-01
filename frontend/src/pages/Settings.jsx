@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
+import { YourData } from "@/components/YourData";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -58,7 +59,7 @@ function ChangePassword() {
           <button type="button" onClick={() => setShow((v) => !v)} className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
             {show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}{show ? "Hide passwords" : "Show passwords"}
           </button>
-          <Button type="submit" disabled={!ready || saving} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="pw-save"><KeyRound className="h-4 w-4 mr-1" />Change password</Button>
+          <Button type="submit" disabled={!ready || saving} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="pw-save"><KeyRound className="h-4 w-4 mr-1" />Change password</Button>
         </div>
       </form>
     </Card>
@@ -148,12 +149,12 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <SectionHeading title="Settings" sub="Appearance, accounts, password and categories" />
+      <SectionHeading title="Settings" sub="Appearance, accounts, password, categories and your data" />
 
-      <Card className="p-5 flex items-center gap-4">
+      <Card className="p-5 flex flex-wrap items-center gap-4">
         <Avatar name={user?.name || "?"} size="h-12 w-12" />
-        <div className="flex-1"><p className="font-semibold">{user?.name || "User"}</p><p className="text-sm text-slate-500">{user?.email}</p></div>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1 min-w-[10rem]"><p className="font-semibold">{user?.name || "User"}</p><p className="text-sm text-slate-500 break-all">{user?.email}</p></div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           <Button variant="outline" onClick={logout} data-testid="settings-logout"><LogOut className="h-4 w-4 mr-1" />Sign out</Button>
           <Button variant="ghost" onClick={() => setSignOutAllOpen(true)} data-testid="settings-logout-all" className="text-slate-500">Sign out on all devices</Button>
         </div>
@@ -182,7 +183,7 @@ export default function Settings() {
         </div>
         <div className="mt-5 flex items-center justify-between">
           <div><p className="font-medium text-sm">Animations</p><p className="text-xs text-slate-500">Entry and transition motion</p></div>
-          <Switch checked={animations} onCheckedChange={setAnimations} data-testid="anim-toggle" />
+          <Switch checked={animations} onCheckedChange={setAnimations} aria-label="Animations" data-testid="anim-toggle" />
         </div>
       </Card>
 
@@ -194,7 +195,7 @@ export default function Settings() {
         <Label>Finance categories</Label>
         <div className="mt-3 flex gap-2">
           <Input placeholder="New category" value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCat()} data-testid="category-input" />
-          <Button onClick={addCat} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="category-add"><Plus className="h-4 w-4" /></Button>
+          <Button onClick={addCat} aria-label="Add category" className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="category-add"><Plus className="h-4 w-4" /></Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {cats === null && [0, 1, 2, 3].map((i) => <span key={i} className="skeleton h-7 w-24 rounded-full" aria-hidden="true" />)}
@@ -211,6 +212,8 @@ export default function Settings() {
         <Sparkles className="h-5 w-5 text-emerald-600" />
         <div><p className="font-medium text-sm">AI assistant</p><p className="text-xs text-slate-500">Chat, voice and receipt photos. API keys are kept on the server and never sent to your browser.</p></div>
       </Card>
+
+      <YourData />
 
       <ConfirmDialog
         open={deleteCatOpen}

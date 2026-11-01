@@ -1,0 +1,17 @@
+{
+ "note": "Gzip sizes in bytes: the measured size plus 10 %. Raise a number only on purpose, with a reason in the commit.",
+ "set_on": "2026-11-01",
+ "total_gzip": 784897,
+ "largest_single_file_gzip": 351683,
+ "roles": {
+  "main.css": {
+   "gzip_largest": 20880
+  },
+  "lazy chunk": {
+   "gzip_largest": 127408
+  },
+  "main.js": {
+   "gzip_largest": 351683
+  }
+ }
+}

@@ -346,6 +346,14 @@ _NOTICES = {
     "password_changed": ("Your Life Record password was changed", "The password for your Life Record account was just changed, and every other device was signed out."),
     "password_reset": ("Your Life Record password was reset", "The password for your Life Record account was just reset with an emailed link, and every device was signed out."),
     "signed_out_everywhere": ("You were signed out of Life Record everywhere", "Every device signed in to your Life Record account was just signed out."),
+    "account_deleted": ("Your Life Record account was deleted", "Your Life Record account and everything in it (records, photos and saved chats) was just deleted at your request."),
+}
+
+# Notices where "reset your password" would be wrong advice get their own closing lines: (html, plain text).
+_NOTICE_ADVICE = {
+    "account_deleted": ("<p>If this was not you, someone knew your password. The account no longer exists, so there is nothing left to protect here; "
+                        "if you use that password anywhere else, change it there.</p>",
+                        "If this was not you, someone knew your password. The account no longer exists; if you use that password anywhere else, change it there."),
 }
 
 
@@ -354,6 +362,9 @@ async def send_security_notice(to_email: str, name: Optional[str], event: str) -
     subject, what = _NOTICES[event]
     display_name = html.escape(name or to_email)
     reset_url = f"{FRONTEND_URL}/forgot-password"
+    advice_html, advice_text = _NOTICE_ADVICE.get(event, (
+        f'<p><strong>If this was not you</strong>, reset your password right away: <a href="{reset_url}">{reset_url}</a>.</p>',
+        f"If this was not you, reset your password right away: {reset_url}"))
     html_body = f"""\
 <html>
 <body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111827;">
@@ -362,7 +373,7 @@ async def send_security_notice(to_email: str, name: Optional[str], event: str) -
         <p>Hi {display_name},</p>
         <p>{html.escape(what)}</p>
         <p>If this was you, nothing more is needed.</p>
-        <p><strong>If this was not you</strong>, reset your password right away: <a href="{reset_url}">{reset_url}</a>.</p>
+        {advice_html}
     </div>
 </body>
 </html>
@@ -373,6 +384,6 @@ Hi {name or to_email},
 {what}
 
 If this was you, nothing more is needed.
-If this was not you, reset your password right away: {reset_url}
+{advice_text}
 """
     return await send_email(to_email, subject, html_body, text, purpose="security_notice")

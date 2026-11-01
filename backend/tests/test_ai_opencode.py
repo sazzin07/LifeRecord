@@ -35,6 +35,9 @@ def sse(*events, split_at=None):
 def provider(monkeypatch):
     """Install a fake provider; `state` records requests and `queue` holds the responses to give."""
     monkeypatch.setenv("OPENCODE_API_KEY", KEY)
+    # The documented default address: what these tests pin must not depend on the environment they run in (the scratch
+    # stack points the provider at a dead end on purpose).
+    monkeypatch.setattr(ai_opencode, "BASE_URL", "https://opencode.ai/inference/go")
     state = {"requests": [], "queue": []}
 
     def handler(request: httpx.Request):

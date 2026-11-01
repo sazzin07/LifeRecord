@@ -12,7 +12,44 @@
 
 **Plan date:** 2026-11-01 · Branch `feature/roadmap-completion` · code baseline `ca27e44` (= graph build commit).
 
-**Status of this document:** discovery and planning only. Nothing in the application, database or tests was changed to produce it. Implementation waits for the owner's approval of §5.
+**Status of this document:** the plan was approved on 2026-11-01 (owner answers: Q0 "whatever you recommend", Q1 `liferecord`, Q3 limits accepted, Q5 harness schemas "whatever you think is best") and is being executed. The section below records what actually happened; the sections after it are the original plan, kept so the deviations can be seen. Where the two disagree, this section wins.
+
+## Progress log (updated as work is done)
+
+Execution style (Q0): **native**, one task at a time, each verified before the next (the harness allows subagents only when asked for, and the tasks share too many files to split safely).
+
+| Task | Roadmap | Status (2026-11-01) | Evidence |
+|---|---|---|---|
+| T0.1 reconcile docs and DB login | - | **Done** | Live login is `liferecord` (grants checked read-only; `liferecord_app` does not exist). README, roadmap, `provision_db.py`, `backend/.env.production.example` fixed. Commit `54e8f42`. |
+| T0.2 baseline | - | **Done, differently** | Run on a scratch stack instead of the live one (no `TEST_PASSWORD` exists in the store). First run on an empty schema: 510 passed / 54 failed / 8 errors (missing foods, John's data, mail config). With foods and John seeded: 561 / 12 / 1. Final: **651 passed, 2 skipped**. |
+| T1.1 onboarding | F-01 | **Done** | 10 backend + 2 browser tests; see roadmap row. |
+| T1.2 usage limits | S-04 | **Done** | 11 backend + 2 frontend unit tests. |
+| T1.3 dependency audit | S-05 | **Done** | `docs/security/dependency-audit-2026-11-01.md`. |
+| T1.4 seed gaps | F-04 | **Done** | `test_seed_data.py`. F-08 (one live Open Food Facts lookup) **not done**: it is an outbound call the owner has not approved (Q12). |
+| T2.1 throw-away stack | F-03 | **Done** | `backend/tests/isolated_env.py`. |
+| T2.2 independence from real accounts | F-03 | **Done** | The suite no longer needs a running backend or a real account when `LR_ISOLATED=1`. The plain mode still exists and still works against the live stack. |
+| T2.3 drift test | - | **Done** | Found one real drift (index `ix_meals_client_ref` in a migration but not in the model); fixed in the model only, so no database change. |
+| T2.4 / T2.5 isolation matrix | S-12 | **Done** | 32 tests, 31 tables, 87 id-routes. |
+| T3.x frontend (D-01..D-10, S-03) | - | **Not started** | Next batch. |
+| T4.1 split server.py | F-02 | **Not started** | Safety net exists (`test_server_surface.py`, golden snapshot of 199 routes); moves not begun. |
+| T4.2 failure sweep | S-13 | **In progress** | Backend fix and sweep table done; browser check of the offline banner left. |
+| T4.3 data hygiene | S-14 | **Waiting for approval** | Deleting an account and log files needs the owner's yes (dry run first). |
+| T4.4 backups | S-07 | **In progress** | Tools and tests done, rehearsal on the real database matched 36 tables / 9,624 rows. Owner still chooses folder, schedule and encryption. |
+| T4.5 export and delete | S-11 | **In progress** | Backend done and tested; Settings screen left. |
+| T5.x CI, deployment | S-10, S-09, S-15 | **Not started** | |
+| T6.x owner tasks | S-01, S-02, S-06, S-08, F-05..F-07, F-09..F-11, D-05, D-09 | **Blocked** | Need the owner; see roadmap rows. |
+
+### Deviations from the plan, and findings the plan did not foresee
+
+1. **F-01 was bigger than planned.** The Money screen could not create a top-level account at all (the dialog only makes sub-places under Cash or Revolut), and the API happily booked expenses to accounts that did not exist, so a new user's first expense was silently lost. Both fixed (`FirstAccounts.jsx`, `require_account_id`). Plan section 4.2, A5, understated this.
+2. **The scratch stack needs a dead-end AI provider, not a blank one.** With no key the assistant answers "not configured" before it validates attachments, so specs that test those validations failed. The scratch server is now "configured" with an address that has no usable scheme, so no model is ever reachable. Mail got the same treatment (loopback port 1).
+3. **`seed_john.py` and `cleanup_account.py` hard-coded the real schema.** Running the seed against a scratch stack would have written to the real database; it failed on a foreign key before writing anything (verified: real row counts unchanged). Fixed, and a test now fails if any script hard-codes the schema again.
+4. **`cleanup_account.py` missed the five nutrition tables** (so `seed_john.py --reset` left old nutrition data behind). Its list now comes from the models.
+5. **Time-dependent specs.** The seed logged meals for "today", which left the suggestion specs nothing to suggest on the day of seeding; and one spec raced the card's list. Seed and spec fixed.
+6. **Two routes accept harmless no-ops** in the isolation matrix (`DELETE .../favorite` and submit of another user's list); documented in the test with the reason.
+7. **A secret appeared in test output once.** A failing assertion printed a pytest fixture value that contained the database administrator password, so it is now in this session's transcript. The fixture was changed to yield only a name, and no other test passes credentials around. **Recommendation: rotate `ADMIN_DATABASE_PASSWORD`** (an owner action, added to the S-02 checklist).
+8. **Open question on "password LifeRecord" (Q1).** The owner's answer asked for a password to be "LifeRecord" without saying whose. Nothing was changed: the app rejects it as a password (no digit), and setting it on the database login or the owner account would weaken what the security batch built. Waiting for a one-line clarification.
+9. **Frontend files stay unchanged while a browser run is in progress.** The browser suite runs against a dev server that reloads on every edit, so UI work waits for the run to finish; backend work does not.
 
 ## Global Constraints
 

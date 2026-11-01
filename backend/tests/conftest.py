@@ -14,7 +14,16 @@ if not os.environ.get("REACT_APP_BACKEND_URL"):
 # Accounts registered by test_auth_multiuser.py and test_change_password.py (prefix_<hex>@example.com). They are removed once the whole run
 # has finished: its test classes run on different xdist workers, so a per-module teardown would delete users
 # another worker is still using. Their data goes with them (every user FK cascades).
-TEST_USER_EMAIL = r"^(aiiso|authtest|catiso|expired|invalid|isolation|pwchange|refresh|nutri|reset|reused|session|unverified)_[0-9a-f]+@example[.]com$"
+TEST_USER_EMAIL = r"^(aiiso|authtest|catiso|expired|invalid|isolation|limits|onboard|pwchange|refresh|nutri|reset|reused|session|unverified)_[0-9a-f]+@example[.]com$"
+
+
+def pytest_configure(config):
+    """LR_ISOLATED=1: run against a throw-away schema and server (isolated_env.py) instead of the real stack.
+    Only the controller starts it; xdist workers are spawned afterwards and inherit the environment."""
+    if os.environ.get("LR_ISOLATED") != "1" or hasattr(config, "workerinput"):
+        return
+    import isolated_env
+    isolated_env.start_for_pytest()
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -23,6 +32,10 @@ def pytest_sessionfinish(session, exitstatus):
         return
     for f in Path(tempfile.gettempdir()).glob("liferecord-test-login-*.json"):
         f.unlink(missing_ok=True)
+    if os.environ.get("LR_ISOLATED") == "1":
+        import isolated_env  # the whole scratch schema goes, no row-by-row cleanup needed
+        isolated_env.stop_for_pytest()
+        return
     try:
         import support_db
         conn = support_db.connect()

@@ -10,9 +10,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import email_service as es  # noqa: E402
-from support_auth import OWNER_EMAIL  # noqa: E402
 
 KEY = "SG.test-key-not-real"
+# Not a reserved test domain (those are never mailed), and not a real one either: aiosmtplib.send is faked in every test here.
+RECIPIENT = "recipient@nowhere.zz"
 
 
 @pytest.fixture
@@ -62,12 +63,12 @@ def test_smtp_needs_a_host_and_a_sender_address(smtp, monkeypatch):
 
 
 def test_message_goes_through_the_relay_with_the_right_login_and_headers(smtp):
-    out = run(es.deliver(OWNER_EMAIL, "Subject here", "<p>hi</p>", "hi"))
+    out = run(es.deliver(RECIPIENT, "Subject here", "<p>hi</p>", "hi"))
     assert out.ok, out
     (msg, kw), = smtp
     assert kw["hostname"] == "smtp.sendgrid.net" and kw["port"] == 587
     assert kw["username"] == "apikey" and kw["password"] == KEY and kw["start_tls"] is True
-    assert msg["To"] == OWNER_EMAIL and msg["Subject"] == "Subject here"
+    assert msg["To"] == RECIPIENT and msg["Subject"] == "Subject here"
     assert msg["From"] == "Life Record <sender@gmail.com>"
     assert msg["Message-ID"] and msg["Date"]
     kinds = [p.get_content_type() for p in msg.get_payload()]
@@ -80,7 +81,7 @@ def test_message_goes_through_the_relay_with_the_right_login_and_headers(smtp):
 def test_sender_falls_back_to_sendgrid_from_email(smtp, monkeypatch):
     monkeypatch.setattr(es, "SMTP_FROM_EMAIL", "")
     monkeypatch.setenv("SENDGRID_FROM_EMAIL", "other@gmail.com")
-    run(es.deliver(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    run(es.deliver(RECIPIENT, "s", "<p>h</p>", "t"))
     assert smtp[0][0]["From"] == "Life Record <other@gmail.com>"
 
 
@@ -92,7 +93,7 @@ def test_wrong_api_key_is_a_clear_message_and_is_not_retried(smtp, monkeypatch):
         raise aiosmtplib.SMTPAuthenticationError(535, f"Authentication failed for {KEY}")
 
     monkeypatch.setattr(aiosmtplib, "send", deny)
-    out = run(es.deliver(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.status == "failed" and "login" in out.detail.lower() and "API key" in out.detail
     assert KEY not in out.detail and len(n) == 1
 
@@ -105,7 +106,7 @@ def test_unverified_sender_is_explained_and_not_retried(smtp, monkeypatch):
         raise aiosmtplib.SMTPSenderRefused(550, "The from address does not match a verified Sender Identity", "sender@gmail.com")
 
     monkeypatch.setattr(aiosmtplib, "send", refuse)
-    out = run(es.deliver(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.status == "failed" and "verified" in out.detail and "Sender Authentication" in out.detail
     assert len(n) == 1
 
@@ -115,10 +116,10 @@ def test_a_refused_recipient_is_a_failure_without_retry(smtp, monkeypatch):
 
     async def refuse(msg, **kw):
         n.append(1)
-        raise aiosmtplib.SMTPRecipientsRefused([aiosmtplib.SMTPRecipientRefused(550, "no such user", OWNER_EMAIL)])
+        raise aiosmtplib.SMTPRecipientsRefused([aiosmtplib.SMTPRecipientRefused(550, "no such user", RECIPIENT)])
 
     monkeypatch.setattr(aiosmtplib, "send", refuse)
-    out = run(es.deliver(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.status == "failed" and "address" in out.detail.lower() and len(n) == 1
 
 
@@ -131,7 +132,7 @@ def test_temporary_trouble_is_retried_then_succeeds(smtp, monkeypatch):
             raise aiosmtplib.SMTPServerDisconnected("connection lost")
 
     monkeypatch.setattr(aiosmtplib, "send", flaky)
-    out = run(es.deliver_with_retry(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver_with_retry(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.ok and len(attempts) == 3
 
 
@@ -143,7 +144,7 @@ def test_temporary_4xx_replies_are_retried_and_give_up_after_three_tries(smtp, m
         raise aiosmtplib.SMTPResponseException(451, "try again later")
 
     monkeypatch.setattr(aiosmtplib, "send", busy)
-    out = run(es.deliver_with_retry(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver_with_retry(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.status == "failed" and "temporarily" in out.detail.lower() and len(attempts) == 3
 
 
@@ -155,7 +156,7 @@ def test_timeouts_are_retried(smtp, monkeypatch):
         raise asyncio.TimeoutError()
 
     monkeypatch.setattr(aiosmtplib, "send", slow)
-    out = run(es.deliver_with_retry(OWNER_EMAIL, "s", "<p>h</p>", "t"))
+    out = run(es.deliver_with_retry(RECIPIENT, "s", "<p>h</p>", "t"))
     assert out.status == "failed" and len(attempts) == 3
 
 
@@ -177,7 +178,7 @@ def test_without_a_provider_nothing_is_sent_and_codes_are_not_logged(monkeypatch
 
 
 def test_verification_email_content(smtp):
-    run(es.send_verification_code(OWNER_EMAIL, "123456", "Sam <b>x</b>"))
+    run(es.send_verification_code(RECIPIENT, "123456", "Sam <b>x</b>"))
     msg = smtp[0][0]
     html_part = msg.get_payload()[1].get_payload(decode=True).decode()
     text_part = msg.get_payload()[0].get_payload(decode=True).decode()
@@ -187,13 +188,13 @@ def test_verification_email_content(smtp):
 
 def test_password_reset_link_is_intact(smtp, monkeypatch):
     monkeypatch.setattr(es, "FRONTEND_URL", "https://app.example.org")
-    run(es.send_password_reset(OWNER_EMAIL, "abc.def_ghi-123", "Sam"))
+    run(es.send_password_reset(RECIPIENT, "abc.def_ghi-123", "Sam"))
     text_part = smtp[0][0].get_payload()[0].get_payload(decode=True).decode()
     assert "https://app.example.org/reset-password?token=abc.def_ghi-123" in text_part
 
 
 def test_security_notice_says_what_happened_and_what_to_do(smtp):
-    run(es.send_security_notice(OWNER_EMAIL, "Sam", "password_changed"))
+    run(es.send_security_notice(RECIPIENT, "Sam", "password_changed"))
     msg = smtp[0][0]
     assert "password" in msg["Subject"].lower()
     body = msg.get_payload()[0].get_payload(decode=True).decode()

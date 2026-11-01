@@ -14,9 +14,11 @@
 - Idempotent: the task "[SAMPLE DATA] ..." is the marker; seeding is skipped when it exists.
 """
 import os
+import struct
 import subprocess
 import sys
 import uuid
+import zlib
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -81,8 +83,19 @@ def seed_money(api: Api) -> dict:
         ("Travel", "plane", "#14B8A6", 0), ("Gifts", "gift", "#F43F5E", None), ("Income", "banknote", "#059669", None),
         ("People", "users", "#0EA5E9", None), ("Other", "circle", "#94A3B8", None),
     ]
+    # A verified account already starts with the starter categories: reuse same-named ones and drop the rest, so the
+    # sample data is the same whether or not the account was created before the starter set existed.
+    existing = {c["name"]: c["id"] for c in api.get("/categories")}
+    wanted = {name for name, *_ in cats}
+    for name, cid in existing.items():
+        if name not in wanted:
+            api.call("DELETE", f"/categories/{cid}")
     for name, icon, color, budget in cats:
-        api.post("/categories", {"name": name, "icon": icon, "color": color, "monthly_budget": budget})
+        body = {"name": name, "icon": icon, "color": color, "monthly_budget": budget}
+        if name in existing:
+            api.put(f"/categories/{existing[name]}", body)
+        else:
+            api.post("/categories", body)
 
     def acct(**kw):
         return api.post("/accounts", kw)["id"]
@@ -188,12 +201,13 @@ def seed_life(api: Api):
     ]
     for kind, ago, exercises in sessions:
         api.post("/workouts", {"type": kind, "date": d(ago), "exercises": exercises, "notes": S})
-    # nutrition
+    # nutrition. Nothing is logged for today: today starts empty, like a real morning (and the suggestion specs rely on it:
+    # a seed that already reaches today's protein target leaves them nothing to suggest on the day it was seeded).
     meals = [
-        (0, "Oatmeal with banana and honey", 420, 14, 72, 8), (0, "Chicken, rice and broccoli", 640, 48, 70, 16),
-        (0, "Greek yoghurt with almonds", 210, 18, 9, 11), (1, "Scrambled eggs on toast", 480, 26, 38, 24),
-        (1, "Pasta with tomato sauce", 720, 24, 118, 14), (1, "Apple and peanut butter", 250, 7, 28, 14),
-        (2, "Tuna salad bowl", 520, 38, 30, 26),
+        (1, "Oatmeal with banana and honey", 420, 14, 72, 8), (1, "Chicken, rice and broccoli", 640, 48, 70, 16),
+        (1, "Greek yoghurt with almonds", 210, 18, 9, 11), (2, "Scrambled eggs on toast", 480, 26, 38, 24),
+        (2, "Pasta with tomato sauce", 720, 24, 118, 14), (2, "Apple and peanut butter", 250, 7, 28, 14),
+        (3, "Tuna salad bowl", 520, 38, 30, 26),
     ]
     for ago, desc, kcal, p, c, f in meals:
         api.post("/meals", {"description": f"{desc} {S}", "calories": kcal, "protein": p, "carbs": c, "fat": f, "date": d(ago)})
@@ -271,6 +285,24 @@ def seed_kitchen(api: Api, accounts: dict):
         {"name": "Bananas", "quantity": 6, "unit": "unit", "category": "Fruit", "estimated_price": 0.25}]})
 
 
+def _png(rgb) -> bytes:
+    """A small valid PNG (a flat 64x64 colour) so progress photos exist without shipping any image file."""
+    def chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    row = b"\x00" + bytes(rgb) * 64
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(row * 64)) + chunk(b"IEND", b""))
+
+
+def seed_photos(api: Api):
+    """Three progress photos through the normal upload endpoint (stored encrypted, like a real one)."""
+    for note, rgb in ((f"{S} Front view", (176, 124, 96)), (f"{S} Side view", (96, 140, 176)), (f"{S} Back view", (120, 168, 120))):
+        r = requests.post(f"{BASE}/api/photos", params={"note": note}, headers=api.h, timeout=60,
+                          files={"file": ("progress.png", _png(rgb), "image/png")})
+        if r.status_code != 200:
+            raise SystemExit(f"POST /photos -> {r.status_code}: {r.text[:300]}")
+
+
 def seed_scheduled_and_marker(api: Api):
     opts = api.get("/scheduled/options")
     sources = [s["id"] if isinstance(s, dict) else s for s in opts.get("data_sources", [])][:2]
@@ -281,7 +313,7 @@ def seed_scheduled_and_marker(api: Api):
 
 
 def seed_ai_history(user_id: str):
-    """Saved chats cannot be created without calling the AI model, so these are inserted directly (and marked)."""
+    """Saved chats and action history cannot be created without calling the AI model, so these are inserted directly (and marked)."""
     import cleanup_account  # reuse its administrative connection helper
     conn = cleanup_account.connect()
     now = datetime.now(timezone.utc)
@@ -304,6 +336,12 @@ def seed_ai_history(user_id: str):
                 for i, (role, text) in enumerate(msgs):
                     cur.execute("INSERT INTO ai_messages (id,user_id,session_id,role,text,meta,created_at) VALUES (%s,%s,%s,%s,%s,NULL,%s)",
                                 (str(uuid.uuid4()), user_id, cid, role, text, (t0 + timedelta(minutes=i)).isoformat()))
+            # What the assistant changed: history only. undoable stays 0 and `created` empty, so "undo" can never delete
+            # a real record by way of a sample row.
+            for label, ago in ((f"{S} Added expense: EUR 14.20 at Lidl", 2), (f"{S} Logged lunch: chicken and rice bowl", 5),
+                               (f"{S} Created task: renew gym membership", 9)):
+                cur.execute("INSERT INTO ai_actions (id,user_id,label,tools,created,undoable,undone,created_at) VALUES (%s,%s,%s,'[]','[]',0,0,%s)",
+                            (str(uuid.uuid4()), user_id, label, (now - timedelta(days=ago)).isoformat()))
         conn.commit()
     finally:
         conn.close()
@@ -327,6 +365,7 @@ def main(argv) -> int:
     accounts = seed_money(api)
     seed_life(api)
     seed_kitchen(api, accounts)
+    seed_photos(api)
     seed_scheduled_and_marker(api)
     seed_ai_history(me["id"])
     summary = {"accounts": len(api.get("/accounts")), "categories": len(api.get("/categories")), "people": len(api.get("/people")),

@@ -209,7 +209,10 @@ The production build is placed in `frontend/build`.
 1. Go to **Sign up**, enter name, email and password.
 2. The backend sends a 6-digit verification code to the email address.
 3. Enter the code in the modal. Codes expire after 15 minutes.
-4. After verification you are signed in automatically.
+4. After verification you are signed in automatically, with the 12 starter categories (Groceries, Bills, …) already in place.
+   Accounts are not created for you, because the names and balances are yours: the Money page asks where you keep money
+   (Money in hand, Bank account, Revolut) and how much is there, and until you have an account an expense or income
+   is refused with a clear message instead of being booked to nothing.
 
 Security details:
 - Passwords must be at least 8 characters and contain a letter and a number.
@@ -335,7 +338,7 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 - Recurring shopping list templates and frequently bought suggestions.
 - Interactive kitchen: storage spaces are doors on a kitchen wall; tap one to zoom in, see what is inside, use/add/move items, and switch spaces from a speed-dial rail. "More details" opens the full list with search, filters and bulk actions.
 - AI can manage lists, inventory, storage locations (add, rename, move items, consume, discard with confirmation) and expiry dates, give a whole-kitchen overview, and suggest recipes from available ingredients.
-- Realistic demo data for every module comes from `backend/seed_john.py` (see Testing; expiry dates are relative to today). The old `seed_groceries.py` was removed.
+- Realistic demo data for every module comes from `backend/seed_john.py` (see Testing; expiry dates are relative to today). It includes three progress photos and a short assistant action history; it logs no meals for *today*, so each day starts empty. There are no recurring transactions in the sample because the app has no such feature (roadmap F-11). The old `seed_groceries.py` was removed.
 
 ### Nutrition
 A food diary backed by real reference data (details, limits and test results in [`docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md`](docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md) §17 and §17b; open work in [`APPLICATION_COMPLETION_ROADMAP.md`](APPLICATION_COMPLETION_ROADMAP.md)). The page is at `/nutrition`; the tab and the day are in the address (`?tab=plan&date=2026-10-30`).
@@ -397,6 +400,24 @@ The default model is `gemini-3.5-flash-lite` because it has the highest free-tie
 
 ### Backend tests
 
+The suite can run against a **throw-away schema and server**, so it needs no running backend, no real account and no
+secret, and cannot touch your data:
+
+```powershell
+cd backend
+$env:LR_ISOLATED = "1"; .venv\Scripts\python.exe -m pytest tests -q
+```
+
+`tests/isolated_env.py` creates a schema named `liferecord_test_<pid>`, starts the app on a free local port with fresh
+random secrets, loads the USDA reference foods (from the dataset cached outside the project) and John's sample data, and
+drops the schema when the run ends (leftovers from a crashed run are removed at the next start). It refuses to touch any
+other schema name. AI provider keys are empty and mail points at a dead end on loopback, so nothing can call a model
+or send an email. It uses the administrative database login (`ADMIN_DATABASE_*`) only to create and drop that schema.
+`python tests/isolated_env.py serve` starts the same backend plus the React dev server for browser tests (it prints
+where it wrote the address and the test account to).
+
+Without `LR_ISOLATED`, the tests run against the real running stack as before:
+
 ```powershell
 cd backend
 .venv\Scripts\python.exe -m pytest tests -q
@@ -425,6 +446,19 @@ The build runs ESLint and should complete with no warnings. Playwright e2e specs
 python ..\backend\local_secrets.py run -- npx playwright test --grep-invert "real model|real assistant" e2e/ai-assistant.spec.js e2e/calendar.spec.js e2e/edit-flows.spec.js e2e/groceries.spec.js e2e/nutrition.spec.js e2e/pages-smooth.spec.js e2e/people.spec.js e2e/scheduled-tasks.spec.js e2e/settings.spec.js e2e/smoke.spec.js
 ```
 
+## Backups
+
+```powershell
+python tools\backup.py --dest D:\Backups\LifeRecord          # database + uploaded files into one dated .zip, then prune old ones
+python tools\restore_check.py --dest D:\Backups\LifeRecord   # rehearse: restore the newest one into a scratch schema and compare every table
+```
+
+- `backup.py` writes `liferecord-YYYYMMDD-HHMMSS.zip` containing a consistent `mysqldump` of the database, the uploaded files exactly as stored (so still encrypted), and a manifest with the row count of every table. It keeps the latest backup of each of the last 14 days and of each of the 8 weeks before that (`--daily`, `--weekly`), and never deletes a file that is not one of its own. It refuses to write inside the project folder.
+- The administrative database login comes from the encrypted store and reaches `mysqldump` only through its environment, never on a command line. The zip contains **health data and password hashes**: put it somewhere only you can read (an encrypted drive).
+- **`UPLOAD_ENCRYPTION_KEY` is not in the backup and must be kept separately** (`python backend\local_secrets.py reveal UPLOAD_ENCRYPTION_KEY`, stored in a password manager). Without it the photos and chat pictures in a backup cannot be opened.
+- `restore_check.py` never touches the live database. It restores into a throw-away schema, compares each table with the manifest, reports `ALL TABLES MATCH` (exit code 0) or lists the mismatches, and removes the schema. A backup that has not been through it is a hope, not a backup.
+- Nothing runs automatically yet: choose the folder and schedule (for example a daily Windows Task Scheduler job running the first command) and rehearse a restore after the first run.
+
 ## Production deployment checklist
 
 1. Copy `backend/.env.production.example` to `backend/.env.production` and fill in real values.
@@ -442,6 +476,16 @@ python ..\backend\local_secrets.py run -- npx playwright test --grep-invert "rea
 
 ## Security notes
 
+- **Usage limits per signed-in user** (`backend/usage_limits.py`; answered with `429`, a plain-language message and a `Retry-After` header; stored in `rate_limit_events`, so they survive restarts):
+
+  | What | Per minute | Per day | Change with |
+  |---|---|---|---|
+  | Assistant messages (`/ai/chat`, `/ai/chat/stream`, including attached pictures) | 20 | 300 | `LIMIT_AI_CHAT_PER_MINUTE`, `LIMIT_AI_CHAT_PER_DAY` |
+  | Voice messages (`/ai/transcribe`) | 10 | 100 | `LIMIT_AI_TRANSCRIBE_…` |
+  | Receipt scans (`/ai/receipt`) | 10 | 50 | `LIMIT_AI_RECEIPT_…` |
+  | Progress-photo uploads (`/photos`) | 20 | 100 | `LIMIT_PHOTO_UPLOAD_…` |
+
+  An unreadable value falls back to the default. One assistant message can make up to 7 model calls. Sign-in has its own limiter (10 attempts a minute per address and email).
 - Never commit `.env` files. They are ignored by Git.
 - Progress photos are served via `Authorization: Bearer <token>` header, not query-string tokens.
 - Demo credentials have been removed from the login screen.

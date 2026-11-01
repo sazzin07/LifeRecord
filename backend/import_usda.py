@@ -49,7 +49,8 @@ UNIT_FIX = {"UG": "µg", "MG": "mg", "G": "g", "KCAL": "kcal"}
 
 def connect():
     return pymysql.connect(host="127.0.0.1", port=3306, user=os.environ.get("ADMIN_DATABASE_USER", "root"),
-                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""), database="liferecord", charset="utf8mb4")
+                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""), database=os.environ.get("DATABASE_NAME", "liferecord"),
+                           charset="utf8mb4")
 
 
 def locate(ds: dict, root: Path) -> Path:

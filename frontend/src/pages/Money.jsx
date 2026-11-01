@@ -19,6 +19,7 @@ import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { EditExpenseDialog } from "@/components/EditExpenseDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
+import { FirstAccounts } from "@/components/FirstAccounts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -400,6 +401,7 @@ export default function Money() {
         </>
       ) : (
         <>
+          {accounts.length === 0 && <FirstAccounts />}
           {/* Primary balances */}
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
             <BalanceSection

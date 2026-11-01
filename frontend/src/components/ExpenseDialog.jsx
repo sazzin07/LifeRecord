@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
+import { Link } from "react-router-dom";
 import { Avatar } from "@/components/common";
 import { Plus, Trash2, Users, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ export function ExpenseDialog({ open, setOpen }) {
   const [cats, setCats] = useState([]);
   const [people, setPeople] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [amount, setAmount] = useState("");
@@ -36,6 +38,7 @@ export function ExpenseDialog({ open, setOpen }) {
     swr("/accounts", (d) => {
       const r = { data: d };
       setAccounts(r.data);
+      setAccountsLoaded(true);
       if (!account) {
         const cash = r.data.find((a) => a.type === "cash");
         const first = r.data.find((a) => a.type !== "owed" && a.type !== "owed_person");
@@ -72,7 +75,11 @@ export function ExpenseDialog({ open, setOpen }) {
     setSplitMode("equal"); setItems([]); setCategory("Groceries"); setAccount(accounts[0]?.id || "");
   };
 
+  const usableAccounts = accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person");
+  const noAccounts = accountsLoaded && usableAccounts.length === 0;
+
   const save = async () => {
+    if (noAccounts) { toast.error("Create an account under Money first"); return; }
     if (gross <= 0) { toast.error("Enter an amount"); return; }
     setSaving(true);
     try {
@@ -99,6 +106,12 @@ export function ExpenseDialog({ open, setOpen }) {
           <DialogDescription className="sr-only">Create a new expense with optional sharing and item-level splitting</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          {noAccounts && (
+            <div role="alert" data-testid="expense-no-account" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              You have no accounts yet, so there is nowhere to take this from.{" "}
+              <Link to="/money" onClick={() => setOpen(false)} className="font-semibold underline">Set up your money</Link> first.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</label>
@@ -200,7 +213,7 @@ export function ExpenseDialog({ open, setOpen }) {
             {gross - myShare > 0.005 && <div className="text-right text-emerald-600 dark:text-emerald-400 font-semibold">+{eur(gross - myShare)}<div className="text-xs text-slate-500 font-normal">to receive</div></div>}
           </div>
 
-          <Button data-testid="expense-save" onClick={save} disabled={saving} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11">
+          <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save expense"}
           </Button>
         </div>

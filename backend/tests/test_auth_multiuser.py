@@ -184,7 +184,9 @@ class TestMultiUserIsolation:
         r = admin.delete(f"{BASE_URL}/api/people/{person_id}")
         assert r.status_code == 404
 
-        # User creates a transaction
+        # User creates a transaction (money can only be booked to an account that exists, so they make one first)
+        r = user.post(f"{BASE_URL}/api/accounts", json={"name": "Money in hand", "type": "cash", "opening_balance": 50})
+        assert r.status_code == 200
         r = user.post(f"{BASE_URL}/api/transactions/expense", json={
             "amount": 10.0, "merchant": f"PrivateTx {tag}", "category": "Other",
             "account": "cash", "participants": ["Me"]})

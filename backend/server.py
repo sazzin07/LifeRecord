@@ -40,6 +40,8 @@ from models import (
 )
 import file_crypto
 import kitchen_logic
+import starter_data
+import usage_limits
 import ai_tools_extra
 import ai_tools_nutrition
 import ai_opencode
@@ -48,13 +50,15 @@ import chat_images
 import scheduling
 import scheduling_api
 import calendar_api
+import account_api
 import nutrition_api
 import nutrition_plan_api
 import nutrition_suggest_api
 import nutrition_plan_gen_api
 import nutrition_insights_api
 import nutrition_calc
-from starlette.responses import StreamingResponse
+from starlette.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS,
     create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
@@ -111,8 +115,8 @@ async def check_rate_limit(request: Request, identifier: str) -> None:
         if recent >= AUTH_RATE_LIMIT_MAX:
             raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
         db.add(RateLimitEvent(bucket=bucket, at_ms=now_ms))
-        if secrets.randbelow(50) == 0:  # occasional cleanup of events older than two windows
-            await db.execute(delete(RateLimitEvent).where(RateLimitEvent.at_ms < now_ms - AUTH_RATE_LIMIT_WINDOW * 2000))
+        if secrets.randbelow(50) == 0:  # occasional cleanup; shared with the per-user limits, whose windows last a day
+            await usage_limits.prune_old_events(db, now_ms)
         await db.commit()
 
 
@@ -804,6 +808,16 @@ async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[
     return exact or next((a for a in accs if ref_lower in a.name.lower()), None)
 
 
+async def require_account_id(db: AsyncSession, ref: Optional[str], user_id: str) -> str:
+    """The id of the user's account that `ref` names, or a clear 400. Money must never be booked to an account that
+    does not exist: a new user has none until they create one, and a transaction pointing at nothing is never
+    counted in any balance."""
+    acc = await resolve_account(db, ref, user_id) if ref else None
+    if not acc:
+        raise HTTPException(400, "That account does not exist. Create it first under Money, or choose one you have.")
+    return acc.id
+
+
 def normalize_name(n: str) -> str:
     return "Me" if n.strip().lower() in ("me", "eu", "sá", "sa") else n.strip()
 
@@ -857,7 +871,7 @@ async def create_expense_record(db: AsyncSession, body: ExpenseBody, user_id: st
         id=new_id(), user_id=user_id, type="expense", gross_amount=gross, personal_amount=personal,
         reimbursable_amount=reimbursable,
         description=body.description or body.merchant, category=body.category,
-        account=await normalize_account_ref(db, body.account, user_id), merchant=body.merchant, date=date, month=month_of(date),
+        account=await require_account_id(db, body.account, user_id), merchant=body.merchant, date=date, month=month_of(date),
         notes=body.notes, paid_by=paid_by, items=items, created_at=now_iso(),
     )
     db.add(txn)
@@ -1330,6 +1344,8 @@ async def verify_code(body: VerifyCodeBody, request: Request, response: Response
     user.verification_code = None
     user.verification_code_expires_at = None
     user.verification_attempts = 0
+    # A new account can enter its first expense straight away; committed together with the verification.
+    await starter_data.ensure_starter_categories(db, user.id)
     await db.commit()
 
     return _issue_session(request, response, user,
@@ -2090,8 +2106,8 @@ async def delete_transaction(tid: str, user: dict = Depends(get_current_user), d
 @api_router.post("/transactions/transfer")
 async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    from_id = await normalize_account_ref(db, body.from_account, user["_id"])
-    to_id = await normalize_account_ref(db, body.to_account, user["_id"])
+    from_id = await require_account_id(db, body.from_account, user["_id"])
+    to_id = await require_account_id(db, body.to_account, user["_id"])
     t = Transaction(id=new_id(), user_id=user["_id"], type="transfer", from_account=from_id,
                     to_account=to_id, gross_amount=round(body.amount, 2),
                     description=body.notes or "Transfer", date=date, month=month_of(date),
@@ -2105,9 +2121,7 @@ async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user
 @api_router.post("/transactions/income")
 async def add_income(body: IncomeBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    account_id = body.account_id or body.account
-    acc = await resolve_account(db, account_id, user["_id"])
-    account_id = acc.id if acc else body.account
+    account_id = await require_account_id(db, body.account_id or body.account, user["_id"])
     t = Transaction(id=new_id(), user_id=user["_id"], type="income", account=account_id,
                     gross_amount=round(body.amount, 2), description=body.description or "Income",
                     date=date, month=month_of(date), created_at=now_iso())
@@ -2578,6 +2592,7 @@ ALLOWED_PHOTO_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 # ---------------------------------------------------------------------------
 @api_router.post("/photos")
 async def upload_photo(file: UploadFile = File(...), note: str = Query(""), user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await usage_limits.check_user_limit(user["_id"], "photo_upload")
     # Validate extension
     ext = (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "").lower()
     if ext not in ALLOWED_PHOTO_EXTENSIONS:
@@ -4532,12 +4547,14 @@ async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
 
 @api_router.post("/ai/chat")
 async def ai_chat(body: AIChatBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await usage_limits.check_user_limit(user["_id"], "ai_chat")
     return await run_ai_chat(db, user, body)
 
 
 @api_router.post("/ai/chat/stream")
 async def ai_chat_stream(body: AIChatBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Server-sent events: the reply arrives as it is written, followed by a final `done` event."""
+    await usage_limits.check_user_limit(user["_id"], "ai_chat")  # before the stream opens: an ordinary 429 response
     unavailable = chat_unavailable()
     if unavailable:
         raise HTTPException(503, unavailable)
@@ -4568,6 +4585,7 @@ async def ai_history(session_id: str, user: dict = Depends(get_current_user), db
 
 @api_router.post("/ai/transcribe")
 async def transcribe(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    await usage_limits.check_user_limit(user["_id"], "ai_transcribe")
     if not GEMINI_API_KEY:
         raise HTTPException(503, "AI is not configured. Set GEMINI_API_KEY to enable transcription.")
     data = await file.read()
@@ -4605,6 +4623,7 @@ async def transcribe(file: UploadFile = File(...), user: dict = Depends(get_curr
 
 @api_router.post("/ai/receipt")
 async def parse_receipt(body: AIChatBody, user: dict = Depends(get_current_user)):
+    await usage_limits.check_user_limit(user["_id"], "ai_receipt")
     if not GEMINI_API_KEY:
         raise HTTPException(503, "AI is not configured. Set GEMINI_API_KEY to enable receipt scanning.")
     if not body.image_base64:
@@ -5153,16 +5172,7 @@ async def seed():
             sync_existing_owner(existing, admin_email)
 
         if (await db.execute(select(func.count(Category.id)))).scalar() == 0:
-            cats = [
-                ("Groceries", "shopping-cart", "#10B981"), ("Eating Out", "utensils", "#F59E0B"),
-                ("Transport", "bus", "#6366F1"), ("Shopping", "shopping-bag", "#EC4899"),
-                ("Entertainment", "clapperboard", "#8B5CF6"), ("Work", "briefcase", "#0EA5E9"),
-                ("Fitness", "dumbbell", "#059669"), ("Health", "heart-pulse", "#EF4444"),
-                ("Travel", "plane", "#14B8A6"), ("Subscriptions", "repeat", "#F97316"),
-                ("Bills", "receipt", "#64748B"), ("Other", "circle", "#94A3B8"),
-            ]
-            for n, i, c in cats:
-                db.add(Category(id=new_id(), user_id=admin_id, name=n, icon=i, color=c, created_at=now_iso()))
+            await starter_data.ensure_starter_categories(db, admin_id)
 
         # Demo transactions are only for a brand-new install. Without this guard, deleting all your
         # transactions made the next restart refill the app with demo data.
@@ -5361,6 +5371,7 @@ nutrition_plan = nutrition_plan_api.register(api_router, sys.modules[__name__], 
 nutrition_suggest = nutrition_suggest_api.register(api_router, sys.modules[__name__], nutrition)
 nutrition_plan_gen = nutrition_plan_gen_api.register(api_router, sys.modules[__name__], nutrition, nutrition_plan, nutrition_suggest)
 nutrition_insights_ns = nutrition_insights_api.register(api_router, sys.modules[__name__], nutrition)
+account_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------
@@ -5370,6 +5381,22 @@ app.include_router(api_router)
 _cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',') if o.strip()]
 if not _cors_origins:
     _cors_origins = ["http://localhost:3000"]
+
+@app.middleware("http")
+async def contain_unexpected_errors(request: Request, call_next):
+    """Anything a route did not handle becomes a short JSON sentence, never a stack trace or a database message.
+
+    Added BEFORE the CORS middleware on purpose: that makes it the innermost layer, so the error response still gets its CORS
+    headers. Without them the browser hides the body from the page, which then reports the whole backend as offline."""
+    try:
+        return await call_next(request)
+    except (OperationalError, InterfaceError) as exc:  # the database is unreachable or refused the login
+        logger.error("database unavailable on %s %s: %s", request.method, request.url.path, type(exc).__name__, exc_info=True)
+        return JSONResponse({"detail": "The database is not reachable right now. Please try again in a moment."}, status_code=503)
+    except Exception:
+        logger.exception("unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse({"detail": "Something went wrong on our side. Please try again in a moment."}, status_code=500)
+
 
 app.add_middleware(
     CORSMiddleware,

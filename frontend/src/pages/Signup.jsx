@@ -105,24 +105,24 @@ export default function Signup() {
           {!registeredEmail ? (
             <form onSubmit={submit} className="mt-8 space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</label>
+                <label htmlFor="signup-name" className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input value={name} onChange={(e) => setName(e.target.value)} type="text" className="mt-1.5 h-11 pl-10" required />
+                  <Input id="signup-name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} type="text" className="mt-1.5 h-11 pl-10" required />
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
+                <label htmlFor="signup-email" className="text-sm font-medium text-slate-700 dark:text-slate-300">Email</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="mt-1.5 h-11 pl-10" required />
+                  <Input id="signup-email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="mt-1.5 h-11 pl-10" required />
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+                <label htmlFor="signup-password" className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
+                  <Input id="signup-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="mt-1.5 h-11 pl-10" required />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">At least 8 characters with a letter and a number.</p>
               </div>
@@ -152,6 +152,7 @@ export default function Signup() {
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     placeholder="000000"
+                    aria-label="6-digit verification code"
                     maxLength={6}
                     inputMode="numeric"
                     className="h-12 text-center text-2xl tracking-[0.5em] font-semibold"

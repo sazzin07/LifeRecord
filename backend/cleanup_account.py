@@ -12,7 +12,6 @@ Safety:
 - take a backup first (mysqldump of the liferecord database).
 """
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -23,23 +22,23 @@ import local_secrets  # noqa: E402
 
 local_secrets.load_into_environ()
 
-# Children before parents. (table, column that identifies the owner, or a sub-select for tables without one)
-ORDER = [
-    "splits", "settlements", "transactions", "ai_messages", "ai_actions", "ai_pending_confirmations",
-    "ai_conversations", "scheduled_task_runs", "scheduled_tasks", "report_recipients", "shopping_items",
-    "shopping_lists", "recurring_lists", "price_records", "groceries", "products", "storage_locations",
-    "appliances", "recipes", "meals", "workouts", "weight_entries", "photos", "tasks", "people", "categories", "accounts",
-]
+# Children before parents, derived from the models: every table with a user_id (plus splits, owned through its
+# transaction). It used to be a hand-kept list that had fallen behind: it missed the five nutrition tables.
+import account_data  # noqa: E402
+
+ORDER = account_data.user_tables()
 
 
 def connect():
     return pymysql.connect(host="127.0.0.1", port=3306, user=os.environ.get("ADMIN_DATABASE_USER", "root"),
-                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""), database="liferecord", autocommit=False)
+                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""),
+                           database=os.environ.get("DATABASE_NAME", "liferecord"), autocommit=False)
 
 
 def owned_where(table: str) -> str:
-    if table == "splits":
-        return "transaction_id IN (SELECT id FROM transactions WHERE user_id = %s)"
+    if table in account_data.OWNED_THROUGH_PARENT:
+        column, parent = account_data.OWNED_THROUGH_PARENT[table]
+        return f"{column} IN (SELECT id FROM {parent} WHERE user_id = %s)"
     return "user_id = %s"
 
 
@@ -116,18 +115,8 @@ def main(argv) -> int:
         conn.close()
 
     # Files: only after the database commit, only inside this user's own folders.
-    storage = Path(os.environ.get("STORAGE_DIR", str(Path(__file__).resolve().parent / "storage"))).resolve()
-    removed = 0
-    for rel in (f"chat_images/{uid}",):
-        folder = (storage / rel).resolve()
-        if folder.is_dir() and storage in folder.parents and folder.name == uid:
-            removed += sum(1 for p in folder.rglob("*") if p.is_file())
-            shutil.rmtree(folder)
-    for rel in photo_paths:
-        f = (storage / rel).resolve()
-        if f.is_file() and storage in f.parents:
-            f.unlink()
-            removed += 1
+    storage = Path(os.environ.get("STORAGE_DIR", str(Path(__file__).resolve().parent / "storage")))
+    removed = account_data.remove_files(storage, uid, photo_paths)
     print(f"Files removed from storage: {removed}")
     return 0
 

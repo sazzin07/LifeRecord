@@ -314,6 +314,8 @@ class Meal(Base):
     entry_source = Column(String(16), nullable=True)  # food | recipe | manual | quick | ai
     updated_at = Column(String(32), nullable=True)
     client_ref = Column(String(64), nullable=True)  # idempotency key from the client
+    # Created by migration a4c6e8f0b2d3; declared here so databases built by create_all get it too (test_schema_drift).
+    __table_args__ = (Index("ix_meals_client_ref", "user_id", "client_ref"),)
 
 
 class Recipe(Base):

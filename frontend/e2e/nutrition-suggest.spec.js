@@ -26,9 +26,21 @@ async function cleanup(api, { food, recipe }) {
 async function dinner(page) {   // the card starts on the meal that fits the time of day; a one-serving recipe of 400 kcal only fits a main meal
   await page.getByTestId("suggestions").getByRole("button", { name: "Dinner", exact: true }).click();
 }
-async function reveal(page) {   // the ideas are the top three; open the rest if needed
+/** Choose "Aim: Protein" and wait until the ideas for that aim have arrived (not just until the network is quiet). */
+async function aimAtProtein(page) {
+  const arrived = page.waitForResponse((r) => r.url().includes("/nutrition/suggestions") && r.url().includes("focus=protein_g"));
+  await page.getByTestId("suggestions-aim").click();
+  await page.getByRole("option", { name: "Aim: Protein" }).click();
+  await arrived;
+}
+/** The ideas are the top three. If the one under test sits behind "show more", open it; waits for whichever appears first,
+ *  so a long list is never judged by the short one it replaces (which only worked while the recipe happened to rank top three). */
+async function showIdea(page, id) {
+  const idea = page.getByTestId(`idea-recipe-${id}`);
   const more = page.getByTestId("suggestions-more");
-  if (await more.count() && (await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  await expect(idea.or(more)).toBeVisible({ timeout: 10000 });
+  if (!(await idea.isVisible()) && (await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  return idea;
 }
 
 test.describe("Nutrition suggestions", () => {
@@ -42,10 +54,8 @@ test.describe("Nutrition suggestions", () => {
       await expect(page.getByTestId("suggestions-context")).toContainText("kcal fits this meal");
       await expect(page.getByTestId("suggestions-focus")).toContainText("Still needed");
       await dinner(page);
-      await page.getByTestId("suggestions-aim").click();
-      await page.getByRole("option", { name: "Aim: Protein" }).click();
-      await reveal(page);
-      const idea = page.getByTestId(`idea-recipe-${made.recipe.id}`);
+      await aimAtProtein(page);
+      const idea = await showIdea(page, made.recipe.id);
       await expect(idea).toBeVisible({ timeout: 10000 });
       await expect(idea).toContainText("% of what is left");   // it states how much of which nutrient it covers
       await expect(idea).toContainText("Protein");
@@ -80,10 +90,8 @@ test.describe("Nutrition suggestions", () => {
     try {
       await page.goto("/nutrition");
       await dinner(page);
-      await page.getByTestId("suggestions-aim").click();
-      await page.getByRole("option", { name: "Aim: Protein" }).click();
-      await reveal(page);
-      await expect(page.getByTestId(`idea-recipe-${made.recipe.id}`)).toBeVisible({ timeout: 10000 });
+      await aimAtProtein(page);
+      await expect(await showIdea(page, made.recipe.id)).toBeVisible({ timeout: 10000 });
       expect((await apiContext.put("/api/nutrition/profile", { data: { ...before, allergies: [word] } })).ok()).toBe(true);
       await page.reload();
       await dinner(page);
@@ -112,9 +120,8 @@ test.describe("Nutrition suggestions", () => {
     try {
       await page.goto("/nutrition");
       await dinner(page);
-      await page.getByTestId("suggestions-aim").click();
-      await page.getByRole("option", { name: "Aim: Protein" }).click();
-      await reveal(page);
+      await aimAtProtein(page);
+      await showIdea(page, made.recipe.id);
       const why = page.getByTestId(`idea-why-${made.recipe.id}`);
       await why.focus();
       await expect(why).toHaveAttribute("aria-expanded", "false");

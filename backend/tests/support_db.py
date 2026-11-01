@@ -17,7 +17,8 @@ local_secrets.load_into_environ()
 
 def connect(**kwargs):
     return pymysql.connect(host="127.0.0.1", port=3306, user=os.environ.get("ADMIN_DATABASE_USER", "root"),
-                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""), database="liferecord", **kwargs)
+                           password=os.environ.get("ADMIN_DATABASE_PASSWORD", ""),
+                           database=os.environ.get("DATABASE_NAME", "liferecord"), **kwargs)
 
 
 def issue_reset_token(email: str) -> str:

@@ -259,6 +259,8 @@ def _extras(a):
         (str(uuid.uuid4()), a["id"], name, name, TODAY, now))
     _db("INSERT INTO ai_pending_confirmations (user_id,session_id,tool,target_id,expires_at,created_at) VALUES (%s,'populate','delete_task','x',%s,%s)",
         (a["id"], (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=5)).isoformat(), now))
+    # Written straight to the table, so the sessions the test already holds keep working; it only stops NEW sign-ins.
+    _db("INSERT INTO account_deactivations (user_id,deactivated_ms,deactivated_by) VALUES (%s,%s,'self')", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
 
 
 def populate(a):

@@ -61,6 +61,7 @@ for (const theme of THEMES) {
         await open("/money", [tap(quickAdd), tap("qa-expense")], byId("expense-dialog"), "add expense");
         await open("/settings", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
         await open("/settings", [tap("your-data-delete-open")], byId("delete-account-dialog"), "delete account");
+        await open("/settings", [tap("your-data-deactivate-open")], byId("deactivate-account-dialog"), "deactivate account");
         await open("/", [tap("command-bar-trigger")], (p) => p.getByRole("dialog"), "search and commands");
         await open("/", [tap("ai-fab")], byId("ai-panel"), "assistant");
       });

@@ -469,6 +469,18 @@ class AuthSession(Base):
     expires_ms = Column(BigInteger, nullable=False, index=True)
 
 
+class AccountDeactivation(Base):
+    """A row here means the account is switched off: nobody can start a session for it, its data stays exactly as it is, and
+    deleting the row switches it back on. Its own table rather than a column on `users`, so the live database needs no
+    ALTER (the server creates missing tables at startup)."""
+    __tablename__ = "account_deactivations"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    deactivated_ms = Column(BigInteger, nullable=False)
+    # "self": the person did it, and the emailed reset link switches it back on.
+    # "owner": the server's owner did it (owner_admin.py); only the owner can undo it.
+    deactivated_by = Column(String(16), nullable=False)
+
+
 class RateLimitEvent(Base):
     """One row per rate-limited attempt. `bucket` is a SHA-256 of client + identifier (no emails stored)."""
     __tablename__ = "rate_limit_events"

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { api, refreshSession, setAccessToken } from "@/lib/api";
 import { clearCaches } from "@/lib/swrCache";
 import { setCacheUser } from "@/lib/query";
+import { announceSignedOut, onSignedOutElsewhere } from "@/lib/authChannel";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -24,6 +25,18 @@ export function AuthProvider({ children }) {
       .finally(() => { if (!cancelled) setReady(true); });
     return () => { cancelled = true; };
   }, []);
+
+  // Another tab of this browser signed out (or signed out everywhere, or deactivated the account): the server has ended the
+  // session, so this tab is over too. Without this it would only notice at its next request.
+  useEffect(() => {
+    if (!user) return undefined;
+    return onSignedOutElsewhere(() => {
+      setAccessToken(null);
+      clearCaches();
+      setUser(false);
+      window.location.href = "/login";
+    });
+  }, [user]);
 
   const setTokenAndUser = (data) => {
     if (data.token) setAccessToken(data.token);
@@ -90,6 +103,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     const finish = () => {
+      announceSignedOut();
       clearTokens();
       clearCaches(); // cached page data belongs to the signed-in user only
       setUser(false);

@@ -120,6 +120,9 @@ CASES: Dict[str, Case] = {
 
 # User tables without a REST case of their own, and why that is safe. Each reason names the test that proves it.
 TABLE_EXEMPT = {
+    "account_deactivations": "internal: no route lists or takes its key; it is written only by the signed-in user's own POST /account/deactivate "
+                             "(their own id from the token) and by the owner's command-line tool, and test_account_deactivation.py proves "
+                             "deactivating one account leaves every other untouched",
     "auth_sessions": "internal: no route lists or takes a session id; a session is only ever reached through the token that names it, "
                      "and test_session_lifecycle.py proves one user's token can neither read nor end another user's session",
     "ai_pending_confirmations": "internal: written and consumed by the assistant, no route takes its id; "

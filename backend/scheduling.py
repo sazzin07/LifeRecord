@@ -30,6 +30,7 @@ from markdown_it import MarkdownIt
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 
+import account_status
 import ai_tools_nutrition
 import email_service
 from models import ReportRecipient, ScheduledTask, ScheduledTaskRun, User
@@ -523,6 +524,10 @@ async def _process_run(srv, session_factory, run_id: str) -> None:
         owner = (await db.execute(select(User).where(User.id == run.user_id))).scalar_one_or_none()
         if not task or not owner or task.user_id != owner.id or run.user_id != task.user_id:  # a run only ever acts as its task's own owner
             run.status, run.error, run.finished_at = "failed", "The task or its owner no longer exists.", iso(datetime.now(UTC))
+            await db.commit()
+            return
+        if await account_status.deactivation_for(db, owner.id) is not None:  # nothing runs for an account that is switched off
+            run.status, run.error, run.finished_at = "failed", "This account is deactivated, so its scheduled reports are paused.", iso(datetime.now(UTC))
             await db.commit()
             return
         user = {"_id": owner.id, "email": owner.email, "name": owner.name, "role": owner.role}

@@ -7,6 +7,7 @@ a session row (`sid`), and the server honours the token only while that row exis
 - "sign out everywhere", a password change and a password reset delete every row of the user;
 - every row is deleted when the server starts and when it stops, so a restart, a crash or a redeploy signs everyone out;
 - one user holds at most SESSION_MAX_PER_USER sessions (default 20): past that the oldest make room for the newest;
+- a deactivated account cannot start a session at all (account_status.py);
 - a session lasts SESSION_IDLE_DAYS (default: the refresh-token lifetime) after its last refresh, and never longer than
   SESSION_MAX_DAYS (default 30) after sign-in; either way the user has to sign in again.
 
@@ -21,6 +22,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import account_status
 from models import AuthSession
 from security_utils import REFRESH_TOKEN_EXPIRE_DAYS
 
@@ -51,7 +53,10 @@ def _expiry(created_ms: int, now: int) -> int:
 
 async def start(db: AsyncSession, user_id: str) -> AuthSession:
     """A new session for a user who has just proved who they are (sign-in, verification, password reset). Expired rows are
-    removed on the way: they are refused anyway, but nothing else deletes them until the server restarts."""
+    removed on the way: they are refused anyway, but nothing else deletes them until the server restarts.
+
+    The single place a session can begin, so it is also where a deactivated account is turned away (account_status.py)."""
+    await account_status.refuse_if_deactivated(db, user_id)
     now = now_ms()
     await db.execute(delete(AuthSession).where(AuthSession.expires_ms <= now))
     row = AuthSession(id=str(uuid.uuid4()), user_id=user_id, created_ms=now, expires_ms=_expiry(now, now))

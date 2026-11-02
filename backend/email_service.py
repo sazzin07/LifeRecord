@@ -347,10 +347,15 @@ _NOTICES = {
     "password_reset": ("Your Life Record password was reset", "The password for your Life Record account was just reset with an emailed link, and every device was signed out."),
     "signed_out_everywhere": ("You were signed out of Life Record everywhere", "Every device signed in to your Life Record account was just signed out."),
     "account_deleted": ("Your Life Record account was deleted", "Your Life Record account and everything in it (records, photos and saved chats) was just deleted at your request."),
+    "account_deactivated": ("Your Life Record account was deactivated", "Your Life Record account was just deactivated at your request and every device was signed out. Nothing was deleted."),
 }
 
 # Notices where "reset your password" would be wrong advice get their own closing lines: (html, plain text).
 _NOTICE_ADVICE = {
+    "account_deactivated": ("<p>To switch it back on, use “Forgot password” on the sign-in page; the link we email you reactivates the account. "
+                            "If this was not you, someone knew your password: reactivate the account yourself and change it straight away.</p>",
+                            "To switch it back on, use “Forgot password” on the sign-in page; the link we email you reactivates the account. "
+                            "If this was not you, someone knew your password: reactivate the account yourself and change it straight away."),
     "account_deleted": ("<p>If this was not you, someone knew your password. The account no longer exists, so there is nothing left to protect here; "
                         "if you use that password anywhere else, change it there.</p>",
                         "If this was not you, someone knew your password. The account no longer exists; if you use that password anywhere else, change it there."),

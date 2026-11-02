@@ -93,6 +93,7 @@
  "GET /api/workouts",
  "GET /api/workouts/prs",
  "PATCH /api/ai/conversations/{conv_id}",
+ "POST /api/account/deactivate",
  "POST /api/accounts",
  "POST /api/accounts/transfer",
  "POST /api/ai/actions/{aid}/undo",

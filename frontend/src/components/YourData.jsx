@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, Loader2, Trash2 } from "lucide-react";
+import { Download, Loader2, PauseCircle, Trash2 } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Card, Label } from "@/components/common";
@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 const PHRASE = "DELETE MY ACCOUNT"; // the server checks the same words, exactly
 
-/** Take your data with you, or remove the account. Both are explained before they happen. */
+/** Take your data with you, switch the account off, or remove it. Each is explained before it happens. */
 export function YourData() {
   const { logout } = useAuth();
   const [exporting, setExporting] = useState(false);
@@ -19,6 +19,10 @@ export function YourData() {
   const [phrase, setPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  const [offOpen, setOffOpen] = useState(false);
+  const [offPassword, setOffPassword] = useState("");
+  const [offBusy, setOffBusy] = useState(false);
+  const [offProblem, setOffProblem] = useState("");
 
   const exportData = async () => {
     setExporting(true);
@@ -57,24 +61,72 @@ export function YourData() {
     }
   };
 
+  const closeOff = (o) => { setOffOpen(o); if (!o) { setOffPassword(""); setOffProblem(""); } };
+
+  const deactivateAccount = async (e) => {
+    e.preventDefault();
+    setOffBusy(true);
+    setOffProblem("");
+    try {
+      await api.post("/account/deactivate", { password: offPassword });
+      toast.success("Your account was deactivated");
+      logout(); // the server already ended every session; this clears this browser and returns to the sign-in page
+    } catch (err) {
+      setOffProblem(errorMessage(err, "Could not deactivate the account. Nothing was changed."));
+      setOffBusy(false);
+    }
+  };
+
   const ready = password.length > 0 && phrase === PHRASE && !busy;
 
   return (
     <Card className="p-5" data-testid="your-data">
       <Label>Your data</Label>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-        Download everything in your account (records, photos and saved chats) as one file, or delete the account and all of it.
+        Download everything in your account (records, photos and saved chats) as one file, switch the account off for a while
+        (nothing is deleted), or delete the account and all of it.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="outline" onClick={exportData} disabled={exporting} data-testid="your-data-export">
           {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4 mr-1" aria-hidden="true" />}
           Download my data
         </Button>
+        <Button variant="outline" onClick={() => setOffOpen(true)} data-testid="your-data-deactivate-open">
+          <PauseCircle className="h-4 w-4 mr-1" aria-hidden="true" />Deactivate my account
+        </Button>
         <Button variant="outline" onClick={() => setOpen(true)} data-testid="your-data-delete-open"
           className="text-red-700 border-red-300 hover:bg-red-50 dark:text-red-300 dark:border-red-500/40 dark:hover:bg-red-500/10">
           <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />Delete my account
         </Button>
       </div>
+
+      <Dialog open={offOpen} onOpenChange={closeOff}>
+        <DialogContent className="max-w-md" data-testid="deactivate-account-dialog">
+          <DialogHeader>
+            <DialogTitle>Deactivate your account?</DialogTitle>
+            <DialogDescription>
+              You will be signed out on every device, and nobody, including you, can sign in until the account is switched back on.
+              Nothing is deleted. To switch it back on, choose “Forgot password” on the sign-in page: the link we email you
+              reactivates the account.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={deactivateAccount} className="space-y-3">
+            <div>
+              <label htmlFor="deactivate-account-password" className="text-sm font-medium">Your password</label>
+              <Input id="deactivate-account-password" type="password" autoComplete="current-password" value={offPassword}
+                onChange={(e) => setOffPassword(e.target.value)} className="mt-1" data-testid="deactivate-account-password" />
+            </div>
+            <p role="alert" aria-live="polite" className="min-h-[1.25rem] text-sm text-red-700 dark:text-red-400" data-testid="deactivate-account-error">{offProblem}</p>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => closeOff(false)}>Keep it active</Button>
+              <Button type="submit" disabled={offPassword.length === 0 || offBusy} data-testid="deactivate-account-submit"
+                className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white">
+                {offBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : "Deactivate"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={close}>
         <DialogContent className="max-w-md" data-testid="delete-account-dialog">

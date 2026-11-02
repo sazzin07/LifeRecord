@@ -44,6 +44,7 @@ import kitchen_logic
 import starter_data
 import usage_limits
 import auth_sessions
+import account_status
 import ai_tools_extra
 import ai_tools_nutrition
 import ai_opencode
@@ -1648,6 +1649,9 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     if problem:  # the link is not used up by a refused password
         raise HTTPException(status_code=400, detail=problem)
 
+    off = await account_status.deactivation_for(db, user.id)
+    if off is not None and off.deactivated_by == account_status.SELF:
+        await db.delete(off)  # the person switched it off themselves; the emailed link is how they switch it back on
     user.password_hash = hash_password(body.password)
     user.password_reset_token = None
     user.password_reset_expires_at = None

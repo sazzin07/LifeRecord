@@ -29,7 +29,7 @@ async function login() {
   return { token: body.token, refresh_token: body.refresh_token };
 }
 
-// One sign-in per worker is reused (UI logins are rate limited to 10/minute). Signing out now really ends the session on
+// One sign-in per worker is reused (UI logins are rate limited to 10/minute); its refresh token moves on with every refresh. Signing out now really ends the session on
 // the server, so a test that signs out leaves the shared session dead: the next test notices and signs in again.
 let sessionPromise = null;
 async function getSession() {
@@ -54,6 +54,11 @@ export const test = base.extend({
     await page.goto("/");
     await page.waitForURL("/", { timeout: 15000 });
     await use(page);
+    // Every refresh replaces the refresh token (each is used once), so the browser now holds a newer one than the one it started
+    // with. A real browser keeps its cookie up to date by itself; hand the newest back to the shared session, or the next test
+    // would start from a token that has already been replaced, which the server rightly takes for a stolen copy.
+    const current = (await context.cookies()).find((c) => c.name === "lr_refresh");
+    if (current) session.refresh_token = current.value;
   },
 
   // API client for setup and cleanup. It reuses the worker's session so tests do not spend the login rate limit.

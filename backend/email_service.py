@@ -347,11 +347,14 @@ _NOTICES = {
     "password_reset": ("Your Life Record password was reset", "The password for your Life Record account was just reset with an emailed link, and every device was signed out."),
     "signed_out_everywhere": ("You were signed out of Life Record everywhere", "Every device signed in to your Life Record account was just signed out."),
     "account_deleted": ("Your Life Record account was deleted", "Your Life Record account and everything in it (records, photos and saved chats) was just deleted at your request."),
+    "new_sign_in": ("New sign-in to your Life Record account", "A browser your Life Record account has not been used from before just signed in."),
     "account_deactivated": ("Your Life Record account was deactivated", "Your Life Record account was just deactivated at your request and every device was signed out. Nothing was deleted."),
 }
 
 # Notices where "reset your password" would be wrong advice get their own closing lines: (html, plain text).
 _NOTICE_ADVICE = {
+    "new_sign_in": ("<p>If it was not you, change your password now and use “Sign out on all devices” in Settings.</p>",
+                    "If it was not you, change your password now and use “Sign out on all devices” in Settings."),
     "account_deactivated": ("<p>To switch it back on, use “Forgot password” on the sign-in page; the link we email you reactivates the account. "
                             "If this was not you, someone knew your password: reactivate the account yourself and change it straight away.</p>",
                             "To switch it back on, use “Forgot password” on the sign-in page; the link we email you reactivates the account. "
@@ -362,9 +365,11 @@ _NOTICE_ADVICE = {
 }
 
 
-async def send_security_notice(to_email: str, name: Optional[str], event: str) -> bool:
+async def send_security_notice(to_email: str, name: Optional[str], event: str, detail: Optional[str] = None) -> bool:
     """Tell the account owner about a sensitive change, so a takeover does not go unnoticed."""
     subject, what = _NOTICES[event]
+    if detail:  # always one of device_labels' fixed names, never text from the request
+        what = f"{what} Device: {detail}."
     display_name = html.escape(name or to_email)
     reset_url = f"{FRONTEND_URL}/forgot-password"
     advice_html, advice_text = _NOTICE_ADVICE.get(event, (

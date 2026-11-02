@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { YourData } from "@/components/YourData";
+import { Sessions } from "@/components/Sessions";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -211,6 +212,8 @@ export default function Settings() {
         <Sparkles className="h-5 w-5 text-emerald-600" />
         <div><p className="font-medium text-sm">AI assistant</p><p className="text-xs text-slate-500">Chat, voice and receipt photos. API keys are kept on the server and never sent to your browser.</p></div>
       </Card>
+
+      <Sessions />
 
       <YourData />
 

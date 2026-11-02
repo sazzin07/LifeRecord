@@ -120,6 +120,9 @@ CASES: Dict[str, Case] = {
 
 # User tables without a REST case of their own, and why that is safe. Each reason names the test that proves it.
 TABLE_EXEMPT = {
+    "auth_session_info": "internal: one row per session, reached only through the session id a token names (auth_sessions.get_live looks it up "
+                         "by id AND user); the only route that takes a session id, DELETE /auth/sessions/{sid}, is proved in "
+                         "test_session_list.py::test_nobody_can_list_or_end_another_persons_sessions",
     "account_deactivations": "internal: no route lists or takes its key; it is written only by the signed-in user's own POST /account/deactivate "
                              "(their own id from the token) and by the owner's command-line tool, and test_account_deactivation.py proves "
                              "deactivating one account leaves every other untouched",
@@ -133,6 +136,7 @@ TABLE_EXEMPT = {
 
 # Routes that take a path parameter which is not the id of a user-owned object.
 ROUTE_EXEMPT = {
+    ("DELETE", "/auth/sessions/{}"): "a session id; covered by test_session_list.py::test_nobody_can_list_or_end_another_persons_sessions",
     ("GET", "/nutrition/foods/barcode/{}"): "a barcode, not an id; looks up shared reference data and the caller's own foods",
     ("PUT", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",
     ("DELETE", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",

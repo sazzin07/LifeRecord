@@ -2,6 +2,7 @@
 
     python e2e_user_tool.py code        e2e_<hex>@example.com   # plants and prints a known verification code
     python e2e_user_tool.py reset-token e2e_<hex>@example.com   # prints what the emailed reset link would carry
+    python e2e_user_tool.py age-rotation e2e_<hex>@example.com  # makes the last refresh six hours old (nobody waits that long)
     python e2e_user_tool.py delete      e2e_<hex>@example.com
 
 Works on whatever DATABASE_NAME is in the environment (the real stack or a scratch schema). Only throw-away
@@ -16,8 +17,8 @@ SAFE = re.compile(r"^e2e_[0-9a-f]{6,}@example[.]com$")
 
 
 def main(argv):
-    if len(argv) != 2 or argv[0] not in ("code", "reset-token", "delete") or not SAFE.fullmatch(argv[1]):
-        print("usage: e2e_user_tool.py code|reset-token|delete e2e_<hex>@example.com", file=sys.stderr)
+    if len(argv) != 2 or argv[0] not in ("code", "reset-token", "age-rotation", "delete") or not SAFE.fullmatch(argv[1]):
+        print("usage: e2e_user_tool.py code|reset-token|age-rotation|delete e2e_<hex>@example.com", file=sys.stderr)
         return 2
     action, email = argv
     conn = support_db.connect()
@@ -30,6 +31,9 @@ def main(argv):
                 print(code)
             elif action == "reset-token":
                 print(support_db.issue_reset_token(email))
+            elif action == "age-rotation":
+                cur.execute("UPDATE auth_session_info SET rotated_ms = rotated_ms - %s WHERE user_id = (SELECT id FROM users WHERE email=%s)", (6 * 3_600_000, email))
+                print(cur.rowcount)
             else:
                 cur.execute("DELETE FROM users WHERE email=%s AND role='user'", (email,))
                 print(cur.rowcount)

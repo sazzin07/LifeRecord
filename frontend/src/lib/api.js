@@ -22,23 +22,52 @@ api.interceptors.request.use((config) => {
 });
 
 let isRefreshing = false;
-let refreshSubscribers = [];
+let refreshWaiters = [];  // requests that found their token expired while a refresh was already running
 
-function onRefreshed(token) {
-  refreshSubscribers.forEach((cb) => cb(token));
-  refreshSubscribers = [];
-}
+/** True only when the SERVER answered that the session is over (signed out, expired, ended, restarted). A network that dropped,
+ *  a timeout or a server error says nothing about the session, and must never sign anyone out. */
+export const sessionRefused = (err) => [401, 403].includes(err?.response?.status);
 
-function subscribeTokenRefresh(cb) {
-  refreshSubscribers.push(cb);
-}
+// A refresh whose answer never arrives has still used up the refresh token on the server. So each refresh carries a random key
+// (X-Refresh-Key) and a repeat of the same request carries the SAME key: the server recognises it, and hands back the same new
+// token instead of taking the old one for a stolen copy. The key is kept in this tab's sessionStorage until the server has
+// answered, so a repeat after a reload carries it too. It is not a credential: it does nothing without the HttpOnly cookie.
+const PENDING_KEY = "lm_rk";
+const randomKey = () => {
+  const bytes = new Uint8Array(16);
+  const c = typeof window !== "undefined" ? window.crypto : null;
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else bytes.forEach((_, i) => { bytes[i] = Math.floor(Math.random() * 256); });
+  return Array.from(bytes, (x) => x.toString(16).padStart(2, "0")).join("");
+};
+const pendingKey = {
+  read: () => { try { return sessionStorage.getItem(PENDING_KEY); } catch { return null; } },
+  write: (k) => { try { sessionStorage.setItem(PENDING_KEY, k); } catch { /* storage unavailable: a repeat in memory still works */ } },
+  clear: () => { try { sessionStorage.removeItem(PENDING_KEY); } catch { /* nothing to clear */ } },
+};
 
-/** Exchange the refresh cookie for a new access token, held in memory. Fails (401) when the session has ended on the server:
- *  signed out, expired, or the server restarted. */
+/** How often, and after how long, a refresh that got no answer is repeated before giving up for now. */
+export const refreshPolicy = { retries: 2, delays: [800, 2500] };
+
+/** Exchange the refresh cookie for a new access token, held in memory. Fails with a 401/403 when the session has ended on the
+ *  server: signed out, expired, or the server restarted. Any other failure (no answer, a server error) is repeated with the
+ *  same key and, if it still fails, thrown without meaning the session is over: see `sessionRefused`. */
 export async function refreshSession() {
-  const { data } = await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, headers: AUTH_MODE });
-  setAccessToken(data.token);
-  return data.token;
+  const key = pendingKey.read() || randomKey();
+  pendingKey.write(key);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const { data } = await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, headers: { ...AUTH_MODE, "X-Refresh-Key": key } });
+      pendingKey.clear();
+      setAccessToken(data.token);
+      return data.token;
+    } catch (err) {
+      if (sessionRefused(err)) { pendingKey.clear(); throw err; }  // the server heard us and said no: nothing to repeat
+      if (!err.response) window.dispatchEvent(new CustomEvent("lm:offline"));
+      if (attempt >= refreshPolicy.retries) throw err;             // keep the key: the next try repeats this request
+      await new Promise((resolve) => setTimeout(resolve, refreshPolicy.delays[attempt] ?? 2500));
+    }
+  }
 }
 
 api.interceptors.response.use(
@@ -62,10 +91,10 @@ api.interceptors.response.use(
 
     originalRequest._retry = true;
     if (isRefreshing) {
-      return new Promise((resolve) => {
-        subscribeTokenRefresh((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          resolve(api(originalRequest));
+      return new Promise((resolve, reject) => {
+        refreshWaiters.push({
+          resolve: (token) => { originalRequest.headers.Authorization = `Bearer ${token}`; resolve(api(originalRequest)); },
+          reject,
         });
       });
     }
@@ -74,14 +103,21 @@ api.interceptors.response.use(
     try {
       const newToken = await refreshSession();
       isRefreshing = false;
-      onRefreshed(newToken);
+      refreshWaiters.splice(0).forEach((w) => w.resolve(newToken));
       originalRequest.headers.Authorization = `Bearer ${newToken}`;
       return api(originalRequest);
-    } catch {
+    } catch (refreshErr) {
       isRefreshing = false;
-      setAccessToken(null);
-      if (!window.location.pathname.includes("/login")) window.location.href = "/login";
-      return Promise.reject(err);
+      if (sessionRefused(refreshErr)) {
+        refreshWaiters.splice(0).forEach((w) => w.reject(err));
+        setAccessToken(null);
+        if (!window.location.pathname.includes("/login")) window.location.href = "/login";
+        return Promise.reject(err);
+      }
+      // The refresh did not get an answer (or the server failed). The session may be perfectly good, so nobody is signed out:
+      // the request fails like any request made while offline, and the next one tries again.
+      refreshWaiters.splice(0).forEach((w) => w.reject(refreshErr));
+      return Promise.reject(refreshErr);
     }
   }
 );

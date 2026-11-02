@@ -27,16 +27,30 @@ const Tasks = lazy(pageLoaders["/tasks"]);
 const CalendarPage = lazy(pageLoaders["/calendar"]);
 const Settings = lazy(pageLoaders["/settings"]);
 
+/** Shown while the first sign-in check is under way. If the server cannot be reached it says so, and keeps trying. */
+function Waiting() {
+  const { unreachable } = useAuth();
+  return (
+    <div className="min-h-screen bg-background grid place-items-center p-6 text-center">
+      {unreachable && (
+        <p role="status" data-testid="server-unreachable" className="text-sm text-slate-700 dark:text-slate-300">
+          Can't reach the server right now. Trying again…
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Protected() {
   const { user, ready } = useAuth();
-  if (!ready) return <div className="min-h-screen bg-background" />;
+  if (!ready) return <Waiting />;
   if (!user) return <Navigate to="/login" replace />;
   return <AppShell><Suspense fallback={<PageSkeleton />}><Outlet /></Suspense></AppShell>;
 }
 
 function PublicOnly() {
   const { user, ready } = useAuth();
-  if (!ready) return <div className="min-h-screen bg-background" />;
+  if (!ready) return <Waiting />;
   if (user?.email_verified) return <Navigate to="/" replace />;
   return <Outlet />;
 }

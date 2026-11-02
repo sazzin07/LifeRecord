@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { newEmail, verificationCode, resetToken, deleteUser } from "./support-new-user";
+import { newEmail, verificationCode, resetToken, ageRotation, deleteUser } from "./support-new-user";
 
 // The account lifecycle as a person sees it, on brand-new throw-away accounts (reserved example.com address, never mailed,
 // removed afterwards): signing out in one tab, switching the account off and back on, and not being locked out of your own
@@ -71,6 +71,100 @@ test.describe("account lifecycle", () => {
     await page.waitForURL("/");
     await page.goto("/settings");
     await expect(page.getByTestId("your-data")).toBeVisible();
+  });
+
+  test("the refresh cookie changes at every refresh and normal use does not notice: reloads and tabs opened together stay signed in", async ({ page, context }) => {
+    await signUp(page, email);
+    const cookie = async () => (await context.cookies()).find((c) => c.name === "lr_refresh")?.value;
+    const first = await cookie();
+    for (let n = 0; n < 4; n++) {
+      await page.reload();
+      await expect(page.getByTestId("your-data").or(page.getByRole("heading", { name: "Home" }).first()).or(page.locator("main")).first()).toBeVisible();
+      expect(page.url()).not.toMatch(/\/login/);
+    }
+    expect(await cookie(), "every refresh hands out a new refresh token").not.toBe(first);
+
+    // three tabs opened in the same instant all refresh with the same cookie: none of them may be signed out
+    const tabs = await Promise.all([context.newPage(), context.newPage(), context.newPage()]);
+    await Promise.all(tabs.map((tab) => tab.goto("/money")));
+    for (const tab of tabs) {
+      await expect(tab.getByRole("heading", { name: "Money", exact: true })).toBeVisible();
+      expect(tab.url()).not.toMatch(/\/login/);
+    }
+  });
+
+  test("the list of sessions shows another browser and signing it out there signs it out", async ({ page, browser }) => {
+    await signUp(page, email);
+    const other = await browser.newContext();
+    await other.addInitScript(() => sessionStorage.setItem("lm_intro", "1"));
+    const otherPage = await other.newPage();
+    await otherPage.goto("/login");
+    await otherPage.getByTestId("login-email").fill(email);
+    await otherPage.getByTestId("login-password").fill(PASSWORD);
+    await otherPage.getByTestId("login-submit").click();
+    await otherPage.waitForURL("/");
+
+    await page.goto("/settings");
+    const rows = page.getByTestId("sessions-list").locator("li");
+    await expect(rows).toHaveCount(2);
+    await expect(page.getByTestId("session-current")).toHaveCount(1);
+    await rows.filter({ hasNot: page.getByTestId("session-current") }).getByRole("button", { name: /^Sign out/ }).click();
+    await expect(rows).toHaveCount(1);
+
+    await otherPage.goto("/tasks");
+    await expect(otherPage).toHaveURL(/\/login$/);
+    await other.close();
+  });
+
+  test("an answer to a refresh that never arrives is repeated and does not look like a stolen copy, however late the repeat is", async ({ page, context, playwright }) => {
+    await signUp(page, email);
+    const server = await playwright.request.newContext();
+    let attempts = 0;
+    let rotatedOnTheServer = false;
+    let expireOnce = true;
+    // The access token "expires": the next call to /tasks is refused, which makes the page refresh its session, once, by itself.
+    await context.route("**/api/tasks**", (route) => {
+      if (route.request().method() === "GET" && expireOnce) {
+        expireOnce = false;
+        return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "Token expired" }) });
+      }
+      return route.continue();
+    });
+    await context.route("**/api/auth/refresh", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();  // the browser's CORS preflight is not the refresh
+      attempts += 1;
+      if (attempts === 1) {
+        // the server hears this one and replaces the token; the answer is lost on the way back
+        const sent = route.request().headers();
+        const cookie = (await context.cookies()).find((c) => c.name === "lr_refresh").value;
+        const heard = await server.post(route.request().url(), { data: {}, headers: { "x-auth-mode": "cookie", "x-refresh-key": sent["x-refresh-key"] || "", cookie: `lr_refresh=${cookie}` } });
+        rotatedOnTheServer = heard.ok();
+        return route.abort("connectionreset");
+      }
+      ageRotation(email);  // by the time the page asks again, hours have passed
+      return route.continue();
+    });
+    // What matters is the outcome: the refused request is repeated with the new token and succeeds (the heading alone appears at
+    // once, long before the second refresh is answered).
+    const repeated = page.waitForResponse((r) => r.url().includes("/api/tasks") && r.request().method() === "GET" && r.status() === 200, { timeout: 20000 });
+    await page.getByRole("link", { name: "Tasks" }).first().click();
+    await repeated;
+    expect(attempts, "the page asked again after the answer was lost").toBeGreaterThanOrEqual(2);
+    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    expect(page.url(), "a lost answer must not sign the person out").not.toMatch(/\/login/);
+    expect(rotatedOnTheServer, "the server really did replace the token before the answer was lost").toBe(true);
+    await server.dispose();
+  });
+
+  test("a page that starts while the server cannot be reached waits and carries on; it does not sign you out", async ({ page, context }) => {
+    await signUp(page, email);
+    let reachable = false;
+    await context.route("**/api/auth/refresh", (route) => (reachable ? route.continue() : route.abort("connectionrefused")));
+    await page.goto("/money");
+    await expect(page.getByTestId("server-unreachable")).toBeVisible({ timeout: 20000 });
+    expect(page.url()).not.toMatch(/\/login/);
+    reachable = true;
+    await expect(page.getByRole("heading", { name: "Money", exact: true })).toBeVisible({ timeout: 20000 });
   });
 
   test("somebody guessing at your address cannot keep you out of a browser you already use", async ({ page, request }) => {

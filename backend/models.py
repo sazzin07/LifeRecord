@@ -469,6 +469,21 @@ class AuthSession(Base):
     expires_ms = Column(BigInteger, nullable=False, index=True)
 
 
+class AuthSessionInfo(Base):
+    """What goes with a session besides how long it lives: which refresh token is the current one, so that a refresh token is
+    used once and a copy of an old one is noticed (see auth_sessions.rotate), and what the person sees in the list of where they
+    are signed in. One row per session, deleted with it. Its own table, so the live database needs no ALTER."""
+    __tablename__ = "auth_session_info"
+    session_id = Column(String(36), ForeignKey("auth_sessions.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_jti = Column(String(36), nullable=False)    # the refresh token that is current
+    previous_jti = Column(String(36), nullable=True)    # the one before it, still accepted for a short grace period
+    rotated_ms = Column(BigInteger, nullable=False)
+    rotation_key = Column(String(64), nullable=True)     # SHA-256 of the retry key that produced the current token (auth_sessions.rotate)
+    device = Column(String(80), nullable=False, default="")  # "Chrome on Windows"; the raw User-Agent is never stored
+    last_seen_ms = Column(BigInteger, nullable=False)
+
+
 class AccountDeactivation(Base):
     """A row here means the account is switched off: nobody can start a session for it, its data stays exactly as it is, and
     deleting the row switches it back on. Its own table rather than a column on `users`, so the live database needs no

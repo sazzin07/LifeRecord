@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import account_data
 import account_status
+import auth_sessions
 import email_service
-from models import Photo, User
+from models import AuthSession, Photo, User
 
 
 class DeleteAccountBody(BaseModel):
@@ -25,7 +26,29 @@ class DeactivateAccountBody(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+def _iso(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat()
+
+
 def register(api_router, srv):
+    @api_router.get("/auth/sessions")
+    async def list_sessions(user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        """Where this account is signed in: a browser-and-system name for each session, when it began and was last used, and
+        which one is asking. Nothing that could identify a place or a person: no address, no raw user agent."""
+        rows = await auth_sessions.sessions_of(db, user["_id"])
+        return [{"id": s.id, "device": (info.device if info is not None and info.device else "Unknown device"),
+                 "created_at": _iso(s.created_ms), "last_seen_at": _iso(info.last_seen_ms if info is not None else s.created_ms),
+                 "current": s.id == user.get("_sid")} for s, info in rows]
+
+    @api_router.delete("/auth/sessions/{sid}")
+    async def end_session(sid: str, user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        """End one of the user's own sessions (a lost phone, a shared computer). Ending the one in use signs this browser out."""
+        owned = (await db.execute(select(AuthSession.id).where(AuthSession.id == sid, AuthSession.user_id == user["_id"]))).first()
+        if owned is None:  # someone else's session answers exactly like one that does not exist
+            raise HTTPException(404, "Session not found")
+        await auth_sessions.end(db, sid, user["_id"])
+        return {"ok": True}
+
     @api_router.get("/account/export")
     async def export_account(user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
         """Everything in the account as a .zip: data.json plus the original pictures. Never contains a secret."""

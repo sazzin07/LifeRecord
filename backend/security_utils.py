@@ -8,6 +8,7 @@ from typing import Optional
 import jwt
 import bcrypt
 
+import common_passwords
 import verification_codes
 
 # ---------------------------------------------------------------------------
@@ -69,7 +70,9 @@ def create_access_token(user_id: str, email: str, token_version: int = 0, sessio
 
 
 def create_refresh_token(user_id: str, token_version: int = 0, session_id: Optional[str] = None,
-                         expires_at: Optional[datetime] = None) -> str:
+                         expires_at: Optional[datetime] = None, generation: Optional[str] = None) -> str:
+    """`generation` (claim `jti`) names which refresh token of the session this is: a refresh token is used once, and the
+    server remembers the current one (auth_sessions.rotate)."""
     payload = {
         "sub": user_id,
         "tv": token_version,
@@ -79,6 +82,8 @@ def create_refresh_token(user_id: str, token_version: int = 0, session_id: Optio
     }
     if session_id:
         payload["sid"] = session_id
+    if generation:
+        payload["jti"] = generation
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
@@ -141,13 +146,22 @@ TOO_LONG_PASSWORD_MESSAGE = (f"Password must be at most {BCRYPT_MAX_BYTES} bytes
                              "accented letters and emoji take more than one byte each)")
 
 
-def password_problem(password: str) -> Optional[str]:
+TOO_EASY_PASSWORD_MESSAGE = "That password is too easy to guess (a common word, or part of your email address). Choose another."
+
+
+def password_problem(password: str, email: Optional[str] = None) -> Optional[str]:
     """Why a new password is refused, in words for the person, or None when it is fine: at least 8 characters with a letter
-    and a digit, and no longer than bcrypt can use (a longer one would be cut short without telling anyone)."""
+    and a digit, no longer than bcrypt can use (a longer one would be cut short without telling anyone), and not one of the
+    words every guessing attack starts with, nor the person's own address (common_passwords.py)."""
     if len(password) < 8 or not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
         return WEAK_PASSWORD_MESSAGE
     if len(password.encode()) > BCRYPT_MAX_BYTES:
         return TOO_LONG_PASSWORD_MESSAGE
+    if common_passwords.is_common(password):
+        return TOO_EASY_PASSWORD_MESSAGE
+    local = (email or "").split("@")[0].lower()
+    if len(local) >= 4 and local in password.lower():
+        return TOO_EASY_PASSWORD_MESSAGE
     return None
 
 

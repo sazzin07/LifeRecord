@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, refreshSession, setAccessToken } from "@/lib/api";
+import { api, refreshSession, sessionRefused, setAccessToken } from "@/lib/api";
 import { clearCaches } from "@/lib/swrCache";
 import { setCacheUser } from "@/lib/query";
 import { announceSignedOut, onSignedOutElsewhere } from "@/lib/authChannel";
@@ -10,6 +10,7 @@ export const useAuth = () => useContext(AuthCtx);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null); // null = checking
   const [ready, setReady] = useState(false);
+  const [unreachable, setUnreachable] = useState(false); // the server did not answer: not the same as signed out
   // Cached query data is keyed by user. Set during render so children never read another account's cache.
   setCacheUser(user ? user.id : null);
 
@@ -18,12 +19,31 @@ export function AuthProvider({ children }) {
     // names a live session. No cookie, or a session that ended (signed out, expired, server restarted): signed out, and no
     // cached account data either, even if a background refresh wrote some during sign-out.
     let cancelled = false;
-    refreshSession()
-      .then(() => api.get("/auth/me"))
-      .then((r) => { if (!cancelled) setUser(r.data); })
-      .catch(() => { setAccessToken(null); clearCaches(); if (!cancelled) setUser(false); })
-      .finally(() => { if (!cancelled) setReady(true); });
-    return () => { cancelled = true; };
+    let timer = null;
+    const boot = async () => {
+      try {
+        await refreshSession();
+        const r = await api.get("/auth/me");
+        if (cancelled) return;
+        setUser(r.data);
+      } catch (err) {
+        if (cancelled) return;
+        if (!sessionRefused(err)) {
+          // No answer (the network dropped, the server is restarting) or a server error. That says nothing about the session, so
+          // nobody is signed out: wait, and ask again. The refresh repeats itself with the same key, so asking again is safe.
+          setUnreachable(true);
+          timer = setTimeout(boot, 4000);
+          return;
+        }
+        setAccessToken(null);
+        clearCaches();
+        setUser(false);
+      }
+      setUnreachable(false);
+      setReady(true);
+    };
+    boot();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
   // Another tab of this browser signed out (or signed out everywhere, or deactivated the account): the server has ended the
@@ -119,6 +139,7 @@ export function AuthProvider({ children }) {
       value={{
         user,
         ready,
+        unreachable,
         login,
         signup,
         verifyCode,

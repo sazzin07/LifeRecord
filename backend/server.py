@@ -46,6 +46,7 @@ import usage_limits
 import auth_sessions
 import account_status
 import ai_tools_extra
+from device_labels import device_label
 import ai_tools_nutrition
 import ai_opencode
 import conversations_api
@@ -329,15 +330,17 @@ def _wants_cookie(request: Request) -> bool:
 
 
 async def _issue_session(request: Request, response: Response, db: AsyncSession, user: User, extra: dict = None,
-                         session=None) -> dict:
+                         session=None, generation: Optional[str] = None) -> dict:
     """Tokens for a response. Every sign-in starts a server-side session (auth_sessions) that both tokens name; a refresh
-    passes the session it extends instead. With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and
+    passes the session it extends instead, with the generation of refresh token it has just been given (auth_sessions.rotate).
+    With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and
     is left out of the JSON, so page scripts (and anything injected into the page) cannot read it."""
-    session = session or await auth_sessions.start(db, user.id)
+    if session is None:
+        session, generation = await auth_sessions.start(db, user.id, device_label(request.headers.get("User-Agent", "")))
     version = int(user.token_version or 0)
     expires = datetime.fromtimestamp(session.expires_ms / 1000, timezone.utc)
     tokens = {"token": create_access_token(user.id, user.email, version, session.id),
-              "refresh_token": create_refresh_token(user.id, version, session.id, expires)}
+              "refresh_token": create_refresh_token(user.id, version, session.id, expires, generation)}
     if _wants_cookie(request):
         response.set_cookie(
             REFRESH_COOKIE, tokens.pop("refresh_token"), max_age=max(1, (session.expires_ms - auth_sessions.now_ms()) // 1000),
@@ -1486,7 +1489,7 @@ def _issue_code(user: User) -> str:
 
 
 @api_router.post("/auth/register")
-async def register(body: SignupBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def register(body: SignupBody, request: Request, response: Response, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     name = body.name.strip()
 
@@ -1494,7 +1497,7 @@ async def register(body: SignupBody, request: Request, background: BackgroundTas
     await check_rate_limit(request, email)
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address")
-    problem = password_problem(body.password)
+    problem = password_problem(body.password, email)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
     if not name:
@@ -1505,6 +1508,11 @@ async def register(body: SignupBody, request: Request, background: BackgroundTas
         # Never disclose whether an email is registered: same message, and the same amount of work as a new signup.
         password_hash = hash_password(body.password)
         if existing.email_verified:
+            # The browser signing up gets a cookie that makes it "familiar" to the address it is confirming (see verify_code). An
+            # address that is already confirmed must be answered the same way, or the cookie's presence would reveal it; the
+            # cookie it gets names an id nobody has, so it vouches for nothing.
+            if _wants_cookie(request):
+                _remember_device(response, new_id())
             return REGISTER_ANSWER
         # An address still waiting for its first code belongs to whoever can read that mailbox, not to whoever typed it
         # first: the latest sign-up replaces the password and name (the code only works together with the password, see
@@ -1515,6 +1523,8 @@ async def register(body: SignupBody, request: Request, background: BackgroundTas
         await db.commit()
         if code:
             background.add_task(send_verification_code, email, code, name)
+        if _wants_cookie(request):
+            _remember_device(response, existing.id)
         return REGISTER_ANSWER
 
     user = User(id=new_id(), email=email, password_hash=hash_password(body.password), name=name, role="user",
@@ -1526,6 +1536,8 @@ async def register(body: SignupBody, request: Request, background: BackgroundTas
     # Sent after the response (with retries; the outcome is recorded in email_events), so a slow mail server never
     # slows signup and response time does not depend on whether the address was already registered.
     background.add_task(send_verification_code, email, code, name)
+    if _wants_cookie(request):
+        _remember_device(response, user.id)
     return REGISTER_ANSWER
 
 
@@ -1550,9 +1562,12 @@ async def verify_code(body: VerifyCodeBody, request: Request, response: Response
     email = body.email.strip().lower()
     code = body.code.strip()
     await check_rate_limit(request, f"{email}:verify")
-    # Across every code sent to the address: sending a new code gives fresh tries, but not an unlimited supply of them.
-    await throttle_account("verify", email, VERIFY_LOCK_MAX, VERIFY_LOCK_WINDOW, "verification attempts")
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    # The browser that signed up (or signed in to an unconfirmed account) holds a cookie for it, and is counted apart from
+    # strangers: otherwise anyone who knows the address could use up the tries of a code that is waiting for its owner.
+    familiar = user is not None and _known_device_user(request) == user.id
+    # Across every code sent to the address: sending a new code gives fresh tries, but not an unlimited supply of them.
+    await throttle_account("verify-familiar" if familiar else "verify", email, VERIFY_LOCK_MAX, VERIFY_LOCK_WINDOW, "verification attempts")
 
     # One password check whatever the address is, so every outcome takes the same time.
     password_ok = verify_password(body.password, user.password_hash if user else _DUMMY_HASH)
@@ -1560,10 +1575,14 @@ async def verify_code(body: VerifyCodeBody, request: Request, response: Response
     if user and not user.email_verified and user.verification_code and not _code_expired(user.verification_code_expires_at):
         # The try is taken by the database in one step (not read, added to and written back by us), so ten simultaneous
         # guesses use up ten of the five tries instead of all seeing the same count. Taken before the code is looked at.
-        taken = (await db.execute(
-            update(User).where(User.id == user.id, User.verification_attempts < MAX_CODE_ATTEMPTS)
-            .values(verification_attempts=User.verification_attempts + 1)
-        )).rowcount == 1
+        if familiar:  # its own five tries per code, kept in the same table as the other limits
+            per_code = _account_bucket("verify-code", f"{user.id}:{user.verification_code_expires_at}")  # one count per issued code
+            taken = await _claim_slot(per_code, CODE_LIFETIME_MINUTES * 60, MAX_CODE_ATTEMPTS) is None
+        else:
+            taken = (await db.execute(
+                update(User).where(User.id == user.id, User.verification_attempts < MAX_CODE_ATTEMPTS)
+                .values(verification_attempts=User.verification_attempts + 1)
+            )).rowcount == 1
         await db.commit()
         confirmed = taken and password_ok and code_matches(user.verification_code, user.id, code)
     if not confirmed:
@@ -1583,7 +1602,7 @@ async def verify_code(body: VerifyCodeBody, request: Request, response: Response
 
 
 @api_router.post("/auth/login")
-async def login(body: LoginBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginBody, request: Request, response: Response, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
@@ -1597,6 +1616,8 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
     await forgive_logins(email)  # a correct password: the run of failed attempts is over
 
     if not user.email_verified:
+        if _wants_cookie(request):
+            _remember_device(response, user.id)  # the person has proved the password: this browser may confirm the address
         # Return a special token that only works for verification/resend endpoints
         token = create_access_token(user.id, user.email, int(user.token_version or 0))
         return {
@@ -1605,6 +1626,10 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
             "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": False},
         }
 
+    if _wants_cookie(request) and _known_device_user(request) != user.id:
+        # A browser this account has not been used from before: say so by email, so a stolen password does not go unnoticed.
+        # (Scripts and apps that keep no cookies would be "new" every time, so only browsers are announced.)
+        background.add_task(send_security_notice, user.email, user.name, "new_sign_in", device_label(request.headers.get("User-Agent", "")))
     return await _issue_session(request, response, db, user,
                                 {"user": {"id": user.id, "email": email, "name": user.name, "email_verified": True}})
 
@@ -1645,7 +1670,7 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
-    problem = password_problem(body.password)
+    problem = password_problem(body.password, user.email)
     if problem:  # the link is not used up by a refused password
         raise HTTPException(status_code=400, detail=problem)
 
@@ -1696,8 +1721,11 @@ async def refresh_token(body: RefreshBody, request: Request, response: Response,
         raise HTTPException(status_code=403, detail="Email not verified")
     # The refresh token is only as good as the session it names: signed out, restarted or expired means signing in again.
     session = await auth_sessions.get_live(db, payload.get("sid"), user.id)
+    # This token is now used up, and a copy of it is noticed. A repeat of a request whose answer never arrived is recognised
+    # by the key the browser sent with it (X-Refresh-Key) and is not mistaken for a copy.
+    generation = await auth_sessions.rotate(db, session, payload.get("jti"), request.headers.get("X-Refresh-Key"))
     await auth_sessions.extend(db, session)
-    return await _issue_session(request, response, db, user, session=session)
+    return await _issue_session(request, response, db, user, session=session, generation=generation)
 
 
 def _forget_refresh_cookie(response: Response) -> None:
@@ -1730,7 +1758,7 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     # 400, not 401: the session is valid, and a 401 makes the app sign the user out over a typo.
     if not db_user or not verify_password(body.current_password, db_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    problem = password_problem(body.new_password)
+    problem = password_problem(body.new_password, db_user.email)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
     if body.new_password == body.current_password:
@@ -5794,6 +5822,15 @@ _cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', 'http://local
 if not _cors_origins:
     _cors_origins = ["http://localhost:3000"]
 
+LOCK_CONFLICT_CODES = (1213, 1205)  # MySQL: deadlock found, lock wait timeout exceeded
+
+
+def _mysql_error_code(exc: Exception) -> Optional[int]:
+    """The MySQL error number inside a driver error (aiomysql puts it first in the error's arguments), or None."""
+    args = getattr(getattr(exc, "orig", None), "args", ())
+    return args[0] if args and isinstance(args[0], int) else None
+
+
 @app.middleware("http")
 async def contain_unexpected_errors(request: Request, call_next):
     """Anything a route did not handle becomes a short JSON sentence, never a stack trace or a database message.
@@ -5803,7 +5840,12 @@ async def contain_unexpected_errors(request: Request, call_next):
     try:
         return await call_next(request)
     except (OperationalError, InterfaceError) as exc:  # the database is unreachable or refused the login
-        logger.error("database unavailable on %s %s: %s", request.method, request.url.path, type(exc).__name__, exc_info=True)
+        code = _mysql_error_code(exc)
+        if code in LOCK_CONFLICT_CODES:
+            # Not an outage: the database rolled one of two requests back and asks for it to be repeated.
+            logger.warning("lock conflict (MySQL %s) on %s %s", code, request.method, request.url.path, exc_info=True)
+            return JSONResponse({"detail": "The server was busy with another request. Please try again."}, status_code=503)
+        logger.error("database unavailable on %s %s (MySQL %s): %s", request.method, request.url.path, code, type(exc).__name__, exc_info=True)
         return JSONResponse({"detail": "The database is not reachable right now. Please try again in a moment."}, status_code=503)
     except Exception:
         logger.exception("unhandled error on %s %s", request.method, request.url.path)
@@ -5815,7 +5857,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_origins=_cors_origins,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode", "X-Refresh-Key"],
     max_age=600,
 )
 

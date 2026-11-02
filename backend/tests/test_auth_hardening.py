@@ -383,3 +383,75 @@ def test_many_people_signing_in_and_out_at_the_same_moment_never_meet_a_server_e
     with futures.ThreadPoolExecutor(12) as pool:
         codes = [c for batch in pool.map(work, range(12)) for c in batch]
     assert max(codes) < 500, sorted(set(codes))
+
+
+# -- the browser that is signing up has its own tries ---------------------------------------------------------------------
+
+def _sign_up_in_a_browser():
+    """Register the way the app does (cookie mode) and keep the cookies: this is the person at the verification screen."""
+    browser = requests.Session()
+    email = _fresh_email()
+    r = browser.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": PASSWORD, "name": "Browser Person"},
+                     headers={"X-Auth-Mode": "cookie", "X-Forwarded-For": "192.0.2.77"}, timeout=60)
+    assert r.status_code == 200, r.text
+    return browser, email
+
+
+def _verify_from(browser, email, code, ip):
+    return browser.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PASSWORD},
+                        headers={"X-Auth-Mode": "cookie", "X-Forwarded-For": ip}, timeout=60)
+
+
+def test_a_stranger_cannot_use_up_the_tries_of_the_browser_that_is_signing_up():
+    browser, email = _sign_up_in_a_browser()
+    code = support_db.verification_code_for(email)
+    wrong = "000000" if code != "000000" else "000001"
+    stranger = [_post("/auth/verify", {"email": email, "code": wrong, "password": PASSWORD}, ip=f"198.51.100.{n}").status_code for n in range(1, 8)]
+    assert stranger == [400] * 7, stranger
+    assert _post("/auth/verify", {"email": email, "code": code, "password": PASSWORD}, ip="198.51.100.99").status_code == 400, \
+        "the stranger's own tries are used up"
+    done = _verify_from(browser, email, code, "192.0.2.78")
+    assert done.status_code == 200, f"the person at the screen was locked out by a stranger: {done.text}"
+
+
+def test_the_browser_that_signed_up_has_a_limit_of_its_own():
+    browser, email = _sign_up_in_a_browser()
+    code = support_db.verification_code_for(email)
+    wrong = "000000" if code != "000000" else "000001"
+    assert [_verify_from(browser, email, wrong, f"192.0.2.{n}").status_code for n in range(100, 105)] == [400] * 5
+    assert _verify_from(browser, email, code, "192.0.2.110").status_code == 400, "five tries per code, even with the cookie"
+    _sql("UPDATE users SET last_verification_sent_at='2000-01-01T00:00:00+00:00' WHERE email=%s", (email,))
+    assert _post("/auth/resend-verification", {"email": email}).status_code == 200  # a new code: new tries
+    assert _verify_from(browser, email, support_db.verification_code_for(email), "192.0.2.111").status_code == 200
+
+
+def test_the_cookie_belongs_to_one_address_and_gives_no_tries_on_another():
+    browser, mine = _sign_up_in_a_browser()
+    other = signup("authtest")
+    wrong = "000000" if support_db.verification_code_for(other["email"]) != "000000" else "000001"
+    for n in range(1, 8):  # strangers use up the other address's tries
+        _post("/auth/verify", {"email": other["email"], "code": wrong, "password": PASSWORD}, ip=f"198.51.100.{n}")
+    r = _verify_from(browser, other["email"], support_db.verification_code_for(other["email"]), "192.0.2.120")
+    assert r.status_code == 400, "a cookie for one address must not unlock another's tries"
+    assert _verify_from(browser, mine, support_db.verification_code_for(mine), "192.0.2.121").status_code == 200
+
+
+def test_registering_does_not_tell_a_stranger_which_addresses_are_already_confirmed():
+    """The browser is given its cookie for an address still waiting for a code; an address that is already confirmed must get a
+    cookie of the same kind, or the presence of the cookie would answer the question the neutral message hides."""
+    confirmed = create_verified_user("authtest")
+    waiting = _fresh_email()
+    headers = {"X-Auth-Mode": "cookie"}
+    a = requests.post(f"{BASE_URL}/api/auth/register", json={"email": confirmed["email"], "password": "Another-9x", "name": "x"}, headers=headers, timeout=60)
+    b = requests.post(f"{BASE_URL}/api/auth/register", json={"email": waiting, "password": "Another-9x", "name": "x"}, headers=headers, timeout=60)
+    cookies = lambda r: sorted(c.split("=")[0] for c in r.raw.headers.getlist("Set-Cookie"))  # noqa: E731
+    assert a.status_code == b.status_code == 200 and a.json() == b.json()
+    assert cookies(a) == cookies(b) == ["lr_device"], (cookies(a), cookies(b))
+    # ...and the cookie handed out for the confirmed address does not make a stranger "familiar" with it
+    stolen = a.cookies.get("lr_device", path="/api/auth")
+    assert stolen
+    for n in range(1, 31):
+        _fail(confirmed["email"], n)
+    r = requests.post(f"{BASE_URL}/api/auth/login", json={"email": confirmed["email"], "password": PASSWORD}, cookies={"lr_device": stolen},
+                      headers={"X-Forwarded-For": "198.51.100.230"}, timeout=60)
+    assert r.status_code == 429, r.text

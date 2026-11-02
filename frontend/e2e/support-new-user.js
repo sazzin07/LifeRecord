@@ -13,4 +13,5 @@ const tool = (...args) => execFileSync(python, ["-X", "utf8", path.join(tests, "
 export const newEmail = () => `e2e_${Math.random().toString(16).slice(2, 10)}@example.com`;
 export const verificationCode = (email) => tool("code", email);
 export const resetToken = (email) => tool("reset-token", email);
+export const ageRotation = (email) => tool("age-rotation", email);
 export const deleteUser = (email) => { try { tool("delete", email); } catch { /* already gone */ } };

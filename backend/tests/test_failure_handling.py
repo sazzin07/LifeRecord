@@ -71,6 +71,21 @@ def test_a_database_that_cannot_be_reached_says_so_and_leaks_nothing(client):
     assert r.headers["access-control-allow-origin"] == ORIGIN
 
 
+@pytest.mark.parametrize("code,text", [(1213, "Deadlock found when trying to get lock; try restarting transaction"),
+                                      (1205, "Lock wait timeout exceeded; try restarting transaction")])
+def test_a_lock_conflict_is_called_what_it_is_and_the_log_names_the_mysql_error(client, caplog, code, text):
+    """A deadlock or a lock wait is the database asking for the request to be repeated, not a database that is down: say so, and keep
+    the MySQL error number in the log so the next occurrence can be explained instead of guessed at."""
+    _break(server.get_db, OperationalError("UPDATE users SET secret_column=1", {}, Exception(code, text)))
+    with caplog.at_level(logging.WARNING):
+        r = client.get("/api/auth/me", headers={"Authorization": "Bearer x", "Origin": ORIGIN})
+    assert r.status_code == 503 and r.headers["access-control-allow-origin"] == ORIGIN
+    detail = r.json()["detail"]
+    assert "busy" in detail.lower() and "try again" in detail.lower() and "not reachable" not in detail
+    assert not any(bad in r.text for bad in INTERNALS) and str(code) not in r.text
+    assert any(str(code) in rec.getMessage() for rec in caplog.records), [rec.getMessage() for rec in caplog.records]
+
+
 def test_expected_refusals_keep_their_own_messages(client):
     r = client.get("/api/auth/me", headers={"Origin": ORIGIN})  # no token at all
     assert r.status_code == 401 and r.json()["detail"] == "Not authenticated"

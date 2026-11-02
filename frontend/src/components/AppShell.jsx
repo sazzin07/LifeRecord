@@ -159,7 +159,7 @@ export function AppShell({ children }) {
       {/* Content */}
       <main className="lg:pl-60">
         {offline && (
-          <div data-testid="offline-banner" className="bg-amber-500 text-white text-sm font-medium text-center py-2 px-4">
+          <div data-testid="offline-banner" className="bg-amber-700 text-white text-sm font-medium text-center py-2 px-4">
             ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.
           </div>
         )}

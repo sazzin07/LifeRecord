@@ -59,7 +59,7 @@ def _expiry(created_ms: int, now: int) -> int:
     return min(now + IDLE_DAYS * DAY_MS, created_ms + MAX_DAYS * DAY_MS)
 
 
-async def start(db: AsyncSession, user_id: str, device: str = "") -> tuple:
+async def start(db: AsyncSession, user_id: str, device: str = "", public_key: Optional[str] = None) -> tuple:
     """A new session for a user who has just proved who they are (sign-in, verification, password reset). Expired rows are
     removed on the way: they are refused anyway, but nothing else deletes them until the server restarts.
 
@@ -71,7 +71,7 @@ async def start(db: AsyncSession, user_id: str, device: str = "") -> tuple:
     db.add(row)
     await db.flush()
     jti = str(uuid.uuid4())
-    db.add(AuthSessionInfo(session_id=row.id, user_id=user_id, refresh_jti=jti, rotated_ms=now, device=device[:80], last_seen_ms=now))
+    db.add(AuthSessionInfo(session_id=row.id, user_id=user_id, refresh_jti=jti, rotated_ms=now, device=device[:80], public_key=public_key, last_seen_ms=now))
     # A person has a handful of devices, not hundreds: past MAX_PER_USER the oldest sessions make room for the newest.
     surplus = (await db.execute(
         select(AuthSession.id).where(AuthSession.user_id == user_id, AuthSession.id != row.id)
@@ -158,6 +158,11 @@ async def rotate(db: AsyncSession, session: AuthSession, presented: Optional[str
         return new
     await end(db, session.id, session.user_id)
     raise HTTPException(status_code=401, detail=SESSION_ENDED)
+
+
+async def bound_key(db: AsyncSession, session_id: str) -> Optional[str]:
+    """The public key a session is bound to, or None for a session that is not bound."""
+    return (await db.execute(select(AuthSessionInfo.public_key).where(AuthSessionInfo.session_id == session_id))).scalar_one_or_none()
 
 
 async def sessions_of(db: AsyncSession, user_id: str) -> list:

@@ -137,8 +137,8 @@ test.describe("account lifecycle", () => {
         // the server hears this one and replaces the token; the answer is lost on the way back
         const sent = route.request().headers();
         const cookie = (await context.cookies()).find((c) => c.name === "lr_refresh").value;
-        const heard = await server.post(route.request().url(), { data: {}, headers: { "x-auth-mode": "cookie", "x-refresh-key": sent["x-refresh-key"] || "", cookie: `lr_refresh=${cookie}` } });
-        rotatedOnTheServer = heard.ok();
+        const heard = await server.post(route.request().url(), { data: {}, headers: { "x-auth-mode": "cookie", "x-refresh-key": sent["x-refresh-key"] || "", "x-session-proof": sent["x-session-proof"] || "", cookie: `lr_refresh=${cookie}` } });
+        rotatedOnTheServer = heard.ok();  // the browser's own signature goes along, exactly as in the real request
         return route.abort("connectionreset");
       }
       ageRotation(email);  // by the time the page asks again, hours have passed
@@ -165,6 +165,42 @@ test.describe("account lifecycle", () => {
     expect(page.url()).not.toMatch(/\/login/);
     reachable = true;
     await expect(page.getByRole("heading", { name: "Money", exact: true })).toBeVisible({ timeout: 20000 });
+  });
+
+  test("a copy of the refresh cookie on its own opens nothing, and trying does not sign the real browser out", async ({ page, context, playwright }) => {
+    await signUp(page, email);  // the app binds the session to a key that never leaves this browser
+    const cookie = (await context.cookies()).find((c) => c.name === "lr_refresh").value;
+    const thief = await playwright.request.newContext();
+    const copy = await thief.post(`${API}/api/auth/refresh`, { data: {}, headers: { "x-auth-mode": "cookie", cookie: `lr_refresh=${cookie}` } });
+    expect(copy.status(), "the cookie without the key must not refresh anything").toBe(401);
+    await thief.dispose();
+    await page.reload();  // the real browser, which can sign, carries on
+    await expect(page.locator("main").first()).toBeVisible({ timeout: 20000 });
+    expect(page.url()).not.toMatch(/\/login/);
+  });
+
+  test("locked out of new devices by somebody's guessing: the sign-in page says so and offers the way back in by email", async ({ page, request }) => {
+    await signUp(page, email);
+    await page.goto("/settings");
+    await page.getByTestId("settings-logout").click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.context().clearCookies();  // this browser is now a stranger to the account, like a new device
+    let locked = false;
+    for (let n = 1; n <= 30 && !locked; n++) {
+      const r = await request.post(`${API}/api/auth/login`, { data: { email, password: "Wrong-pass-1" }, headers: { "X-Forwarded-For": `198.51.100.${n}` } });
+      locked = r.status() === 429;
+    }
+    expect(locked, "guessing from many addresses should lock the account for new devices").toBe(true);
+
+    await page.reload();
+    await page.getByTestId("login-email").fill(email);
+    await page.getByTestId("login-password").fill(PASSWORD);
+    await page.getByTestId("login-submit").click();
+    await expect(page.getByTestId("login-locked")).toBeVisible();
+    const sent = page.waitForResponse((r) => r.url().includes("/api/auth/forgot-password") && r.status() === 200);
+    await page.getByTestId("login-locked-email").click();
+    await sent;
+    await expect(page.getByText(/link is on its way/i).first()).toBeVisible();
   });
 
   test("somebody guessing at your address cannot keep you out of a browser you already use", async ({ page, request }) => {

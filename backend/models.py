@@ -480,6 +480,7 @@ class AuthSessionInfo(Base):
     previous_jti = Column(String(36), nullable=True)    # the one before it, still accepted for a short grace period
     rotated_ms = Column(BigInteger, nullable=False)
     rotation_key = Column(String(64), nullable=True)     # SHA-256 of the retry key that produced the current token (auth_sessions.rotate)
+    public_key = Column(String(300), nullable=True)      # the browser's public key when the session is bound to it (session_binding.py)
     device = Column(String(80), nullable=False, default="")  # "Chrome on Windows"; the raw User-Agent is never stored
     last_seen_ms = Column(BigInteger, nullable=False)
 

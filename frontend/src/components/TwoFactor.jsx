@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { Copy, Download, Loader2, ShieldCheck } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { Card, Label } from "@/components/common";
@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+
+// Drawn in the browser from the same link, so the secret goes nowhere; loaded only when this screen is opened.
+const QrCode = lazy(() => import("qrcode.react").then((m) => ({ default: m.QRCodeSVG })));
 
 /** Two-step sign-in: a code from an authenticator app (and one-time recovery codes) on top of the password. Off until the person
  *  turns it on; nothing is switched on until a code from their app has been typed in. */
@@ -117,8 +120,14 @@ export function TwoFactor() {
 
       {stage === "scan" && setup && (
         <form onSubmit={confirm} className="mt-3 space-y-3 max-w-md">
+          <p className="text-sm">Scan this picture with your authenticator app:</p>
+          <Suspense fallback={<div className="h-44 w-44 rounded bg-slate-100 dark:bg-slate-800" aria-hidden="true" />}>
+            {/* always black on white, with a quiet margin, even in the dark theme: a scanner needs the contrast */}
+            <QrCode value={setup.uri} size={176} level="M" marginSize={2} bgColor="#FFFFFF" fgColor="#000000" role="img"
+              aria-label="QR code for your authenticator app" data-testid="two-factor-qr" className="rounded" />
+          </Suspense>
           <p className="text-sm">
-            In your authenticator app, add an account and type in this key (or open{" "}
+            Cannot scan it? In the app, add an account and type in this key (or open{" "}
             <a href={setup.uri} data-testid="two-factor-link" className="underline font-medium text-emerald-800 dark:text-emerald-300">this link</a> on the phone that has the app):
           </p>
           <p className="rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-base tracking-wider break-all select-all" data-testid="two-factor-secret">{setup.secret}</p>

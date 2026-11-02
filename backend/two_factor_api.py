@@ -201,6 +201,19 @@ def register(api_router, srv):
                                         {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True}})
 
 
+async def unreadable_secrets(db: AsyncSession) -> list:
+    """The ids of accounts whose second-step secret cannot be read with the encryption key the server has now. Empty when all is well.
+    Run at start-up: a lost or changed UPLOAD_ENCRYPTION_KEY would otherwise show up only as people who cannot sign in."""
+    bad = []
+    rows = (await db.execute(select(TotpCredential.user_id, TotpCredential.secret_enc).where(TotpCredential.confirmed_ms.is_not(None)))).all()
+    for user_id, secret_enc in rows:
+        try:
+            totp.decrypt_secret(secret_enc)
+        except totp.TotpUnavailable:
+            bad.append(user_id)
+    return bad
+
+
 async def remove_second_step(db: AsyncSession, user_id: str) -> None:
     """Turn it off for a user: the secret and every recovery code. Also used by the owner's command-line tool."""
     await _remove(db, user_id)

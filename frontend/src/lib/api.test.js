@@ -1,4 +1,5 @@
 import axios from "axios";
+import { noteServerTime, sessionKeyHeader, signProof } from "./sessionKey";
 import { getAccessToken, refreshPolicy, refreshSession, sessionRefused, setAccessToken } from "./api";
 
 // The shared axios client is not needed (and its ES-module build does not load under Jest). A stand-in records what the app
@@ -17,6 +18,9 @@ jest.mock("axios", () => {
   return { __esModule: true, default: { create: () => instance, post: (...args) => post(...args), __handlers: handlers, __post: post, __replay: replay } };
 });
 
+// The key handling has its own tests (sessionKey.test.js); here it is replaced, to see what the client does with it.
+jest.mock("./sessionKey", () => ({ sessionKeyHeader: jest.fn(), signProof: jest.fn(), noteServerTime: jest.fn() }));
+
 const mockHandlers = axios.__handlers;
 const mockPost = axios.__post;
 const mockReplay = axios.__replay;
@@ -31,6 +35,9 @@ beforeEach(() => {
   refreshPolicy.delays = [0, 0];  // no waiting in tests
   sessionStorage.clear();
   setAccessToken(null);
+  signProof.mockReset().mockResolvedValue(null);
+  sessionKeyHeader.mockReset().mockResolvedValue(null);
+  noteServerTime.mockReset();
 });
 
 describe("the access token", () => {
@@ -138,5 +145,52 @@ describe("a request that finds its access token expired", () => {
     const outcomes = await Promise.allSettled([first, second]);
     expect(outcomes.map((o) => o.status)).toEqual(["rejected", "rejected"]);
     expect(mockPost).toHaveBeenCalledTimes(1 + refreshPolicy.retries);  // one refresh with its repeats, not one per request
+  });
+});
+
+describe("binding the session to this browser's key", () => {
+  const sentHeaders = () => mockPost.mock.calls.map((call) => call[2].headers);
+
+  test("every refresh carries a freshly signed proof, a new one for each attempt", async () => {
+    signProof.mockResolvedValueOnce("proof-one.sig").mockResolvedValueOnce("proof-two.sig");
+    mockPost.mockRejectedValueOnce(network()).mockResolvedValueOnce({ data: { token: "fresh" }, headers: {} });
+    await refreshSession();
+    expect(sentHeaders().map((h) => h["X-Session-Proof"])).toEqual(["proof-one.sig", "proof-two.sig"]);
+  });
+
+  test("a browser that cannot sign sends no proof at all and the refresh goes ahead as before", async () => {
+    mockPost.mockResolvedValue({ data: { token: "fresh" }, headers: {} });
+    await refreshSession();
+    expect(sentHeaders()[0]["X-Session-Proof"]).toBeUndefined();
+  });
+
+  test("the public key is announced on the requests that begin a session, and only on those", async () => {
+    sessionKeyHeader.mockResolvedValue("the-public-key");
+    const begin = await mockHandlers.request({ url: "/auth/login", headers: {} });
+    expect(begin.headers["X-Session-Key"]).toBe("the-public-key");
+    const other = await mockHandlers.request({ url: "/tasks", headers: {} });
+    expect(other.headers["X-Session-Key"]).toBeUndefined();
+    sessionKeyHeader.mockResolvedValue(null);
+    expect((await mockHandlers.request({ url: "/auth/verify", headers: {} })).headers["X-Session-Key"]).toBeUndefined();
+  });
+
+  test("the server's own clock is learned from its answers", () => {
+    mockHandlers.ok({ headers: { date: "Mon, 02 Nov 2026 22:00:00 GMT" } });
+    expect(noteServerTime).toHaveBeenCalledWith("Mon, 02 Nov 2026 22:00:00 GMT");
+  });
+
+  test("a refusal that comes from a badly wrong clock is corrected from the server's date and tried once more, not taken for a sign-out", async () => {
+    const fiveMinutesAhead = new Date(Date.now() + 5 * 60_000).toUTCString();
+    mockPost.mockRejectedValueOnce(Object.assign(new Error("401"), { response: { status: 401, headers: { date: fiveMinutesAhead } } }))
+      .mockResolvedValueOnce({ data: { token: "fresh" }, headers: {} });
+    await expect(refreshSession()).resolves.toBe("fresh");
+    expect(noteServerTime).toHaveBeenCalledWith(fiveMinutesAhead);
+    expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
+  test("a refusal with a correct clock is final: it is a real sign-out, so nothing is repeated", async () => {
+    mockPost.mockRejectedValue(Object.assign(new Error("401"), { response: { status: 401, headers: { date: new Date().toUTCString() } } }));
+    await expect(refreshSession()).rejects.toBeTruthy();
+    expect(mockPost).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { noteServerTime, sessionKeyHeader, signProof } from "./sessionKey";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
@@ -16,8 +17,13 @@ export const setAccessToken = (token) => { accessToken = token || null; };
 // Older versions kept the tokens in localStorage; remove any left over so they cannot linger there.
 try { localStorage.removeItem("lm_token"); localStorage.removeItem("lm_refresh_token"); } catch { /* storage unavailable */ }
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+  // A request that can begin a session announces this browser's public key, so the session is bound to it (lib/sessionKey.js).
+  if (String(config.url || "").startsWith("/auth/")) {
+    const key = await sessionKeyHeader();
+    if (key) config.headers["X-Session-Key"] = key;
+  }
   return config;
 });
 
@@ -55,14 +61,31 @@ export const refreshPolicy = { retries: 2, delays: [800, 2500] };
 export async function refreshSession() {
   const key = pendingKey.read() || randomKey();
   pendingKey.write(key);
+  let clockCorrected = false;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const { data } = await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, headers: { ...AUTH_MODE, "X-Refresh-Key": key } });
+      // A session bound to this browser's key needs a fresh signature on every refresh, so one is made for every attempt.
+      const proof = await signProof();
+      const headers = { ...AUTH_MODE, "X-Refresh-Key": key, ...(proof ? { "X-Session-Proof": proof } : {}) };
+      const { data, headers: answered } = await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, headers });
       pendingKey.clear();
+      if (answered?.date) noteServerTime(answered.date);
       setAccessToken(data.token);
       return data.token;
     } catch (err) {
-      if (sessionRefused(err)) { pendingKey.clear(); throw err; }  // the server heard us and said no: nothing to repeat
+      if (sessionRefused(err)) {
+        // A computer whose clock is far off makes every proof look stale. If the server's date says so, learn the difference and
+        // try once more, instead of taking it for a sign-out.
+        const serverDate = err.response?.headers?.date;
+        if (!clockCorrected && serverDate && Math.abs(Date.parse(serverDate) - Date.now()) > 60_000) {
+          clockCorrected = true;
+          noteServerTime(serverDate);
+          attempt -= 1;
+          continue;
+        }
+        pendingKey.clear();
+        throw err;  // the server heard us and said no: nothing to repeat
+      }
       if (!err.response) window.dispatchEvent(new CustomEvent("lm:offline"));
       if (attempt >= refreshPolicy.retries) throw err;             // keep the key: the next try repeats this request
       await new Promise((resolve) => setTimeout(resolve, refreshPolicy.delays[attempt] ?? 2500));
@@ -73,6 +96,7 @@ export async function refreshSession() {
 api.interceptors.response.use(
   (r) => {
     window.dispatchEvent(new CustomEvent("lm:online"));
+    if (r?.headers?.date) noteServerTime(r.headers.date);
     return r;
   },
   async (err) => {

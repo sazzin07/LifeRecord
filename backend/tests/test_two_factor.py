@@ -293,3 +293,35 @@ def test_the_same_recovery_code_sent_at_the_same_moment_opens_only_one_session()
     with futures.ThreadPoolExecutor(6) as pool:
         answers = list(pool.map(lambda _: _finish(challenge, codes[0]).status_code, range(6)))
     assert answers.count(200) == 1, answers
+
+
+# -- the key that protects the secrets -----------------------------------------------------------------------------------------
+
+def test_a_start_up_check_names_second_step_accounts_whose_secret_can_no_longer_be_read(monkeypatch):
+    """Lose or change UPLOAD_ENCRYPTION_KEY and every second-step account silently fails to sign in. The server checks at start-up and
+    says which ones, so the cause is on the screen instead of in a puzzled person's afternoon."""
+    import asyncio
+    import time as _time
+
+    from cryptography.fernet import Fernet
+
+    import two_factor_api
+    from database import AsyncSessionLocal
+
+    user = create_verified_user("authtest")
+    key_a, key_b = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setenv("UPLOAD_ENCRYPTION_KEY", key_a)
+    secret_enc = totp.encrypt_secret(totp.new_secret())
+    _sql("DELETE FROM totp_credentials WHERE user_id=%s", (user["id"],))
+    _sql("INSERT INTO totp_credentials (user_id, secret_enc, confirmed_ms, last_step, created_ms) VALUES (%s, %s, %s, 0, %s)",
+         (user["id"], secret_enc, int(_time.time() * 1000), int(_time.time() * 1000)))
+
+    async def unreadable():
+        async with AsyncSessionLocal() as db:
+            return await two_factor_api.unreadable_secrets(db)
+
+    assert user["id"] not in asyncio.run(unreadable()), "readable with the key that wrote it"
+    monkeypatch.setenv("UPLOAD_ENCRYPTION_KEY", key_b)
+    assert user["id"] in asyncio.run(unreadable()), "a different key cannot read it"
+    monkeypatch.delenv("UPLOAD_ENCRYPTION_KEY")
+    assert user["id"] in asyncio.run(unreadable()), "no key at all cannot read it either"

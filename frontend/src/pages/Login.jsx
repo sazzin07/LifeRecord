@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export default function Login() {
-  const { login, loginWithCode, verifyCode, resendVerification } = useAuth();
+  const { login, loginWithCode, verifyCode, resendVerification, forgotPassword } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,6 +16,8 @@ export default function Login() {
   const [pendingUser, setPendingUser] = useState(null);
   const [challenge, setChallenge] = useState(null);   // set once the password is right and the account asks for a code
   const [totpCode, setTotpCode] = useState("");
+  const [locked, setLocked] = useState(false);       // too many sign-in attempts on this account: new devices are asked to wait
+  const [emailing, setEmailing] = useState(false);
   const [code, setCode] = useState("");
   const [codeLoading, setCodeLoading] = useState(false);
   const [resendDisabled, setResendDisabled] = useState(true);
@@ -50,9 +52,24 @@ export default function Login() {
         nav("/");
       }
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not sign in. Check your details.");
+      const detail = err?.response?.data?.detail;
+      setLocked(err?.response?.status === 429 && /sign-in attempts/i.test(detail || ""));
+      toast.error(detail || "Could not sign in. Check your details.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // The way back in while the account is locked for new devices: the same emailed link as "Forgot password", one click away.
+  const emailLink = async () => {
+    setEmailing(true);
+    try {
+      await forgotPassword(email.trim());
+      toast.success("If this address has an account, a link is on its way. It also lifts the wait.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not send the link. Try again in a moment.");
+    } finally {
+      setEmailing(false);
     }
   };
 
@@ -163,6 +180,16 @@ export default function Login() {
               </div>
             </div>
           </div>
+
+          {locked && (
+            <div role="alert" data-testid="login-locked" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-medium">Someone has been trying passwords on this account, so new devices are asked to wait a few minutes.</p>
+              <p className="mt-1">A browser you have signed in from before is not held up. To get in from this one right now, have a link emailed to you.</p>
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={emailLink} disabled={emailing || !email.trim()} data-testid="login-locked-email">
+                {emailing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : "Email me a link"}
+              </Button>
+            </div>
+          )}
 
           <div className="flex items-center justify-between mt-3">
             <Link to="/forgot-password" className="text-sm font-medium text-emerald-600 hover:text-emerald-700">Forgot password?</Link>

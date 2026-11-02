@@ -102,8 +102,17 @@ def _pid_alive(pid: int) -> bool:
     if pid == os.getpid():
         return True
     if os.name == "nt":
-        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
-        return str(pid) in out
+        # Asked of the system directly, not by running a program and reading its text: the answer cannot be a failure to answer.
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return kernel.GetLastError() == 5  # access denied: it exists, it is just not ours; anything else: no such process
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except OSError:
@@ -294,7 +303,14 @@ def start(*, user_email: str = "john.test@example.com", user_name: str = "John",
             if sample_data:
                 seed_sample_data(env)
     except BaseException:
+        # The log goes with the scratch server; keep what it said, or a failure that depends on the server's side stays a mystery.
+        try:
+            tail = Path(log_path).read_text(encoding="utf-8", errors="replace")[-4000:]
+        except OSError:
+            tail = ""
         env.stop()
+        if tail.strip():
+            print("--- the scratch server's log (tail) ---\n" + tail, file=sys.stderr)
         raise
     return env
 

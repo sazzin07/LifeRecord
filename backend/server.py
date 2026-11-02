@@ -45,6 +45,8 @@ import starter_data
 import usage_limits
 import auth_sessions
 import account_status
+import session_binding
+import breach_check
 import ai_tools_extra
 from device_labels import device_label
 import ai_tools_nutrition
@@ -337,7 +339,8 @@ async def _issue_session(request: Request, response: Response, db: AsyncSession,
     With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and
     is left out of the JSON, so page scripts (and anything injected into the page) cannot read it."""
     if session is None:
-        session, generation = await auth_sessions.start(db, user.id, device_label(request.headers.get("User-Agent", "")))
+        session, generation = await auth_sessions.start(db, user.id, device_label(request.headers.get("User-Agent", "")),
+                                                        session_binding.parse_public_key(request.headers.get("X-Session-Key")))
     version = int(user.token_version or 0)
     expires = datetime.fromtimestamp(session.expires_ms / 1000, timezone.utc)
     tokens = {"token": create_access_token(user.id, user.email, version, session.id),
@@ -1501,6 +1504,8 @@ async def register(body: SignupBody, request: Request, response: Response, backg
     problem = password_problem(body.password, email)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
+    if await breach_check.is_breached(body.password):
+        raise HTTPException(status_code=400, detail=breach_check.BREACHED_MESSAGE)
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
 
@@ -1678,6 +1683,8 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     problem = password_problem(body.password, user.email)
     if problem:  # the link is not used up by a refused password
         raise HTTPException(status_code=400, detail=problem)
+    if await breach_check.is_breached(body.password):
+        raise HTTPException(status_code=400, detail=breach_check.BREACHED_MESSAGE)
 
     off = await account_status.deactivation_for(db, user.id)
     if off is not None and off.deactivated_by == account_status.SELF:
@@ -1730,6 +1737,13 @@ async def refresh_token(body: RefreshBody, request: Request, response: Response,
         raise HTTPException(status_code=403, detail="Email not verified")
     # The refresh token is only as good as the session it names: signed out, restarted or expired means signing in again.
     session = await auth_sessions.get_live(db, payload.get("sid"), user.id)
+    bound = await auth_sessions.bound_key(db, session.id)
+    if bound:
+        # A session bound to its browser's key refreshes only with a fresh signature from that key. Refusing a cookie that comes
+        # without one does NOT end the session (that would let a thief sign the owner out), and happens before any token is used up.
+        jti = session_binding.verify_proof(bound, request.headers.get("X-Session-Proof"), auth_sessions.now_ms())
+        if jti is None or await _claim_slot(_account_bucket("proof", jti), 300, 1) is not None:  # a signature works once
+            raise HTTPException(status_code=401, detail=auth_sessions.SESSION_ENDED)
     # This token is now used up, and a copy of it is noticed. A repeat of a request whose answer never arrived is recognised
     # by the key the browser sent with it (X-Refresh-Key) and is not mistaken for a copy.
     generation = await auth_sessions.rotate(db, session, payload.get("jti"), request.headers.get("X-Refresh-Key"))
@@ -1770,6 +1784,8 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     problem = password_problem(body.new_password, db_user.email)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
+    if await breach_check.is_breached(body.new_password):
+        raise HTTPException(status_code=400, detail=breach_check.BREACHED_MESSAGE)
     if body.new_password == body.current_password:
         raise HTTPException(status_code=400, detail="Choose a password different from the current one")
     db_user.password_hash = hash_password(body.new_password)
@@ -5786,6 +5802,15 @@ async def lifespan(app: FastAPI):
     # Sessions do not survive a restart, a crash or a redeploy: everyone signs in again.
     logger.info("Ended %d session(s) left from before this start.", await auth_sessions.end_every_session(AsyncSessionLocal))
     await seed()
+    try:
+        async with AsyncSessionLocal() as check:
+            lost = await two_factor_api.unreadable_secrets(check)
+        if lost:
+            logger.error("%d account(s) use two-step sign-in but their secret cannot be read: UPLOAD_ENCRYPTION_KEY is missing or is not the key that "
+                         "wrote it. They cannot sign in until it is restored; the owner can switch it off for one with "
+                         "`python owner_admin.py disable-2fa EMAIL`.", len(lost))
+    except Exception:  # a check must never stop the server from starting
+        logger.exception("could not check the two-step secrets")
     await ensure_shared_catalog()
     await migrate_legacy_account_refs()
     scheduler = scheduling.Scheduler(sys.modules[__name__], AsyncSessionLocal)
@@ -5866,8 +5891,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_cors_origins,
+    expose_headers=["Date"],  # the page reads the server's clock from it, to correct a computer whose own clock is wrong
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode", "X-Refresh-Key"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode", "X-Refresh-Key", "X-Session-Key", "X-Session-Proof"],
     max_age=600,
 )
 

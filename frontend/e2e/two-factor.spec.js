@@ -46,6 +46,11 @@ async function turnOn(page) {
   const secret = (await page.getByTestId("two-factor-secret").innerText()).replace(/\s/g, "");
   expect(secret).toMatch(/^[A-Z2-7]{32}$/);
   await expect(page.getByTestId("two-factor-link")).toHaveAttribute("href", /^otpauth:\/\/totp\//);
+  // the picture to scan: drawn in the page from the same link, with a name for people who cannot see it
+  const qr = page.getByTestId("two-factor-qr");
+  await expect(qr).toBeVisible();
+  await expect(qr).toHaveAttribute("role", "img");
+  await expect(qr).toHaveAttribute("aria-label", /QR code/i);
   await audit(page, "two-step setup");
   await page.getByTestId("two-factor-code").fill(codeFor(secret));
   await page.getByTestId("two-factor-confirm").click();

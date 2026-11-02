@@ -71,3 +71,26 @@ def test_no_script_hardcodes_the_real_schema():
         if re.search(r"database\s*=\s*[\"']liferecord[\"']", text) and path.name != "provision_db.py":
             offenders.append(path.name)
     assert offenders == []
+
+
+def test_a_running_process_is_alive_a_finished_one_is_not_and_doubt_never_condemns_a_live_run():
+    """`_pid_alive` decides whether a scratch schema belongs to a run that crashed, and the schema is dropped if it does. Being wrong
+    in the 'dead' direction drops the database under a run that is still going, and its app then says the database is unreachable."""
+    import os
+    sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    quick = subprocess.Popen([sys.executable, "-c", "pass"])
+    quick.wait()
+    try:
+        assert ie._pid_alive(os.getpid()) and ie._pid_alive(sleeper.pid)
+        assert not ie._pid_alive(quick.pid)
+        assert not ie._pid_alive(2_000_000_000), "a number no process has"
+        assert all(ie._pid_alive(sleeper.pid) for _ in range(40)), "stable, not just right once"
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+
+
+def test_the_liveness_check_does_not_start_a_program_to_ask():
+    """tasklist is a subprocess whose output was read as text: if it ever failed, every run looked dead. The system call has no such mode."""
+    import inspect
+    assert "tasklist" not in inspect.getsource(ie._pid_alive) and "subprocess" not in inspect.getsource(ie._pid_alive)

@@ -38,7 +38,7 @@ Execution style (Q0): **native**, one task at a time, each verified before the n
 | T4.5 export and delete | S-11 | **Done** | Backend and the Settings "Your data" card; roadmap row S-11. |
 | T5.x CI, deployment | S-10, S-09, S-15 | **Partly done** | S-15 done (documented). S-10: workflow and local script written, not yet run on GitHub. S-09 not started (needs the owner's target). |
 | Money: main account and places | F-12 | **Done** | Added outside the original plan (2026-11-02): a main account and its places are one amount of money. Roadmap row F-12. |
-| Authentication audit and hardening | S-18 | **Done** | Added 2026-11-02 after the owner asked for a complete audit: verification codes, enumeration, pre-hijacking, brute force and its denial-of-service side effect, bcrypt limit, reset and password-change policy, session cap, secret length, deactivation, cross-tab sign-out. Evidence and the limits that remain are in the roadmap row. |
+| Authentication audit and hardening | S-18 | **Done** | Added 2026-11-02 after the owner asked for a complete audit: verification codes, enumeration, pre-hijacking, brute force and its denial-of-service side effect, bcrypt limit, reset and password-change policy, session cap, secret length, deactivation, cross-tab sign-out. Second round the same day: refresh-token rotation that survives a lost answer, no sign-out from a dropped network, a list of where the account is signed in, common-password screening, optional two-step sign-in. Evidence and the limits that remain are in the roadmap row. |
 | T6.x owner tasks | S-01, S-02, S-06, S-08, F-05..F-07, F-09..F-11, D-05, D-09 | **Blocked** | Need the owner; see roadmap rows. |
 
 ### Deviations from the plan, and findings the plan did not foresee

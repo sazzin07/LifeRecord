@@ -188,7 +188,7 @@ def test_the_pre_verification_token_only_reaches_the_verification_screens_and_di
     assert r.json()["requires_verification"] is True
     early = r.json()["token"]
     assert _me(early) == 200 and _data(early) == 403  # may ask who it is, may not touch data
-    v = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": account["email"], "code": _code_for(account["email"])}, timeout=30)
+    v = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": account["email"], "code": _code_for(account["email"]), "password": PASSWORD}, timeout=30)
     assert v.status_code == 200
     assert _me(early) == 401, "the pre-verification token must not become a full session"
     assert _data(v.json()["token"]) == 200

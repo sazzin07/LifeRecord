@@ -228,14 +228,20 @@ def _register_verified(env: IsolatedEnv, name: str) -> None:
     r = requests.post(f"{env.base_url}/api/auth/register",
                       json={"email": env.user_email, "password": env.user_password, "name": name}, timeout=30)
     assert r.status_code == 200, r.text
+    import verification_codes
+    code = "246810"
     conn = env.connect()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT verification_code FROM users WHERE email = %s", (env.user_email,))
-            code = cur.fetchone()[0]
+        with conn.cursor() as cur:  # only a fingerprint of the emailed code is stored, so plant one we know
+            cur.execute("SELECT id FROM users WHERE email = %s", (env.user_email,))
+            uid = cur.fetchone()[0]
+            cur.execute("UPDATE users SET verification_code = %s WHERE id = %s",
+                        (verification_codes.fingerprint(env.settings["JWT_SECRET"], uid, code), uid))
+        conn.commit()
     finally:
         conn.close()
-    r = requests.post(f"{env.base_url}/api/auth/verify", json={"email": env.user_email, "code": code}, timeout=30)
+    r = requests.post(f"{env.base_url}/api/auth/verify",
+                      json={"email": env.user_email, "code": code, "password": env.user_password}, timeout=30)
     assert r.status_code == 200, r.text
 
 

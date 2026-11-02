@@ -62,12 +62,10 @@ class TestAuthLifecycle:
         r = requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": name})
         assert r.status_code == 200
 
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        assert len(rows) == 1
-        code = rows[0]["verification_code"]
+        code = support_db.verification_code_for(email)
         assert code and len(code) == 6
 
-        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code})
+        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         assert r.status_code == 200
         assert "token" in r.json()
 
@@ -79,7 +77,7 @@ class TestAuthLifecycle:
         tag = uuid.uuid4().hex[:8]
         email = f"invalid_{tag}@example.com"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": "TestPass123", "name": "x"})
-        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "000000"})
+        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "000000", "password": "TestPass123"})
         assert r.status_code == 400
 
     def test_expired_verification_code(self):
@@ -88,8 +86,8 @@ class TestAuthLifecycle:
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": "TestPass123", "name": "x"})
         _db_execute("UPDATE users SET verification_code_expires_at=%s WHERE email=%s",
                     ("2020-01-01T00:00:00+00:00", email))
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         assert r.status_code == 400
         assert "expired" in r.json()["detail"].lower()
 
@@ -98,8 +96,8 @@ class TestAuthLifecycle:
         email = f"reset_{tag}@example.com"
         password = "TestPass123"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
 
         r = requests.post(f"{BASE_URL}/api/auth/forgot-password", json={"email": email})
         assert r.status_code == 200
@@ -119,8 +117,8 @@ class TestAuthLifecycle:
         tag = uuid.uuid4().hex[:8]
         email = f"reused_{tag}@example.com"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": "TestPass123", "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
 
         requests.post(f"{BASE_URL}/api/auth/forgot-password", json={"email": email})
         token = support_db.issue_reset_token(email)
@@ -145,8 +143,8 @@ class TestAuthLifecycle:
         email = f"refresh_{tag}@example.com"
         password = "TestPass123"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         assert r.status_code == 200
         assert "refresh_token" in r.json()
         refresh = r.json()["refresh_token"]
@@ -166,8 +164,8 @@ class TestMultiUserIsolation:
         email = f"isolation_{tag}@example.com"
         password = "TestPass123"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         user = _session(email, password)
 
         # User creates a person
@@ -204,8 +202,8 @@ class TestMultiUserIsolation:
         email = f"catiso_{tag}@example.com"
         password = "TestPass123"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         user = _session(email, password)
 
         r = user.post(f"{BASE_URL}/api/categories", json={"name": f"PrivateCat {tag}", "icon": "circle", "color": "#000000"})
@@ -275,8 +273,8 @@ class TestSecurityControls:
         email = f"aiiso_{tag}@example.com"
         password = "TestPass123"
         requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": password, "name": "x"})
-        rows = _db_query("SELECT verification_code FROM users WHERE email=%s", (email,))
-        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": rows[0]["verification_code"]})
+        code = support_db.verification_code_for(email)
+        requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": "TestPass123"})
         user = _session(email, password)
 
         # Seed messages directly so the test does not depend on the Gemini service.

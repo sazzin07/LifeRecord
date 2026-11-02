@@ -14,14 +14,8 @@ COOKIE = {"X-Auth-Mode": "cookie"}
 def _verified_user():
     email = f"session_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": PW, "name": "c"}).status_code == 200
-    conn = support_db.connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT verification_code FROM users WHERE email=%s", (email,))
-            code = cur.fetchone()[0]
-    finally:
-        conn.close()
-    assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code}).status_code == 200
+    code = support_db.verification_code_for(email)
+    assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PW}).status_code == 200
     return email
 
 

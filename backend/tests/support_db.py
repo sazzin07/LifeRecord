@@ -37,3 +37,23 @@ def issue_reset_token(email: str) -> str:
         return token
     finally:
         conn.close()
+
+
+def verification_code_for(email: str, code: str = "246810") -> str:
+    """The code a person would read in the emailed message. The database keeps only a fingerprint of it (the code goes to
+    the mailbox and nowhere else), so a test does what typing the emailed code amounts to: it puts a known one in. Expiry
+    and the count of tries are left exactly as they are. Returns "" for an address that is not waiting for a code."""
+    import verification_codes
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE email=%s AND verification_code IS NOT NULL", (email,))
+            row = cur.fetchone()
+            if not row:
+                return ""
+            cur.execute("UPDATE users SET verification_code=%s WHERE id=%s",
+                        (verification_codes.fingerprint(os.environ["JWT_SECRET"], row[0], code), row[0]))
+        conn.commit()
+        return code
+    finally:
+        conn.close()

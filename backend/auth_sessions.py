@@ -6,6 +6,7 @@ a session row (`sid`), and the server honours the token only while that row exis
 - signing out deletes the row, so the access token and the refresh cookie (and any copy of either) stop working at once;
 - "sign out everywhere", a password change and a password reset delete every row of the user;
 - every row is deleted when the server starts and when it stops, so a restart, a crash or a redeploy signs everyone out;
+- one user holds at most SESSION_MAX_PER_USER sessions (default 20): past that the oldest make room for the newest;
 - a session lasts SESSION_IDLE_DAYS (default: the refresh-token lifetime) after its last refresh, and never longer than
   SESSION_MAX_DAYS (default 30) after sign-in; either way the user has to sign in again.
 
@@ -37,6 +38,7 @@ def _days(name: str, default: int) -> int:
 
 IDLE_DAYS = _days("SESSION_IDLE_DAYS", REFRESH_TOKEN_EXPIRE_DAYS)
 MAX_DAYS = _days("SESSION_MAX_DAYS", 30)
+MAX_PER_USER = _days("SESSION_MAX_PER_USER", 20)  # not days: the same "positive whole number, else the default" rule
 
 
 def now_ms() -> int:
@@ -54,6 +56,14 @@ async def start(db: AsyncSession, user_id: str) -> AuthSession:
     await db.execute(delete(AuthSession).where(AuthSession.expires_ms <= now))
     row = AuthSession(id=str(uuid.uuid4()), user_id=user_id, created_ms=now, expires_ms=_expiry(now, now))
     db.add(row)
+    await db.flush()
+    # A person has a handful of devices, not hundreds: past MAX_PER_USER the oldest sessions make room for the newest.
+    surplus = (await db.execute(
+        select(AuthSession.id).where(AuthSession.user_id == user_id, AuthSession.id != row.id)
+        .order_by(AuthSession.created_ms.desc(), AuthSession.id).offset(MAX_PER_USER - 1)
+    )).scalars().all()
+    if surplus:
+        await db.execute(delete(AuthSession).where(AuthSession.id.in_(surplus)))
     await db.commit()
     return row
 

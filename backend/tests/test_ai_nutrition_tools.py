@@ -35,14 +35,15 @@ def run(coro):
 def _make_user():
     email = f"nutri_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": PW, "name": "Ai Nutri"}).status_code == 200
+    code = support_db.verification_code_for(email)
     conn = support_db.connect()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, verification_code FROM users WHERE email=%s", (email,))
-            uid, code = cur.fetchone()
+            cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+            uid = cur.fetchone()[0]
     finally:
         conn.close()
-    assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code}).status_code == 200
+    assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PW}).status_code == 200
     return {"_id": uid, "email": email, "name": "Ai Nutri", "role": "user"}
 
 

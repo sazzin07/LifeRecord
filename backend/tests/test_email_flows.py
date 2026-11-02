@@ -45,8 +45,8 @@ def _events(email, purpose, wait=8.0):
 
 
 def _verified(email):
-    code = _db_one("SELECT verification_code FROM users WHERE email=%s", (email,))[0]
-    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code})
+    code = support_db.verification_code_for(email)
+    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PW})
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -54,8 +54,11 @@ def _verified(email):
 def test_five_wrong_codes_no_longer_lock_the_account_out():
     email = _register()
     for _ in range(5):
-        assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "000000"}).status_code == 400
-    assert "Too many" in requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "000000"}).json()["detail"]
+        assert requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "000000", "password": PW}).status_code == 400
+    # out of tries: even the right code is refused now, in the same words as any other failure (they do not say why)
+    support_db.verification_code_for(email)
+    locked = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": "246810", "password": PW})
+    assert locked.status_code == 400 and "invalid or has expired" in locked.json()["detail"]
     conn = support_db.connect()
     try:
         with conn.cursor() as cur:  # step over the 90 s resend cooldown

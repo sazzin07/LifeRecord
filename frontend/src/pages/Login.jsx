@@ -56,7 +56,7 @@ export default function Login() {
     e.preventDefault();
     setCodeLoading(true);
     try {
-      await verifyCode(pendingUser.email, code.trim());
+      await verifyCode(pendingUser.email, code.trim(), password);
       toast.success("Email verified. Welcome back!");
       nav("/");
     } catch (err) {

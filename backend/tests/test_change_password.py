@@ -2,7 +2,6 @@
 by conftest.py)."""
 import uuid
 
-import pymysql
 import support_db
 import pytest
 import requests
@@ -15,14 +14,8 @@ OLD, NEW = "OldPass123", "NewPass456"
 def _verified_user():
     email = f"pwchange_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": OLD, "name": "pw"}).status_code == 200
-    conn = support_db.connect(cursorclass=pymysql.cursors.DictCursor)
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT verification_code FROM users WHERE email=%s", (email,))
-            code = cur.fetchone()["verification_code"]
-    finally:
-        conn.close()
-    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code})
+    code = support_db.verification_code_for(email)
+    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": OLD})
     assert r.status_code == 200, r.text
     return email, {"Authorization": f"Bearer {r.json()['token']}"}
 

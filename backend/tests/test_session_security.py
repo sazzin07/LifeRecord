@@ -16,16 +16,17 @@ PW = "SessionPass1"
 def _register(verified=True):
     email = f"session_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": PW, "name": "s"}).status_code == 200
+    code = support_db.verification_code_for(email)
     conn = support_db.connect()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, verification_code FROM users WHERE email=%s", (email,))
-            uid, code = cur.fetchone()
+            cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+            uid = cur.fetchone()[0]
     finally:
         conn.close()
     if not verified:
         return email, uid, None
-    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code})
+    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PW})
     assert r.status_code == 200, r.text
     return email, uid, r.json()
 

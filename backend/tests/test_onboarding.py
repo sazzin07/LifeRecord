@@ -9,7 +9,7 @@ import requests
 import starter_data
 from database import AsyncSessionLocal
 from support_auth import BASE_URL
-from support_users import api, create_verified_user, signup, verify
+from support_users import PASSWORD, api, create_verified_user, signup, verify
 
 EXPECTED = ["Groceries", "Eating Out", "Transport", "Shopping", "Entertainment", "Work",
             "Fitness", "Health", "Travel", "Subscriptions", "Bills", "Other"]
@@ -40,7 +40,7 @@ def test_verifying_a_new_account_creates_the_starter_categories():
 
 def test_a_second_verification_attempt_adds_nothing():
     user = create_verified_user("onboard")
-    again = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": user["email"], "code": "000000"}, timeout=20)
+    again = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": user["email"], "code": "000000", "password": PASSWORD}, timeout=20)
     assert again.status_code == 400
     assert len(_categories(user)) == len(EXPECTED)
 

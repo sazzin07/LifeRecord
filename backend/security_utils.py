@@ -8,10 +8,16 @@ from typing import Optional
 import jwt
 import bcrypt
 
+import verification_codes
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 JWT_SECRET = os.environ['JWT_SECRET']
+MIN_SECRET_LENGTH = 32
+if len(JWT_SECRET) < MIN_SECRET_LENGTH:
+    # Every token is only as hard to forge as this value is to guess; a placeholder or a short word would sign valid sessions.
+    raise RuntimeError(f"JWT_SECRET must be at least {MIN_SECRET_LENGTH} characters (python backend/local_secrets.py rotate-jwt makes a good one).")
 JWT_ALG = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -20,13 +26,20 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 
 # ---------------------------------------------------------------------------
 # Password hashing
 # ---------------------------------------------------------------------------
+BCRYPT_MAX_BYTES = 72  # bcrypt reads no more than this; whatever follows would be silently ignored (or refused by newer versions)
+
+
+def _bcrypt_input(password: str) -> bytes:
+    return password.encode()[:BCRYPT_MAX_BYTES]
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
+        return bcrypt.checkpw(_bcrypt_input(plain), hashed.encode())
     except Exception:
         return False
 
@@ -80,6 +93,21 @@ def create_email_verification_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
+DEVICE_TOKEN_DAYS = 180
+
+
+def create_device_token(user_id: str) -> str:
+    """Given to a browser that has signed in to the account, to say "this one is familiar". It carries no permission at all:
+    the only thing it changes is that this browser is not held up by a lockout that strangers' guessing set off."""
+    payload = {
+        "sub": user_id,
+        "type": "device",
+        "exp": datetime.now(timezone.utc) + timedelta(days=DEVICE_TOKEN_DAYS),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
 def create_password_reset_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
@@ -108,15 +136,23 @@ def is_valid_email(email: str) -> bool:
     return bool(EMAIL_REGEX.match(email.strip()))
 
 
+WEAK_PASSWORD_MESSAGE = "Password must be at least 8 characters with a letter and a number"
+TOO_LONG_PASSWORD_MESSAGE = (f"Password must be at most {BCRYPT_MAX_BYTES} bytes long (about {BCRYPT_MAX_BYTES} letters and digits; "
+                             "accented letters and emoji take more than one byte each)")
+
+
+def password_problem(password: str) -> Optional[str]:
+    """Why a new password is refused, in words for the person, or None when it is fine: at least 8 characters with a letter
+    and a digit, and no longer than bcrypt can use (a longer one would be cut short without telling anyone)."""
+    if len(password) < 8 or not re.search(r"[A-Za-z]", password) or not re.search(r"\d", password):
+        return WEAK_PASSWORD_MESSAGE
+    if len(password.encode()) > BCRYPT_MAX_BYTES:
+        return TOO_LONG_PASSWORD_MESSAGE
+    return None
+
+
 def is_strong_password(password: str) -> bool:
-    """Require at least 8 chars, one letter and one digit."""
-    if len(password) < 8:
-        return False
-    if not re.search(r"[A-Za-z]", password):
-        return False
-    if not re.search(r"\d", password):
-        return False
-    return True
+    return password_problem(password) is None
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +160,15 @@ def is_strong_password(password: str) -> bool:
 # ---------------------------------------------------------------------------
 def generate_six_digit_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def code_fingerprint(user_id: str, code: str) -> str:
+    """What is stored for an emailed code (see verification_codes)."""
+    return verification_codes.fingerprint(JWT_SECRET, user_id, code)
+
+
+def code_matches(stored: Optional[str], user_id: str, code: str) -> bool:
+    return verification_codes.matches(stored or "", JWT_SECRET, user_id, code)
 
 
 def generate_secure_token(length: int = 32) -> str:

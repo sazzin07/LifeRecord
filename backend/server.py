@@ -6,6 +6,7 @@ local_secrets.load_into_environ()  # encrypted secrets outside the project; real
 load_dotenv(ROOT_DIR / '.env')
 
 import hashlib
+import math
 import os
 import secrets
 import sys
@@ -63,7 +64,8 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS,
     create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
-    is_valid_email, is_strong_password,
+    is_valid_email, is_strong_password, password_problem, code_fingerprint, code_matches,
+    create_device_token, DEVICE_TOKEN_DAYS,
 )
 from email_service import send_verification_code, send_password_reset, send_security_notice
 
@@ -104,21 +106,101 @@ def _rate_limit_bucket(request: Request, identifier: str) -> str:
     return hashlib.sha256(f"{client}:{identifier.lower().strip()}".encode()).hexdigest()
 
 
-async def check_rate_limit(request: Request, identifier: str) -> None:
-    """Sliding window kept in the database, so limits survive restarts and are shared by every process."""
+async def _claim_slot(bucket: str, window_seconds: int, maximum: int) -> Optional[int]:
+    """Record one attempt in `bucket`, then count the window. None when it is within `maximum`; otherwise the attempt is taken
+    back out again (a refused attempt does not lengthen the wait) and the seconds until the oldest one leaves the window.
+
+    The attempt is written and committed BEFORE the count, so a burst of simultaneous requests cannot all read an empty window:
+    the (maximum+1)th row to be committed always counts at least maximum+1 rows, so at most `maximum` attempts get through."""
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    bucket = _rate_limit_bucket(request, identifier)
-    cutoff = now_ms - AUTH_RATE_LIMIT_WINDOW * 1000
+    cutoff = now_ms - window_seconds * 1000
     async with AsyncSessionLocal() as db:
-        recent = (await db.execute(
-            select(func.count(RateLimitEvent.id)).where(RateLimitEvent.bucket == bucket, RateLimitEvent.at_ms > cutoff)
-        )).scalar() or 0
-        if recent >= AUTH_RATE_LIMIT_MAX:
-            raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
-        db.add(RateLimitEvent(bucket=bucket, at_ms=now_ms))
+        event = RateLimitEvent(bucket=bucket, at_ms=now_ms)
+        db.add(event)
         if secrets.randbelow(50) == 0:  # occasional cleanup; shared with the per-user limits, whose windows last a day
             await usage_limits.prune_old_events(db, now_ms)
         await db.commit()
+        recent, oldest = (await db.execute(
+            select(func.count(RateLimitEvent.id), func.min(RateLimitEvent.at_ms)).where(RateLimitEvent.bucket == bucket, RateLimitEvent.at_ms > cutoff)
+        )).one()
+        if (recent or 0) <= maximum:
+            return None
+        await db.execute(delete(RateLimitEvent).where(RateLimitEvent.id == event.id))
+        await db.commit()
+        return max(1, math.ceil(((oldest or now_ms) + window_seconds * 1000 - now_ms) / 1000))
+
+
+async def check_rate_limit(request: Request, identifier: str) -> None:
+    """Sliding window kept in the database, so limits survive restarts and are shared by every process."""
+    if await _claim_slot(_rate_limit_bucket(request, identifier), AUTH_RATE_LIMIT_WINDOW, AUTH_RATE_LIMIT_MAX) is not None:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please try again later.")
+
+
+# One account can be attacked from many addresses at once, which the per-address limit above cannot see. These count
+# attempts on the ACCOUNT, whoever makes them, and are keyed by the text typed (so an address with no account is limited
+# exactly like a real one and the answer reveals nothing).
+#
+# A lock that anyone who knows an address can trigger would also let them keep the owner out. So the count is split by who
+# is asking: a browser that has signed in to the account before carries a signed device cookie (lr_device) and is counted
+# separately, with a larger allowance; a stranger's guessing fills only the strangers' count. The owner on a browser they
+# already use is never held up by it, and "Forgot password" (which is not counted at all, and clears both counts when it is
+# completed) gets them in from a new device. A stolen cookie is not a free pass either: familiar browsers have a cap too.
+LOGIN_LOCK_MAX = int(os.environ.get("LOGIN_LOCK_MAX_ATTEMPTS", "20"))
+LOGIN_LOCK_FAMILIAR_MAX = int(os.environ.get("LOGIN_LOCK_FAMILIAR_MAX_ATTEMPTS", "100"))
+LOGIN_LOCK_WINDOW = int(os.environ.get("LOGIN_LOCK_WINDOW_SECONDS", "900"))
+DEVICE_COOKIE = "lr_device"
+VERIFY_LOCK_MAX = int(os.environ.get("VERIFY_LOCK_MAX_ATTEMPTS", "30"))  # across every code sent to the address
+VERIFY_LOCK_WINDOW = int(os.environ.get("VERIFY_LOCK_WINDOW_SECONDS", "86400"))
+
+
+def _account_bucket(kind: str, email: str) -> str:
+    return hashlib.sha256(f"account-{kind}:{email.lower().strip()}".encode()).hexdigest()
+
+
+async def throttle_account(kind: str, email: str, maximum: int, window: int, what: str) -> None:
+    wait = await _claim_slot(_account_bucket(kind, email), window, maximum)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail=f"Too many {what} for this account. Try again in {usage_limits._wait_text(wait)}, "
+                                                    "or use “Forgot password” to get back in by email.",
+                            headers={"Retry-After": str(wait)})
+
+
+async def forgive_account(kind: str, email: str) -> None:
+    """A correct sign-in (or a confirmed address) wipes the count, so only runs of failures ever add up."""
+    async with AsyncSessionLocal() as db:
+        await db.execute(delete(RateLimitEvent).where(RateLimitEvent.bucket == _account_bucket(kind, email)))
+        await db.commit()
+
+
+async def throttle_login(email: str, familiar: bool) -> None:
+    """Count one sign-in attempt on the account: against the strangers' allowance, or the (larger, separate) allowance of a
+    browser that has signed in to it before."""
+    if familiar:
+        await throttle_account("login-familiar", email, LOGIN_LOCK_FAMILIAR_MAX, LOGIN_LOCK_WINDOW, "sign-in attempts")
+    else:
+        await throttle_account("login", email, LOGIN_LOCK_MAX, LOGIN_LOCK_WINDOW, "sign-in attempts")
+
+
+async def forgive_logins(email: str) -> None:
+    """The run of failed sign-ins is over (a correct password, or a password reset by email): both counts start again."""
+    await forgive_account("login", email)
+    await forgive_account("login-familiar", email)
+
+
+def _known_device_user(request: Request) -> Optional[str]:
+    """The user a browser's device cookie vouches for, or None (no cookie, forged, expired, or not a device token)."""
+    token = request.cookies.get(DEVICE_COOKIE)
+    if not token:
+        return None
+    try:
+        return decode_token(token, token_type="device").get("sub")
+    except jwt.InvalidTokenError:
+        return None
+
+
+def _remember_device(response: Response, user_id: str) -> None:
+    response.set_cookie(DEVICE_COOKIE, create_device_token(user_id), max_age=DEVICE_TOKEN_DAYS * 86400,
+                        httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE, path="/api/auth")
 
 
 def _user_owned_query(model, user: dict):
@@ -260,6 +342,7 @@ async def _issue_session(request: Request, response: Response, db: AsyncSession,
             REFRESH_COOKIE, tokens.pop("refresh_token"), max_age=max(1, (session.expires_ms - auth_sessions.now_ms()) // 1000),
             httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE, path="/api/auth",
         )
+        _remember_device(response, user.id)  # this browser is now familiar to the account (see throttle_login)
     return {**tokens, **(extra or {})}
 
 
@@ -331,6 +414,9 @@ class SignupBody(BaseModel):
 class VerifyCodeBody(BaseModel):
     email: str = Field(..., max_length=255)
     code: str = Field(..., min_length=6, max_length=6)
+    # The password chosen at sign-up goes with the emailed code: otherwise whoever registered an address first could leave
+    # its owner to confirm an account that has the first person's password.
+    password: str = Field(..., min_length=1, max_length=255)
 
 
 class ResendCodeBody(BaseModel):
@@ -1362,117 +1448,134 @@ async def cook_recipe_doc(db: AsyncSession, recipe: dict, user_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
+REGISTER_ANSWER = {"message": "If this email is not registered, you will receive a verification code shortly."}
+RESEND_ANSWER = {"message": "If this email is registered, a new code will be sent."}
+VERIFY_FAILED = "That code is invalid or has expired. Check the newest email we sent, or request a new code."
+CODE_RESEND_SECONDS = 90
+CODE_LIFETIME_MINUTES = 15
+MAX_CODE_ATTEMPTS = 5
+
+
+def _resend_wait_over(user: User) -> bool:
+    """True when the wait since the last code was sent is over (or there is no record of one)."""
+    if not user.last_verification_sent_at:
+        return True
+    try:
+        return datetime.now(timezone.utc) - datetime.fromisoformat(user.last_verification_sent_at) >= timedelta(seconds=CODE_RESEND_SECONDS)
+    except ValueError:
+        return True
+
+
+def _code_expired(expires_at: Optional[str]) -> bool:
+    try:
+        return datetime.now(timezone.utc) > datetime.fromisoformat(expires_at)
+    except (TypeError, ValueError):
+        return True
+
+
+def _issue_code(user: User) -> str:
+    """A fresh code for an address waiting to be confirmed, with a fresh set of tries. Only its fingerprint is stored
+    (verification_codes.py); the code itself goes to the mailbox and nowhere else."""
+    code = generate_six_digit_code()
+    user.verification_code = code_fingerprint(user.id, code)
+    user.verification_code_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=CODE_LIFETIME_MINUTES)).isoformat()
+    user.verification_attempts = 0  # otherwise five typos would lock the address out for good
+    user.last_verification_sent_at = now_iso()
+    return code
+
+
 @api_router.post("/auth/register")
 async def register(body: SignupBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     name = body.name.strip()
 
+    # Before anything is looked up, so an address that already has an account is limited exactly like a new one.
+    await check_rate_limit(request, email)
     if not is_valid_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address")
-    if not is_strong_password(body.password):
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters with a letter and a number")
+    problem = password_problem(body.password)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
 
     existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing:
         # Never disclose whether an email is registered: same message, and the same amount of work as a new signup.
-        hash_password(body.password)
-        return {"message": "If this email is not registered, you will receive a verification code shortly."}
+        password_hash = hash_password(body.password)
+        if existing.email_verified:
+            return REGISTER_ANSWER
+        # An address still waiting for its first code belongs to whoever can read that mailbox, not to whoever typed it
+        # first: the latest sign-up replaces the password and name (the code only works together with the password, see
+        # /auth/verify), so a stranger who registered someone else's address cannot leave them a password they know.
+        existing.password_hash = password_hash
+        existing.name = name
+        code = _issue_code(existing) if _resend_wait_over(existing) else None
+        await db.commit()
+        if code:
+            background.add_task(send_verification_code, email, code, name)
+        return REGISTER_ANSWER
 
-    await check_rate_limit(request, email)
-
-    code = generate_six_digit_code()
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-    user = User(
-        id=new_id(), email=email, password_hash=hash_password(body.password),
-        name=name, role="user", email_verified=False,
-        verification_code=code, verification_code_expires_at=expires,
-        verification_attempts=0, last_verification_sent_at=now_iso(),
-        created_at=now_iso(),
-    )
+    user = User(id=new_id(), email=email, password_hash=hash_password(body.password), name=name, role="user",
+                email_verified=False, created_at=now_iso())
+    code = _issue_code(user)
     db.add(user)
     await db.commit()
 
     # Sent after the response (with retries; the outcome is recorded in email_events), so a slow mail server never
     # slows signup and response time does not depend on whether the address was already registered.
     background.add_task(send_verification_code, email, code, name)
-
-    return {"message": "If this email is not registered, you will receive a verification code shortly."}
+    return REGISTER_ANSWER
 
 
 @api_router.post("/auth/resend-verification")
 async def resend_verification(body: ResendCodeBody, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
-    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if not user:
-        # Silent success
-        return {"message": "If this email is registered, a new code will be sent."}
-
-    if user.email_verified:
-        return {"message": "If this email is registered, a new code will be sent."}
-
     await check_rate_limit(request, email)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    # No address, an address already confirmed, and one asked about again too soon all get the same answer, so this cannot
+    # be used to find out who has an account or who is in the middle of signing up.
+    if not user or user.email_verified or not _resend_wait_over(user):
+        return RESEND_ANSWER
 
-    # Enforce 90-second cooldown between resends
-    if user.last_verification_sent_at:
-        try:
-            last = datetime.fromisoformat(user.last_verification_sent_at)
-            if datetime.now(timezone.utc) - last < timedelta(seconds=90):
-                raise HTTPException(status_code=429, detail="Please wait before requesting a new code")
-        except ValueError:
-            pass
-
-    code = generate_six_digit_code()
-    user.verification_code = code
-    user.verification_code_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-    user.verification_attempts = 0  # a fresh code gets a fresh set of tries; otherwise 5 typos lock the account for good
-    user.last_verification_sent_at = now_iso()
+    code = _issue_code(user)
     await db.commit()
-
     background.add_task(send_verification_code, email, code, user.name)
-    return {"message": "If this email is registered, a new code will be sent."}
+    return RESEND_ANSWER
 
 
 @api_router.post("/auth/verify")
 async def verify_code(body: VerifyCodeBody, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.strip().lower()
     code = body.code.strip()
-    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-
     await check_rate_limit(request, f"{email}:verify")
+    # Across every code sent to the address: sending a new code gives fresh tries, but not an unlimited supply of them.
+    await throttle_account("verify", email, VERIFY_LOCK_MAX, VERIFY_LOCK_WINDOW, "verification attempts")
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
 
-    if user.email_verified:
-        raise HTTPException(status_code=400, detail="Account already verified")
-
-    # Brute-force protection
-    if user.verification_attempts >= 5:
-        raise HTTPException(status_code=400, detail="Too many failed attempts. Please request a new code.")
-
-    if not user.verification_code or not user.verification_code_expires_at:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-
-    try:
-        expires = datetime.fromisoformat(user.verification_code_expires_at)
-        if datetime.now(timezone.utc) > expires:
-            raise HTTPException(status_code=400, detail="Verification code expired")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-
-    if user.verification_code != code:
-        user.verification_attempts = (user.verification_attempts or 0) + 1
+    # One password check whatever the address is, so every outcome takes the same time.
+    password_ok = verify_password(body.password, user.password_hash if user else _DUMMY_HASH)
+    confirmed = False
+    if user and not user.email_verified and user.verification_code and not _code_expired(user.verification_code_expires_at):
+        # The try is taken by the database in one step (not read, added to and written back by us), so ten simultaneous
+        # guesses use up ten of the five tries instead of all seeing the same count. Taken before the code is looked at.
+        taken = (await db.execute(
+            update(User).where(User.id == user.id, User.verification_attempts < MAX_CODE_ATTEMPTS)
+            .values(verification_attempts=User.verification_attempts + 1)
+        )).rowcount == 1
         await db.commit()
-        raise HTTPException(status_code=400, detail="Invalid verification code")
+        confirmed = taken and password_ok and code_matches(user.verification_code, user.id, code)
+    if not confirmed:
+        # Wrong code, wrong password, expired, out of tries, already confirmed, no such address: all the same words.
+        raise HTTPException(status_code=400, detail=VERIFY_FAILED)
 
+    await db.execute(update(User).where(User.id == user.id).values(
+        email_verified=True, verification_code=None, verification_code_expires_at=None, verification_attempts=0))
     user.email_verified = True
-    user.verification_code = None
-    user.verification_code_expires_at = None
-    user.verification_attempts = 0
     # A new account can enter its first expense straight away; committed together with the verification.
     await starter_data.ensure_starter_categories(db, user.id)
     await db.commit()
+    await forgive_account("verify", email)
 
     return await _issue_session(request, response, db, user,
                                 {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True}})
@@ -1483,11 +1586,14 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
     email = body.email.strip().lower()
     await check_rate_limit(request, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    # Only a browser this account has signed in from before can be familiar; an address with no account never is.
+    await throttle_login(email, familiar=user is not None and _known_device_user(request) == user.id)
     if not user:
         verify_password(body.password, _DUMMY_HASH)  # same work as a real check, so timing does not reveal who has an account
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    await forgive_logins(email)  # a correct password: the run of failed attempts is over
 
     if not user.email_verified:
         # Return a special token that only works for verification/resend endpoints
@@ -1538,15 +1644,23 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
-    if not is_strong_password(body.password):
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters with a letter and a number")
+    problem = password_problem(body.password)
+    if problem:  # the link is not used up by a refused password
+        raise HTTPException(status_code=400, detail=problem)
 
     user.password_hash = hash_password(body.password)
     user.password_reset_token = None
     user.password_reset_expires_at = None
+    # Whoever opened the emailed link controls that mailbox, which is all that verifying the address ever proved. (Without
+    # this a person who forgot their password before confirming their address stayed locked out of a half-made account.)
+    user.email_verified = True
+    user.verification_code = None
+    user.verification_code_expires_at = None
+    user.verification_attempts = 0
     user.token_version = int(user.token_version or 0) + 1  # a reset ends every existing session
     await db.commit()
     await auth_sessions.end_all_for_user(db, user.id)
+    await forgive_logins(user.email)  # opening the emailed link proved who they are: nothing left of any lock from guessing
     background.add_task(send_security_notice, user.email, user.name, "password_reset")
 
     return await _issue_session(request, response, db, user,
@@ -1612,14 +1726,18 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     # 400, not 401: the session is valid, and a 401 makes the app sign the user out over a typo.
     if not db_user or not verify_password(body.current_password, db_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    if not is_strong_password(body.new_password):
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters with a letter and a number")
+    problem = password_problem(body.new_password)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     if body.new_password == body.current_password:
         raise HTTPException(status_code=400, detail="Choose a password different from the current one")
     db_user.password_hash = hash_password(body.new_password)
+    db_user.password_reset_token = None  # a reset link sent before the change must not undo it
+    db_user.password_reset_expires_at = None
     db_user.token_version = int(db_user.token_version or 0) + 1  # every other device is signed out
     await db.commit()
     await auth_sessions.end_all_for_user(db, db_user.id)
+    await forgive_logins(db_user.email)
     background.add_task(send_security_notice, db_user.email, db_user.name, "password_changed")
     # This device gets a fresh session so the user is not signed out of the tab they are using.
     return await _issue_session(request, response, db, db_user, {"message": "Password updated successfully"})

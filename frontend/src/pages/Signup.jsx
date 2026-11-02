@@ -54,7 +54,7 @@ export default function Signup() {
     e.preventDefault();
     setCodeLoading(true);
     try {
-      await verifyCode(registeredEmail, code.trim());
+      await verifyCode(registeredEmail, code.trim(), password);
       toast.success("Email verified. Welcome to Life Record!");
       nav("/");
     } catch (err) {

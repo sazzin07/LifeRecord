@@ -14,14 +14,8 @@ N = f"{BASE_URL}/api/nutrition"
 def _user():
     email = f"nutri_{uuid.uuid4().hex[:8]}@example.com"
     assert requests.post(f"{BASE_URL}/api/auth/register", json={"email": email, "password": PW, "name": "n"}).status_code == 200
-    conn = support_db.connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT verification_code FROM users WHERE email=%s", (email,))
-            code = cur.fetchone()[0]
-    finally:
-        conn.close()
-    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code})
+    code = support_db.verification_code_for(email)
+    r = requests.post(f"{BASE_URL}/api/auth/verify", json={"email": email, "code": code, "password": PW})
     s = requests.Session()
     s.headers.update({"Authorization": f"Bearer {r.json()['token']}"})
     return s

@@ -53,8 +53,9 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const verifyCode = async (email, code) => {
-    const { data } = await api.post("/auth/verify", { email, code });
+  // The password chosen at sign-up goes with the emailed code (see /auth/verify on the server).
+  const verifyCode = async (email, code, password) => {
+    const { data } = await api.post("/auth/verify", { email, code, password });
     return setTokenAndUser(data);
   };
 

@@ -30,13 +30,14 @@ Execution style (Q0): **native**, one task at a time, each verified before the n
 | T2.2 independence from real accounts | F-03 | **Done** | The suite no longer needs a running backend or a real account when `LR_ISOLATED=1`. The plain mode still exists and still works against the live stack. |
 | T2.3 drift test | - | **Done** | Found one real drift (index `ix_meals_client_ref` in a migration but not in the model); fixed in the model only, so no database change. |
 | T2.4 / T2.5 isolation matrix | S-12 | **Done** | 32 tests, 31 tables, 87 id-routes. |
-| T3.x frontend (D-01..D-10, S-03) | - | **Not started** | Next batch. |
+| T3.x frontend (D-01..D-10, S-03) | - | **Partly done** | D-01..D-10 as in the roadmap rows. S-03 (access token in memory) and the new S-17 (server-side sessions, authentication on every route) were completed on 2026-11-02; evidence in the roadmap. |
 | T4.1 split server.py | F-02 | **Not started** | Safety net exists (`test_server_surface.py`, golden snapshot of 199 routes); moves not begun. |
-| T4.2 failure sweep | S-13 | **In progress** | Backend fix and sweep table done; browser check of the offline banner left. |
+| T4.2 failure sweep | S-13 | **Done** | Backend fix, sweep table and the browser check of the offline banner (`e2e/failure-sweep.spec.js`); roadmap row S-13. |
 | T4.3 data hygiene | S-14 | **Waiting for approval** | Deleting an account and log files needs the owner's yes (dry run first). |
 | T4.4 backups | S-07 | **In progress** | Tools and tests done, rehearsal on the real database matched 36 tables / 9,624 rows. Owner still chooses folder, schedule and encryption. |
-| T4.5 export and delete | S-11 | **In progress** | Backend done and tested; Settings screen left. |
-| T5.x CI, deployment | S-10, S-09, S-15 | **Not started** | |
+| T4.5 export and delete | S-11 | **Done** | Backend and the Settings "Your data" card; roadmap row S-11. |
+| T5.x CI, deployment | S-10, S-09, S-15 | **Partly done** | S-15 done (documented). S-10: workflow and local script written, not yet run on GitHub. S-09 not started (needs the owner's target). |
+| Money: main account and places | F-12 | **Done** | Added outside the original plan (2026-11-02): a main account and its places are one amount of money. Roadmap row F-12. |
 | T6.x owner tasks | S-01, S-02, S-06, S-08, F-05..F-07, F-09..F-11, D-05, D-09 | **Blocked** | Need the owner; see roadmap rows. |
 
 ### Deviations from the plan, and findings the plan did not foresee

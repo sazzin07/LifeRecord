@@ -572,6 +572,8 @@ class AccountBody(BaseModel):
     is_locked: bool = Field(default=False)
     sort_order: int = Field(default=0)
     is_active: bool = Field(default=True)
+    # For a sub-account: false takes opening_balance from the main account's unallocated balance, true adds it as new money.
+    add_as_new_money: bool = Field(default=False)
 
 
 class AccountUpdate(BaseModel):
@@ -583,6 +585,8 @@ class AccountUpdate(BaseModel):
     # Desired current balance. The server derives the opening balance so that
     # opening + transactions == balance, which is what "set my balance to X" means.
     balance: Optional[float] = Field(default=None, ge=0)
+    # With balance, on a sub-account: a higher balance is new money rather than taken from the unallocated balance.
+    add_as_new_money: Optional[bool] = Field(default=None)
     initial_balance: Optional[float] = Field(default=None, ge=0)
     is_locked: Optional[bool] = Field(default=None)
     sort_order: Optional[int] = Field(default=None)
@@ -847,6 +851,7 @@ def compute_shares(gross: float, participants: List[str], items, split_mode, exa
 
 
 async def create_expense_record(db: AsyncSession, body: ExpenseBody, user_id: str) -> dict:
+    before = await money_begin(db, user_id)
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     gross = body.amount
     if gross is None and body.items:
@@ -902,6 +907,7 @@ async def create_expense_record(db: AsyncSession, body: ExpenseBody, user_id: st
                 db.add(g)
             inventory_added.extend([name] * count)
 
+    await money_check(db, user_id, before)
     await db.commit()
     await db.refresh(txn)
     return {"transaction": txn_to_dict(txn), "inventory_added": inventory_added}
@@ -914,31 +920,164 @@ def txn_to_dict(txn: Transaction, rmap: Dict[str, float] = None, account_types: 
     return d
 
 
-async def compute_account_balance(db: AsyncSession, account: str, user_id: str) -> float:
-    """Opening balance, minus what was spent from the account, plus income, plus and minus transfers, plus settlements.
+async def compute_balances(db: AsyncSession, user_id: str, account_ids: List[str]) -> Dict[str, float]:
+    """What each account itself holds: opening balance, minus what was spent from it, plus income, plus and minus
+    transfers, plus settlements. For a main account with sub-accounts that is its unallocated part; the sub-accounts'
+    money is in their own balances (see account_views).
 
-    The sums are done by the database. This used to load every transaction as an object, three times per account, and
-    add them up in Python: with two years of history the Money page spent over a second on it (test_money_performance.py)."""
-    acc = (await db.execute(
-        select(Account).where(Account.id == account, Account.user_id == user_id)
-    )).scalar_one_or_none()
-    bal = float(acc.opening_balance) if acc else 0.0
+    The sums are done by the database, five grouped queries however many accounts are asked for. This used to load every
+    transaction as an object, three times per account, and add them up in Python: with two years of history the Money
+    page spent over a second on it (test_money_performance.py)."""
+    ids = list(dict.fromkeys(account_ids))
+    if not ids:
+        return {}
+    openings = dict((await db.execute(
+        select(Account.id, Account.opening_balance).where(Account.user_id == user_id, Account.id.in_(ids))
+    )).all())
 
-    def total(*conditions):
-        return select(func.coalesce(func.sum(Transaction.gross_amount), 0)).where(Transaction.user_id == user_id, *conditions)
+    async def grouped(column, *conditions):
+        rows = await db.execute(
+            select(column, func.coalesce(func.sum(Transaction.gross_amount), 0))
+            .where(Transaction.user_id == user_id, column.in_(ids), *conditions).group_by(column))
+        return {k: float(v) for k, v in rows.all()}
 
-    spent = (await db.execute(total(Transaction.type == "expense", Transaction.paid_by == "me", Transaction.account == account))).scalar()
-    income = (await db.execute(total(Transaction.type == "income", Transaction.account == account))).scalar()
-    moved_out = (await db.execute(total(Transaction.type == "transfer", Transaction.from_account == account))).scalar()
-    moved_in = (await db.execute(total(Transaction.type == "transfer", Transaction.to_account == account))).scalar()
+    spent = await grouped(Transaction.account, Transaction.type == "expense", Transaction.paid_by == "me")
+    income = await grouped(Transaction.account, Transaction.type == "income")
+    moved_out = await grouped(Transaction.from_account, Transaction.type == "transfer")
+    moved_in = await grouped(Transaction.to_account, Transaction.type == "transfer")
     # Settlements that created their own income/expense transaction are already counted above.
-    settled = (await db.execute(
-        select(func.coalesce(func.sum(case((Settlement.direction == "in", Settlement.amount), else_=-Settlement.amount)), 0)).where(
-            Settlement.user_id == user_id, Settlement.account == account, Settlement.balance_transaction_id == None)  # noqa: E711
-    )).scalar()
+    settled = {k: float(v) for k, v in (await db.execute(
+        select(Settlement.account, func.coalesce(func.sum(case((Settlement.direction == "in", Settlement.amount), else_=-Settlement.amount)), 0))
+        .where(Settlement.user_id == user_id, Settlement.account.in_(ids), Settlement.balance_transaction_id == None)  # noqa: E711
+        .group_by(Settlement.account)
+    )).all()}
 
-    bal += float(income) + float(moved_in) + float(settled) - float(spent) - float(moved_out)
-    return round(bal, 2)
+    return {a: round(float(openings.get(a) or 0) + income.get(a, 0) + moved_in.get(a, 0) + settled.get(a, 0)
+                     - spent.get(a, 0) - moved_out.get(a, 0), 2) for a in ids}
+
+
+async def compute_account_balance(db: AsyncSession, account: str, user_id: str) -> float:
+    """What one account itself holds (see compute_balances)."""
+    return (await compute_balances(db, user_id, [account]))[account]
+
+
+# ---------------------------------------------------------------------------
+# Main accounts and their sub-accounts
+#
+# A main account (Money in hand, Revolut) and its sub-accounts are one amount of money. Its sub-accounts are allocations of
+# it, what is not allocated is its unallocated balance, and  total == unallocated + sum(sub-accounts)  always:
+#   - an account's own balance (compute_balances) is the unallocated balance for a main account, the allocation for a sub-account;
+#   - moving money between them is a transfer, so the total does not change;
+#   - only a deposit, a withdrawal or "new money" changes the total;
+#   - no own balance of a main account with sub-accounts, or of a sub-account, may go below zero.
+# Every change to money takes lock_money first, so two requests from the same person cannot both spend the same euro, and
+# ends with money_check, which refuses (and rolls back) anything that would overdraw such an account.
+# ---------------------------------------------------------------------------
+def cents(amount) -> int:
+    return int(round(float(amount) * 100))
+
+
+def eur_text(amount) -> str:
+    return f"€{float(amount):,.2f}"
+
+
+async def lock_money(db: AsyncSession, user_id: str) -> None:
+    """Serialise money changes per person. The transaction that authentication opened is ended first, so the balances read
+    afterwards are the ones committed by whoever held the lock before us (InnoDB reads from the snapshot taken at the
+    first plain SELECT of a transaction)."""
+    await db.commit()
+    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
+
+
+async def allocation_balances(db: AsyncSession, user_id: str) -> Dict[str, dict]:
+    """Own balance and name of every account that is a sub-account or has sub-accounts, by id."""
+    subs = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.parent_id != None, Account.is_active == True)  # noqa: E711
+    )).scalars().all()
+    if not subs:
+        return {}
+    mains = (await db.execute(
+        select(Account).where(Account.user_id == user_id, Account.id.in_({s.parent_id for s in subs}))
+    )).scalars().all()
+    balances = await compute_balances(db, user_id, [a.id for a in subs + mains])
+    return {a.id: {"name": a.name, "main": a.parent_id is None, "balance": balances[a.id]} for a in subs + mains}
+
+
+async def money_begin(db: AsyncSession, user_id: str) -> Dict[str, dict]:
+    """Start of every change to money: take the lock, then note the balances that must not go below zero."""
+    await lock_money(db, user_id)
+    return await allocation_balances(db, user_id)
+
+
+async def money_check(db: AsyncSession, user_id: str, before: Dict[str, dict]) -> None:
+    """End of every change to money, before the commit. Refuses a change that takes a main account's unallocated balance
+    or a sub-account below zero, and undoes it. Balances that were already negative may stay as they are, but not fall."""
+    await db.flush()
+    after = await allocation_balances(db, user_id)
+    for account_id, now in after.items():
+        was = before.get(account_id, {}).get("balance", 0.0)
+        if cents(now["balance"]) < 0 and cents(now["balance"]) < cents(was):
+            await db.rollback()
+            where = f"{now['name']} (the part that is not in a sub-account)" if now["main"] else now["name"]
+            raise HTTPException(400, f"This amount ({eur_text(was - now['balance'])}) exceeds the available balance of "
+                                     f"{eur_text(max(was, 0))} in {where}.")
+
+
+async def allocation_transfer_ids(db: AsyncSession, user_id: str, account_ids: list) -> set:
+    ids = [i for i in account_ids if i]
+    rows = await db.execute(select(Transaction.id).where(
+        Transaction.user_id == user_id, Transaction.type == "transfer",
+        (Transaction.from_account.in_(ids)) | (Transaction.to_account.in_(ids))))
+    return {i for (i,) in rows.all()}
+
+
+async def allocated_total(db: AsyncSession, user_id: str, main_id: str) -> float:
+    """What the active sub-accounts of a main account hold between them."""
+    ids = [i for (i,) in (await db.execute(
+        select(Account.id).where(Account.user_id == user_id, Account.parent_id == main_id, Account.is_active == True)  # noqa: E712
+    )).all()]
+    return round(sum((await compute_balances(db, user_id, ids)).values()), 2)
+
+
+def allocation_transfer(user_id: str, source: Account, target: Account, amount: float, note: str) -> Transaction:
+    """The record of money moving between a main account and its sub-accounts. Not income or spending: the total is unchanged."""
+    today = now_iso()[:10]
+    return Transaction(
+        id=new_id(), user_id=user_id, type="transfer", gross_amount=round(amount, 2), personal_amount=0, reimbursable_amount=0,
+        description=note, category="Transfer", account=source.id, from_account=source.id, to_account=target.id,
+        date=today, month=month_of(today), created_at=now_iso(),
+    )
+
+
+async def account_views(db: AsyncSession, user_id: str, accounts: List[Account]) -> List[dict]:
+    """Accounts as the API shows them. `balance` is what the account is worth to the person: for a main account the total
+    of it and its sub-accounts (with unallocated_balance, allocated_balance and total_balance spelled out), for any other
+    account what it holds."""
+    # A main account's figures need its places even when only the main account was asked for.
+    listed = {a.id for a in accounts}
+    mains = [a.id for a in accounts if not a.parent_id]
+    missing = (await db.execute(select(Account).where(
+        Account.user_id == user_id, Account.parent_id.in_(mains), Account.is_active == True, Account.id.not_in(listed)  # noqa: E712
+    ))).scalars().all() if mains else []
+    own = await compute_balances(db, user_id, [a.id for a in accounts] + [a.id for a in missing])
+    allocated: Dict[str, float] = {}
+    places: Dict[str, int] = {}
+    for a in list(accounts) + list(missing):
+        if a.parent_id:
+            allocated[a.parent_id] = allocated.get(a.parent_id, 0.0) + own[a.id]
+            places[a.parent_id] = places.get(a.parent_id, 0) + 1
+    views = []
+    for a in accounts:
+        d = to_dict(a)
+        if a.parent_id:
+            d["balance"] = own[a.id]
+        else:
+            d["unallocated_balance"] = own[a.id]
+            d["allocated_balance"] = round(allocated.get(a.id, 0.0), 2)
+            d["place_count"] = places.get(a.id, 0)
+            d["total_balance"] = d["balance"] = round(own[a.id] + d["allocated_balance"], 2)
+        views.append(d)
+    return views
 
 
 async def people_balances(db: AsyncSession, user_id: str) -> List[dict]:
@@ -1686,6 +1825,7 @@ async def clear_person_balance(pid: str, body: SettlementBody, user: dict = Depe
 @api_router.post("/people/clear-debts")
 async def clear_all_debts(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Remove all debt records (splits and settlements) for the current user. Transactions remain."""
+    before = await money_begin(db, user["_id"])
     # Delete settlements and any auto-created transactions they produced
     settlements = (await db.execute(
         select(Settlement).where(Settlement.user_id == user["_id"])
@@ -1700,12 +1840,14 @@ async def clear_all_debts(user: dict = Depends(get_current_user), db: AsyncSessi
         select(Person.id).where(Person.user_id == user["_id"])
     )))
 
+    await money_check(db, user["_id"], before)
     await db.commit()
     return {"ok": True, "deleted_settlements": len(settlements), "deleted_splits": "all"}
 
 
 @api_router.delete("/settlements/{sid}")
 async def delete_settlement(sid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     s = (await db.execute(
         select(Settlement).where(Settlement.id == sid, Settlement.user_id == user["_id"])
     )).scalar_one_or_none()
@@ -1715,6 +1857,7 @@ async def delete_settlement(sid: str, user: dict = Depends(get_current_user), db
     if txn_ids:
         await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
     await db.execute(delete(Settlement).where(Settlement.id == sid, Settlement.user_id == user["_id"]))
+    await money_check(db, user["_id"], before)
     await db.commit()
     return {"ok": True}
 
@@ -1786,90 +1929,155 @@ async def get_accounts(user: dict = Depends(get_current_user), db: AsyncSession 
     accs = (await db.execute(
         _user_owned_query(Account, user).where(Account.is_active == True).order_by(Account.sort_order, Account.name)
     )).scalars().all()
-    out = []
-    for a in accs:
-        d = to_dict(a)
-        d["balance"] = await compute_account_balance(db, a.id, user["_id"])
-        out.append(d)
-    return out
+    return await account_views(db, user["_id"], accs)
+
+
+async def _fetch_account(db: AsyncSession, user_id: str, account_id: str) -> Optional[Account]:
+    return (await db.execute(select(Account).where(Account.id == account_id, Account.user_id == user_id))).scalar_one_or_none()
+
+
+def _over_allocation(what: str, amount: float, available: float, where: str, hint: str = "") -> HTTPException:
+    return HTTPException(400, f"This {what} ({eur_text(amount)}) exceeds the available balance of {eur_text(max(available, 0))} in {where}.{hint}")
+
+
+NEW_MONEY_HINT = " Lower the amount, or tick “Add this amount as new money to the main account” if it is extra money."
 
 
 @api_router.post("/accounts")
 async def create_account(body: AccountBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """A sub-account's starting balance is carved out of its main account's unallocated balance (the total stays as it was),
+    unless add_as_new_money says it is extra money, which raises the total."""
+    uid = user["_id"]
+    await lock_money(db, uid)
+    parent = None
     if body.parent_id:
-        parent = (await db.execute(
-            select(Account).where(Account.id == body.parent_id, Account.user_id == user["_id"])
-        )).scalar_one_or_none()
+        parent = await _fetch_account(db, uid, body.parent_id)
         if not parent:
             raise HTTPException(400, "Parent account not found")
+        if parent.parent_id:
+            raise HTTPException(400, "A sub-account cannot have sub-accounts of its own.")
+    amount = round(body.opening_balance, 2)
+    carved_out = parent is not None and amount > 0 and not body.add_as_new_money
+    if carved_out:
+        available = await compute_account_balance(db, parent.id, uid)
+        if cents(amount) > cents(available):
+            raise _over_allocation("allocation", amount, available, parent.name, NEW_MONEY_HINT)
     acc = Account(
-        id=new_id(), user_id=user["_id"], name=body.name, type=body.type,
+        id=new_id(), user_id=uid, name=body.name, type=body.type,
         parent_id=body.parent_id, currency=body.currency,
-        opening_balance=round(body.opening_balance, 2),
+        opening_balance=0 if carved_out else amount,
         initial_balance=round(body.initial_balance, 2) if body.initial_balance is not None else None,
         is_locked=body.is_locked,
         sort_order=body.sort_order,
         is_active=body.is_active, created_at=now_iso(),
     )
     db.add(acc)
+    if carved_out:
+        await db.flush()
+        db.add(allocation_transfer(uid, parent, acc, amount, f"Set aside for {acc.name}"))
     await db.commit()
     await db.refresh(acc)
-    return to_dict(acc)
+    return {**to_dict(acc), "balance": amount}
 
 
 @api_router.put("/accounts/{aid}")
 async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    acc = (await db.execute(
-        select(Account).where(Account.id == aid, Account.user_id == user["_id"])
-    )).scalar_one_or_none()
+    """`balance` is the amount the account should now be worth. For a sub-account the difference moves between it and its
+    main account's unallocated balance (or is new money, with add_as_new_money, when raising it). For a main account it is
+    the total including its sub-accounts, and the difference lands in the unallocated part."""
+    uid = user["_id"]
+    before = await money_begin(db, uid)
+    acc = await _fetch_account(db, uid, aid)
     if not acc:
         raise HTTPException(404, "Account not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     target_balance = updates.pop("balance", None)
-    if target_balance is not None:
-        current = await compute_account_balance(db, aid, user["_id"])
-        updates["opening_balance"] = round(float(acc.opening_balance) + float(target_balance) - current, 2)
+    new_money = updates.pop("add_as_new_money", False)
+    parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
+    extra = []  # transfers that carry the change between a sub-account and its main account
+
     if "parent_id" in updates:
         if updates["parent_id"] == aid:
             raise HTTPException(400, "Account cannot be its own parent")
-        if updates["parent_id"]:
-            parent = (await db.execute(
-                select(Account).where(Account.id == updates["parent_id"], Account.user_id == user["_id"])
-            )).scalar_one_or_none()
-            if not parent:
+        if updates["parent_id"] == acc.parent_id:
+            del updates["parent_id"]
+        elif updates["parent_id"]:
+            new_parent = await _fetch_account(db, uid, updates["parent_id"])
+            if not new_parent:
                 raise HTTPException(400, "Parent account not found")
+            if new_parent.parent_id:
+                raise HTTPException(400, "A sub-account cannot have sub-accounts of its own.")
+            has_subs = (await db.execute(select(Account.id).where(Account.parent_id == aid, Account.is_active == True))).first()  # noqa: E712
+            if has_subs:
+                raise HTTPException(400, "An account with sub-accounts cannot become a sub-account.")
+            if cents(await compute_account_balance(db, aid, uid)) != 0:
+                raise HTTPException(400, "Move the money with a transfer first: changing the main account would move it from one main account to another.")
+
+    own = await compute_account_balance(db, aid, uid)
+    if target_balance is not None:
+        if parent:
+            delta = cents(target_balance) - cents(own)
+            if delta > 0 and new_money:
+                updates["opening_balance"] = round(float(acc.opening_balance) + delta / 100, 2)
+            elif delta > 0:
+                available = await compute_account_balance(db, parent.id, uid)
+                if delta > cents(available):
+                    raise _over_allocation("allocation", delta / 100, available, parent.name, NEW_MONEY_HINT)
+                extra.append(allocation_transfer(uid, parent, acc, delta / 100, f"Set aside for {acc.name}"))
+            elif delta < 0:
+                extra.append(allocation_transfer(uid, acc, parent, -delta / 100, f"Returned from {acc.name}"))
+        else:
+            allocated = await allocated_total(db, uid, aid)
+            if cents(target_balance) < cents(allocated):
+                raise HTTPException(400, f"The total cannot be {eur_text(target_balance)}: {eur_text(allocated)} of it is already "
+                                         f"assigned to sub-accounts. Lower those first, or choose a higher total.")
+            updates["opening_balance"] = round(float(acc.opening_balance) + float(target_balance) - allocated - own, 2)
+
+    if updates.get("is_active") is False and acc.is_active and parent and cents(own) != 0:
+        # A sub-account that stops existing gives what it holds back, like deleting it.
+        extra.append(allocation_transfer(uid, acc, parent, own, f"Returned from {acc.name}") if own > 0
+                     else allocation_transfer(uid, parent, acc, -own, f"Covered for {acc.name}"))
+    for t in extra:
+        db.add(t)
     if updates:
-        await db.execute(update(Account).where(Account.id == aid, Account.user_id == user["_id"]).values(**updates))
-        await db.commit()
-        await db.refresh(acc)
-    acc = (await db.execute(
-        select(Account).where(Account.id == aid, Account.user_id == user["_id"])
-    )).scalar_one_or_none()
-    return to_dict(acc)
+        await db.execute(update(Account).where(Account.id == aid, Account.user_id == uid).values(**updates))
+    await money_check(db, uid, before)
+    await db.commit()
+    acc = await _fetch_account(db, uid, aid)
+    return (await account_views(db, uid, [acc]))[0]
 
 
 @api_router.delete("/accounts/{aid}")
 async def delete_account(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Prevent deleting accounts with children or transactions.
-    children = (await db.execute(
-        select(Account).where(Account.parent_id == aid, Account.user_id == user["_id"])
-    )).scalars().first()
-    if children:
-        raise HTTPException(400, "Delete child accounts first")
-    txn = (await db.execute(
-        select(Transaction).where(
-            ((Transaction.account == aid) & (Transaction.type == "expense")) |
-            ((Transaction.account == aid) & (Transaction.type == "income")) |
-            ((Transaction.from_account == aid) & (Transaction.type == "transfer")) |
-            ((Transaction.to_account == aid) & (Transaction.type == "transfer"))
-        ).where(Transaction.user_id == user["_id"])
-    )).scalars().first()
-    if txn:
-        raise HTTPException(400, "Cannot delete account with transactions")
-    result = await db.execute(delete(Account).where(Account.id == aid, Account.user_id == user["_id"]))
-    await db.commit()
-    if result.rowcount == 0:
+    """Deleting a sub-account gives what it holds back to its main account's unallocated balance. A sub-account with a
+    history stays on file (hidden) so that history keeps its place."""
+    uid = user["_id"]
+    before = await money_begin(db, uid)
+    acc = await _fetch_account(db, uid, aid)
+    if not acc:
         raise HTTPException(404, "Account not found")
+    has_subs = (await db.execute(select(Account.id).where(Account.parent_id == aid, Account.is_active == True))).first()  # noqa: E712
+    if has_subs:
+        raise HTTPException(400, "Delete its sub-accounts first")
+    parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
+    if parent:
+        held = await compute_account_balance(db, aid, uid)
+        if cents(held) > 0:
+            db.add(allocation_transfer(uid, acc, parent, held, f"Returned from {acc.name}"))
+        elif cents(held) < 0:
+            db.add(allocation_transfer(uid, parent, acc, -held, f"Covered for {acc.name}"))
+        await db.flush()
+    history = (await db.execute(
+        select(Transaction.id).where(Transaction.user_id == uid, (Transaction.account == aid) | (Transaction.from_account == aid) | (Transaction.to_account == aid))
+    )).first()
+    if history and not parent:
+        raise HTTPException(400, "Cannot delete account with transactions")
+    if history:
+        await db.execute(update(Account).where(Account.id == aid, Account.user_id == uid).values(is_active=False))
+    else:
+        await db.execute(delete(Account).where(Account.id == aid, Account.user_id == uid))
+    await money_check(db, uid, before)
+    await db.commit()
     return {"ok": True}
 
 
@@ -1877,17 +2085,16 @@ async def delete_account(aid: str, user: dict = Depends(get_current_user), db: A
 async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if body.from_account_id == body.to_account_id:
         raise HTTPException(400, "Source and destination must differ")
-    from_acc = (await db.execute(
-        select(Account).where(Account.id == body.from_account_id, Account.user_id == user["_id"])
-    )).scalar_one_or_none()
-    to_acc = (await db.execute(
-        select(Account).where(Account.id == body.to_account_id, Account.user_id == user["_id"])
-    )).scalar_one_or_none()
+    uid = user["_id"]
+    before = await money_begin(db, uid)
+    from_acc = await _fetch_account(db, uid, body.from_account_id)
+    to_acc = await _fetch_account(db, uid, body.to_account_id)
     if not from_acc or not to_acc:
         raise HTTPException(404, "Account not found")
-    bal = await compute_account_balance(db, from_acc.id, user["_id"])
-    if bal < body.amount - 0.005:
-        raise HTTPException(400, "Insufficient funds")
+    bal = await compute_account_balance(db, from_acc.id, uid)
+    if cents(bal) < cents(body.amount):
+        where = f"{from_acc.name} (the part that is not in a sub-account)" if from_acc.id in before and before[from_acc.id]["main"] else from_acc.name
+        raise _over_allocation("transfer", body.amount, bal, where)
     date = body.date or now_iso()[:10]
     txn = Transaction(
         id=new_id(), user_id=user["_id"], type="transfer",
@@ -1985,9 +2192,14 @@ async def get_transactions(month: Optional[str] = None, start: Optional[str] = N
     stmt = select(Transaction).where(*filters).order_by(desc(Transaction.date))
     rmap = await refund_map(db, user["_id"])
     rows = (await db.execute(stmt)).scalars().all()
-    accs = (await db.execute(select(Account.id, Account.type).where(Account.user_id == user["_id"]))).all()
+    accs = (await db.execute(select(Account.id, Account.type, Account.name).where(Account.user_id == user["_id"]))).all()
     account_types = {a.id: a.type for a in accs}
-    out = [txn_to_dict(t, rmap, account_types) for t in rows]
+    names = {a.id: a.name for a in accs}  # hidden (deleted) places included, so their history keeps its names
+    out = []
+    for t in rows:
+        d = txn_to_dict(t, rmap, account_types)
+        d.update(account_name=names.get(t.account), from_account_name=names.get(t.from_account), to_account_name=names.get(t.to_account))
+        out.append(d)
     if payment_method in ("cash", "card"):
         out = [t for t in out if t.get("payment_method") == payment_method]
     return out
@@ -2000,6 +2212,7 @@ async def add_expense(body: ExpenseBody, user: dict = Depends(get_current_user),
 
 @api_router.put("/transactions/{tid}")
 async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     t = (await db.execute(
         select(Transaction).where(Transaction.id == tid, Transaction.user_id == user["_id"])
     )).scalar_one_or_none()
@@ -2076,6 +2289,7 @@ async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get
 
     if updates:
         await db.execute(update(Transaction).where(Transaction.id == tid, Transaction.user_id == user["_id"]).values(**updates))
+    await money_check(db, user["_id"], before)
     await db.commit()
     await db.refresh(t)
     rmap = await refund_map(db, user["_id"])
@@ -2084,6 +2298,7 @@ async def update_transaction(tid: str, body: TxnUpdate, user: dict = Depends(get
 
 @api_router.delete("/transactions/{tid}")
 async def delete_transaction(tid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     # roll back groceries created via add_to_inventory
     txn = (await db.execute(
         select(Transaction).where(Transaction.id == tid, Transaction.user_id == user["_id"])
@@ -2107,12 +2322,14 @@ async def delete_transaction(tid: str, user: dict = Depends(get_current_user), d
     await db.execute(delete(Split).where(Split.transaction_id == tid))
     await db.execute(delete(Settlement).where(Settlement.transaction_id == tid, Settlement.user_id == user["_id"]))
     await db.execute(delete(Transaction).where(Transaction.id == tid, Transaction.user_id == user["_id"]))
+    await money_check(db, user["_id"], before)
     await db.commit()
     return {"ok": True}
 
 
 @api_router.post("/transactions/transfer")
 async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     from_id = await require_account_id(db, body.from_account, user["_id"])
     to_id = await require_account_id(db, body.to_account, user["_id"])
@@ -2121,6 +2338,7 @@ async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user
                     description=body.notes or "Transfer", date=date, month=month_of(date),
                     account=from_id, created_at=now_iso())
     db.add(t)
+    await money_check(db, user["_id"], before)
     await db.commit()
     await db.refresh(t)
     return to_dict(t)
@@ -2128,12 +2346,14 @@ async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user
 
 @api_router.post("/transactions/income")
 async def add_income(body: IncomeBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     account_id = await require_account_id(db, body.account_id or body.account, user["_id"])
     t = Transaction(id=new_id(), user_id=user["_id"], type="income", account=account_id,
                     gross_amount=round(body.amount, 2), description=body.description or "Income",
                     date=date, month=month_of(date), created_at=now_iso())
     db.add(t)
+    await money_check(db, user["_id"], before)
     await db.commit()
     await db.refresh(t)
     return to_dict(t)
@@ -2144,6 +2364,7 @@ async def add_income(body: IncomeBody, user: dict = Depends(get_current_user), d
 # ---------------------------------------------------------------------------
 @api_router.post("/settlements")
 async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    before = await money_begin(db, user["_id"])
     person = await resolve_person(db, body.person, user["_id"])
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -2183,6 +2404,7 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
         await db.flush()
         s.balance_transaction_id = txn.id
 
+    await money_check(db, user["_id"], before)
     await db.commit()
     await db.refresh(s)
     return to_dict(s)
@@ -2208,17 +2430,21 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     bank_current = bank
     bank_initial = round(sum(a.get("initial_balance") if a.get("initial_balance") is not None else a["balance"] for a in accounts if a["type"] == "bank"), 2)
     money_left_bank = round(bank_initial - bank_current, 2)
-    # Cash places: separate freely available from locked funds.
-    cash_parent = round(sum(a["balance"] for a in accounts if a["type"] == "cash"), 2)
-    cash_available = round(cash_parent + sum(a["balance"] for a in accounts if a["type"] == "cash_place" and not a.get("is_locked")), 2)
-    cash_locked = round(sum(a["balance"] for a in accounts if a["type"] == "cash_place" and a.get("is_locked")), 2)
-    cash = round(cash_available + cash_locked, 2)
-    # Revolut spaces mirror cash places: locked ones are kept apart from freely available funds.
-    revolut_parent = sum_by_types("revolut")
-    revolut_spaces_available = round(sum(a["balance"] for a in accounts if a["type"] == "revolut_space" and not a.get("is_locked")), 2)
-    revolut_locked = round(sum(a["balance"] for a in accounts if a["type"] == "revolut_space" and a.get("is_locked")), 2)
-    revolut = round(revolut_parent + revolut_spaces_available, 2)
-    revolut_total = round(revolut + revolut_locked, 2)
+    # A main account's balance already includes its sub-accounts, so only top-level accounts are added up; the locked
+    # sub-accounts are then set apart from the freely available rest.
+    def top_level(*types):
+        return round(sum(a["balance"] for a in accounts if a["type"] in types and not a.get("parent_id")), 2)
+
+    def locked(type_):
+        return round(sum(a["balance"] for a in accounts if a["type"] == type_ and a.get("is_locked")), 2)
+
+    cash_locked = locked("cash_place")
+    cash = top_level("cash", "cash_place")
+    cash_available = round(cash - cash_locked, 2)
+    # Revolut spaces mirror cash places.
+    revolut_locked = locked("revolut_space")
+    revolut_total = top_level("revolut", "revolut_space")
+    revolut = round(revolut_total - revolut_locked, 2)
     # Locked money isn't available, so it isn't "in hand".
     in_hand = round(cash_available + revolut, 2)
     actual_spent = round(money_left_bank - in_hand, 2) if money_left_bank > 0 else None
@@ -3728,6 +3954,13 @@ def remember_before(created: list, collection: str, obj) -> None:
     created.append({"collection": collection, "id": obj.id, "before": before})
 
 
+async def remember_new_transfers(db: AsyncSession, user_id: str, created: list, account_ids: list, known: set) -> None:
+    """Transfers between a main account and its places that an assistant action made on the side (setting money aside,
+    giving it back) belong to the action: undoing it must remove them too, or the money would be left in neither place."""
+    now = await allocation_transfer_ids(db, user_id, account_ids)
+    created.extend({"collection": "transactions", "id": t} for t in sorted(now - known))
+
+
 @api_router.post("/ai/actions/{aid}/undo")
 async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     action = (await db.execute(
@@ -3735,7 +3968,9 @@ async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSes
     )).scalar_one_or_none()
     if not action or action.undone:
         raise HTTPException(404, "Nothing to undo")
+    balances_before = await money_begin(db, user["_id"])
     models = undo_models()
+    made_by_action = {r["id"] for r in (action.created or []) if r.get("collection") == "transactions"}
     # Newest change first. A ref with "before" was changed or deleted by the action: put its values back (or the
     # whole row if it is gone). A ref without it was created by the action: remove it.
     for ref in reversed(action.created or []):
@@ -3753,8 +3988,21 @@ async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSes
             else:
                 db.add(model(**before))
         else:
+            if ref["collection"] == "accounts":
+                # A place the action created cannot vanish once money has moved through it since: that money would be lost.
+                used = (await db.execute(select(Transaction.id).where(
+                    Transaction.user_id == user["_id"], Transaction.id.not_in(made_by_action),
+                    (Transaction.account == ref["id"]) | (Transaction.from_account == ref["id"]) | (Transaction.to_account == ref["id"])
+                ))).first()
+                if used:
+                    await db.rollback()
+                    raise HTTPException(409, "Can't undo this: that place has been used since. Move its money out and delete it yourself.")
             await db.execute(delete(model).where(model.id == ref["id"], model.user_id == user["_id"]))
     action.undone = True
+    try:
+        await money_check(db, user["_id"], balances_before)
+    except HTTPException as e:
+        raise HTTPException(409, f"Can't undo this: later changes have used that money. {e.detail}")
     await db.commit()
     return {"ok": True}
 
@@ -3997,25 +4245,27 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "update_account_balance",
-        "description": "Correct/set the balance of a money place/account to an exact figure (e.g. 'my Revolut is actually 39.16'). Do NOT use this when the user received or spent money: use record_income, create_expense or transfer_money so it appears in the transaction history. For the bank account you can also set the initial balance used to calculate money that left the bank.",
+        "description": "Correct/set the balance of a money place/account to an exact figure (e.g. 'my Revolut is actually 39.16'). For Money in hand or Revolut the figure is the TOTAL including its places. For a place, a higher figure is taken from the main account's unallocated money (refused if there is not enough) unless add_as_new_money is true, and a lower figure gives the difference back to it. Do NOT use this when the user received or spent money: use record_income, create_expense or transfer_money so it appears in the transaction history. For the bank account you can also set the initial balance used to calculate money that left the bank.",
         "parameters": {"type": "object", "properties": {
             "account": {"type": "string", "description": "Account id, name or 'bank'/'cash'/'revolut'"},
             "balance": {"type": "number", "description": "New current balance"},
+            "add_as_new_money": {"type": "boolean", "description": "Places only: the increase is extra money added to the main account, not moved from its unallocated balance. Only when the user says it is new money."},
             "initial_balance": {"type": "number", "description": "For bank only: the starting bank balance"}},
             "required": ["account", "balance"]},
     }},
     {"type": "function", "function": {
         "name": "get_accounts",
-        "description": "Get all money accounts and their current balances. Use each account's `balance` as the real current balance (not `opening_balance`). Spaces/places have a parent_id pointing at Money in hand or Revolut.",
+        "description": "Get all money accounts and their current balances. Use each account's `balance` as the real current balance (not `opening_balance`). Spaces/places have a parent_id pointing at Money in hand or Revolut; their money is part of that main account's `balance` (its total), never added to it. A main account also shows `unallocated_balance` (not in any place) and `allocated_balance` (in its places).",
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
         "name": "create_money_space",
-        "description": "Create a new space/place inside Money in hand (e.g. a new envelope) or inside Revolut (e.g. savings, vault, trip pocket). Optionally give it a starting balance and mark it locked (not freely available).",
+        "description": "Create a new space/place inside Money in hand (e.g. a new envelope) or inside Revolut (e.g. savings, vault, trip pocket). Optionally give it a starting balance, which is moved out of the main account's unallocated money (its total does not change; refused if there is not enough) unless add_as_new_money is true. Can be marked locked (not freely available).",
         "parameters": {"type": "object", "properties": {
             "parent": {"type": "string", "description": "'cash' / 'money in hand' or 'revolut'"},
             "name": {"type": "string"},
             "balance": {"type": "number", "description": "Starting balance, default 0"},
+            "add_as_new_money": {"type": "boolean", "description": "True only if the starting balance is extra money the user is adding, not money already in the main account"},
             "is_locked": {"type": "boolean", "description": "True if the money isn't freely available"}},
             "required": ["parent", "name"]},
     }},
@@ -4029,7 +4279,7 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "delete_money_space",
-        "description": "Delete a space/place (preview first, then confirm). Only works when it has no transactions; otherwise suggest transferring its money elsewhere and hiding it.",
+        "description": "Delete a space/place (preview first, then confirm). What it holds goes back to the main account's unallocated balance; its past transactions stay in the history.",
         "parameters": {"type": "object", "properties": {
             "account": {"type": "string", "description": "Account id or name of the space"},
             "confirm": ai_tools_extra._CONFIRM},
@@ -5045,12 +5295,16 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             acc = await resolve_account(db, args.get("account", ""), user["_id"])
             if not acc:
                 return {"error": "Account not found"}
-            upd = AccountUpdate(balance=args.get("balance"))
+            upd = AccountUpdate(balance=args.get("balance"), add_as_new_money=bool(args.get("add_as_new_money")))
             if args.get("initial_balance") is not None:
                 upd.initial_balance = args["initial_balance"]
             remember_before(created, "accounts", acc)
-            res = await update_account(acc.id, upd, user, db)
-            res["balance"] = await compute_account_balance(db, acc.id, user["_id"])
+            known = await allocation_transfer_ids(db, user["_id"], [acc.id, acc.parent_id])
+            try:
+                res = await update_account(acc.id, upd, user, db)
+            except HTTPException as e:
+                return {"error": e.detail}
+            await remember_new_transfers(db, user["_id"], created, [acc.id, acc.parent_id], known)
             return {"updated": res}
         if name in ("create_money_space", "update_money_space", "delete_money_space"):
             try:
@@ -5066,12 +5320,14 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                         parent = await resolve_account(db, args.get("parent", ""), user["_id"])
                     if not parent or parent.type not in ("cash", "revolut"):
                         return {"error": "Spaces can only be created inside Money in hand or Revolut"}
+                    known = await allocation_transfer_ids(db, user["_id"], [parent.id])
                     res = await create_account(AccountBody(
                         name=args["name"], type="revolut_space" if parent.type == "revolut" else "cash_place",
                         parent_id=parent.id, opening_balance=args.get("balance") or 0,
-                        is_locked=bool(args.get("is_locked", False)),
+                        add_as_new_money=bool(args.get("add_as_new_money")), is_locked=bool(args.get("is_locked", False)),
                     ), user, db)
                     created.append({"collection": "accounts", "id": res["id"]})
+                    await remember_new_transfers(db, user["_id"], created, [parent.id], known)
                     return res
                 acc = await resolve_account(db, args.get("account", ""), user["_id"])
                 if not acc:
@@ -5079,13 +5335,19 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                 if name == "update_money_space":
                     upd = AccountUpdate(name=args.get("name"), is_locked=args.get("is_locked"), is_active=args.get("is_active"))
                     remember_before(created, "accounts", acc)
-                    return {"updated": await update_account(acc.id, upd, user, db)}
+                    known = await allocation_transfer_ids(db, user["_id"], [acc.id, acc.parent_id])
+                    updated = await update_account(acc.id, upd, user, db)
+                    await remember_new_transfers(db, user["_id"], created, [acc.id, acc.parent_id], known)
+                    return {"updated": updated}
                 gate = await _confirmation_gate(db, user["_id"], session_id, previewed_this_turn, "delete_money_space", acc.id,
                                                 args.get("confirm"), f"This will delete the place '{acc.name}'. Ask the user to confirm.")
                 if gate:
                     return gate
                 remember_before(created, "accounts", acc)
-                return await delete_account(acc.id, user, db)
+                known = await allocation_transfer_ids(db, user["_id"], [acc.id, acc.parent_id])
+                deleted = await delete_account(acc.id, user, db)
+                await remember_new_transfers(db, user["_id"], created, [acc.id, acc.parent_id], known)
+                return deleted
             except HTTPException as e:
                 return {"error": e.detail}
         if name == "get_products":

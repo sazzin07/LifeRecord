@@ -40,9 +40,10 @@ def space(client):
     assert r.status_code == 200, r.text
     acc = r.json()
     yield acc
-    for t in client.get(f"{BASE_URL}/api/transactions").json():
-        if t.get("account") == acc["id"]:
-            client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
+    # Everything that touched the space goes, spending first and the transfers that funded it last, so no step overdraws it.
+    mine = [t for t in client.get(f"{BASE_URL}/api/transactions").json() if acc["id"] in (t.get("account"), t.get("from_account"), t.get("to_account"))]
+    for t in sorted(mine, key=lambda t: t["type"] == "transfer"):
+        client.delete(f"{BASE_URL}/api/transactions/{t['id']}")
     client.delete(f"{BASE_URL}/api/accounts/{acc['id']}")
 
 
@@ -69,9 +70,12 @@ def test_set_balance_accounts_for_existing_transactions(client, space):
 
 def test_revolut_space_counts_towards_revolut(client, space):
     before = client.get(f"{BASE_URL}/api/analytics/summary").json()["revolut"]
-    client.put(f"{BASE_URL}/api/accounts/{space['id']}", json={"balance": 12.5})
+    client.put(f"{BASE_URL}/api/accounts/{space['id']}", json={"balance": 12.5, "add_as_new_money": True})
     after = client.get(f"{BASE_URL}/api/analytics/summary").json()["revolut"]
     assert round(after - before, 2) == 12.5
+    # Money moved into the space from the rest of Revolut is not new: Revolut as a whole stays the same.
+    client.put(f"{BASE_URL}/api/accounts/{space['id']}", json={"balance": 20.0})
+    assert client.get(f"{BASE_URL}/api/analytics/summary").json()["revolut"] == after
 
 
 def test_locked_space_is_kept_out_of_available(client, space):

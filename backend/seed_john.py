@@ -100,12 +100,13 @@ def seed_money(api: Api) -> dict:
     def acct(**kw):
         return api.post("/accounts", kw)["id"]
 
+    # The places hold money of their own that is not in the main account: new money, so the totals are the sum.
     cash = acct(name="Money in hand", type="cash", opening_balance=0)
-    acct(name="Wallet", type="cash_place", parent_id=cash, opening_balance=85)
-    acct(name="Kitchen jar", type="cash_place", parent_id=cash, opening_balance=140)
-    acct(name="Travel envelope", type="cash_place", parent_id=cash, opening_balance=250, is_locked=True)
+    acct(name="Wallet", type="cash_place", parent_id=cash, opening_balance=85, add_as_new_money=True)
+    acct(name="Kitchen jar", type="cash_place", parent_id=cash, opening_balance=140, add_as_new_money=True)
+    acct(name="Travel envelope", type="cash_place", parent_id=cash, opening_balance=250, is_locked=True, add_as_new_money=True)
     rev = acct(name="Revolut", type="revolut", opening_balance=320)
-    acct(name="Holiday pot", type="revolut_space", parent_id=rev, opening_balance=400, is_locked=True)
+    acct(name="Holiday pot", type="revolut_space", parent_id=rev, opening_balance=400, is_locked=True, add_as_new_money=True)
     bank = acct(name="Main bank", type="bank", opening_balance=2450)
 
     people = [("Marta Silva", "Revolut"), ("Liam O'Connor", "Bank transfer"), ("Aiko Tanaka", "Cash"),
@@ -123,6 +124,11 @@ def seed_money(api: Api) -> dict:
     def exp(amount, desc, cat, account, days, merchant="", **kw):
         return api.post("/transactions/expense", {"amount": amount, "description": desc, "category": cat, "account": account,
                                                   "date": d(days), "merchant": merchant or desc, "notes": S, **kw})
+
+    # moving money between places first: an account cannot be spent below zero, whatever the date of the spending
+    accounts = {a["name"]: a["id"] for a in api.get("/accounts")}
+    api.post("/accounts/transfer", {"from_account_id": accounts["Main bank"], "to_account_id": accounts["Revolut"], "amount": 200, "date": d(30), "note": f"{S} top up"})
+    api.post("/accounts/transfer", {"from_account_id": accounts["Revolut"], "to_account_id": accounts["Wallet"], "amount": 50, "date": d(8), "note": f"{S} cash withdrawal"})
 
     # everyday spending across accounts and categories
     exp(62.40, "Weekly groceries", "Groceries", "Main bank", 52, "Lidl")
@@ -164,10 +170,6 @@ def seed_money(api: Api) -> dict:
     # people paying back, in and out
     api.post("/settlements", {"person": "Marta Silva", "amount": 20.00, "method": "Revolut", "account": "Revolut", "direction": "in", "date": d(15)})
     api.post("/settlements", {"person": "Liam O'Connor", "amount": 8.00, "method": "Cash", "account": "Wallet", "direction": "out", "date": d(12)})
-    # moving money between places
-    accounts = {a["name"]: a["id"] for a in api.get("/accounts")}
-    api.post("/accounts/transfer", {"from_account_id": accounts["Main bank"], "to_account_id": accounts["Revolut"], "amount": 200, "date": d(30), "note": f"{S} top up"})
-    api.post("/accounts/transfer", {"from_account_id": accounts["Revolut"], "to_account_id": accounts["Wallet"], "amount": 50, "date": d(8), "note": f"{S} cash withdrawal"})
     return accounts
 
 

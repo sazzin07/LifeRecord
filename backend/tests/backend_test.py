@@ -170,11 +170,13 @@ class TestFinance:
         before = client.get(f"{BASE_URL}/api/accounts").json()
         cash_acc = next((a for a in before if a["type"] == "cash"), None)
         assert cash_acc, "No cash account found"
-        cash_before = cash_acc["balance"]
+        cash_before = cash_acc["balance"]  # Money in hand's total, its places included
+        # The money is in the places; Money in hand itself has nothing unassigned to spend from.
+        place = max((a for a in before if a.get("parent_id") == cash_acc["id"]), key=lambda a: a["balance"], default=cash_acc)
 
         r = client.post(f"{BASE_URL}/api/transactions/expense", json={
             "amount": 12.34, "merchant": f"{TAG}_shop", "category": "Other",
-            "account": cash_acc["id"], "participants": ["Me"], "split_mode": "equal",
+            "account": place["id"], "participants": ["Me"], "split_mode": "equal",
         })
         assert r.status_code == 200
         txn = r.json()["transaction"]

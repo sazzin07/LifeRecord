@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
-import { api, eur, CATEGORY_COLORS } from "@/lib/api";
+import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
+import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
 import {
   Card, StatCard, SectionHeading, EmptyState, Label, SkeletonCard, ConfidenceBadge,
@@ -72,11 +73,6 @@ function signedAmount(t) {
   if (t.type === "income") return t.gross_amount;
   if (t.type === "expense") return -t.gross_amount;
   return 0;
-}
-
-function sumChildren(account) {
-  if (!account) return 0;
-  return account.children.reduce((s, c) => s + (c.balance || 0), 0) + (account.balance || 0);
 }
 
 export default function Money() {
@@ -147,9 +143,10 @@ export default function Money() {
     refreshAll();
   };
   const txnToDelete = txns.find((t) => t.id === deleteTxnId);
+  const deletingPlace = accounts.find((a) => a.id === deleteAccountId);
 
   const { roots: accountRoots, byId: accountById } = useMemo(() => buildAccountTree(accounts), [accounts]);
-  const accountName = (id) => accountById[id]?.name || id || "";
+  const accountName = (id, saved) => accountById[id]?.name || saved || id || "";  // `saved`: the name a deleted place had
 
   const mainAccounts = useMemo(() => {
     const find = (type) => accountRoots.find((a) => a.type === type) || null;
@@ -237,7 +234,7 @@ export default function Money() {
       setDeleteAccountId(null);
       refreshAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Could not delete account");
+      toast.error(errorMessage(err, "Could not delete account"));
     }
   };
 
@@ -248,7 +245,7 @@ export default function Money() {
       setTransferOpen(false);
       refreshAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Transfer failed");
+      toast.error(errorMessage(err, "Transfer failed"));
     }
   };
 
@@ -305,6 +302,24 @@ export default function Money() {
     </Card>
   );
 
+  // How a main account's money is divided: the bar is the part held by places, the rest is not in any place yet.
+  const AllocationSummary = ({ account }) => {
+    if (!account || !(account.place_count > 0)) return null;
+    const total = account.total_balance || 0;
+    const held = account.allocated_balance || 0;
+    const width = total > 0 ? Math.max(0, Math.min(100, (held / total) * 100)) : 0;
+    return (
+      <div className="space-y-1.5" data-testid={`allocation-${account.type}`}>
+        <div className="flex h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" aria-hidden="true">
+          <div className="bg-emerald-600 dark:bg-emerald-500" style={{ width: `${width}%` }} />
+        </div>
+        <p className="text-xs text-slate-600 dark:text-slate-400">
+          Total {eur(total)} · {eur(account.unallocated_balance || 0)} not in a place · {eur(held)} in {account.place_count} {account.place_count === 1 ? "place" : "places"}
+        </p>
+      </div>
+    );
+  };
+
   const SubPlaces = ({ account }) => {
     const [open, setOpen] = useState(false);
     if (!account || account.children.length === 0) return null;
@@ -313,11 +328,15 @@ export default function Money() {
         <CollapsibleTrigger asChild>
           <button className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
             {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            {open ? "Hide details" : `Show ${account.children.length} places`}
+            {open ? "Hide details" : `Show ${account.children.length} ${account.children.length === 1 ? "place" : "places"}`}
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-2 space-y-1.5">
+            <div className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg border border-dashed border-border text-slate-600 dark:text-slate-300" data-testid={`unassigned-${account.type}`}>
+              <span>Not in a place yet</span>
+              <span className="font-medium">{eur(account.unallocated_balance || 0)}</span>
+            </div>
             {account.children.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)).map((child) => (
               <div key={child.id} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
                 <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
@@ -341,13 +360,7 @@ export default function Money() {
     );
   };
 
-  const accountOptions = useMemo(() => {
-    return accounts
-      .filter((a) => a.type !== "owed" && a.type !== "owed_person")
-      .map((a) => ({ value: a.id, label: a.name }));
-  }, [accounts]);
-
-  const cashTotal = sumChildren(mainAccounts.cash);
+  const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
   return (
     <div className="space-y-6">
@@ -434,6 +447,7 @@ export default function Money() {
                   {eur(sum.cash_locked)} locked
                 </p>
               )}
+              <AllocationSummary account={mainAccounts.cash} />
               <SubPlaces account={mainAccounts.cash} />
             </BalanceSection>
             <BalanceSection
@@ -451,6 +465,7 @@ export default function Money() {
                   {eur(sum.revolut_locked)} locked
                 </p>
               )}
+              <AllocationSummary account={mainAccounts.revolut} />
               <SubPlaces account={mainAccounts.revolut} />
             </BalanceSection>
           </div>
@@ -669,7 +684,7 @@ export default function Money() {
                       const badge = isExpense ? REFUND_BADGE[t.refund_status] : null;
                       const color = isIncome ? "#10B981" : isTransfer ? "#3B82F6" : (CATEGORY_COLORS[t.category] || "#94A3B8");
                       const title = isTransfer
-                        ? `${accountName(t.from_account)} → ${accountName(t.to_account)}`
+                        ? `${accountName(t.from_account, t.from_account_name)} → ${accountName(t.to_account, t.to_account_name)}`
                         : (t.merchant || t.description || t.category);
                       return (
                         <div key={t.id} data-testid={`txn-${t.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 group">
@@ -682,7 +697,7 @@ export default function Money() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium text-sm truncate">{title}</p>
                               <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{isExpense ? t.payment_method : accountName(t.account)}
+                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{isExpense ? t.payment_method : accountName(t.account, t.account_name)}
                               </span>
                               {badge && t.reimbursable_amount > 0.005 && <ConfidenceBadge type={badge.type}>{badge.label}</ConfidenceBadge>}
                             </div>
@@ -759,7 +774,9 @@ export default function Money() {
         open={!!deleteAccountId}
         onOpenChange={(v) => !v && setDeleteAccountId(null)}
         title="Delete money place?"
-        description="This will permanently delete the place. Make sure it has no transactions."
+        description={deletingPlace
+          ? `The ${eur(deletingPlace.balance)} in "${deletingPlace.name}" goes back to its main account, so nothing is lost. Its past transactions stay in your history.`
+          : "The money in it goes back to the main account, so nothing is lost. Its past transactions stay in your history."}
         onConfirm={() => deleteAccountId && deleteAccount(deleteAccountId)}
         confirmText="Delete"
         variant="danger"
@@ -783,6 +800,12 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
   const [to, setTo] = useState(defaultTo || "");
   const [amount, setAmount] = useState("");
   useEffect(() => { if (defaultTo) setTo(defaultTo); }, [defaultTo]);
+  const source = accounts.find((a) => a.id === from);
+  // The server refuses to take more than a place, or a main account's unassigned part, holds: say so before it has to.
+  const tooMuch = checkSpend(source, amount, { everyAccount: true });
+  const option = (a, withAmount) => (
+    <SelectItem key={a.id} value={a.id}>{a.label}{withAmount ? ` · ${eur(a.available)}${(a.place_count || 0) > 0 ? " not in a place" : ""}` : ""}</SelectItem>
+  );
   return (
     <div className="space-y-3 mt-2">
       <div>
@@ -790,7 +813,7 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
         <Select value={from} onValueChange={setFrom}>
           <SelectTrigger aria-label="Move money from"><SelectValue placeholder="Select source" /></SelectTrigger>
           <SelectContent>
-            {accounts.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+            {accounts.map((a) => option(a, true))}
           </SelectContent>
         </Select>
       </div>
@@ -799,17 +822,25 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
         <Select value={to} onValueChange={setTo}>
           <SelectTrigger aria-label="Move money to"><SelectValue placeholder="Select destination" /></SelectTrigger>
           <SelectContent>
-            {accounts.filter((a) => a.value !== from).map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+            {accounts.filter((a) => a.id !== from).map((a) => option(a, false))}
           </SelectContent>
         </Select>
       </div>
       <div>
-        <Label className="text-xs">Amount (€)</Label>
-        <Input type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+        <Label className="text-xs" htmlFor="transfer-amount">Amount (€)</Label>
+        <Input id="transfer-amount" type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" aria-describedby="transfer-note" data-testid="transfer-amount" />
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <p id="transfer-note" data-testid="transfer-note" role={tooMuch ? "alert" : undefined} className={cn("text-xs", tooMuch ? "text-red-700 dark:text-red-400" : "text-slate-600 dark:text-slate-400")}>
+            {tooMuch || (source ? `Available to move from ${source.name}: ${eur(spendable(source))}.` : "")}
+          </p>
+          {source && spendable(source) > 0 && (
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAmount(String(spendable(source)))}>All of it</Button>
+          )}
+        </div>
       </div>
       <div className="flex justify-end gap-2 mt-4">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to} className="bg-emerald-700 hover:bg-emerald-800 text-white">Transfer</Button>
+        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to || !!tooMuch} className="bg-emerald-700 hover:bg-emerald-800 text-white">Transfer</Button>
       </div>
     </div>
   );

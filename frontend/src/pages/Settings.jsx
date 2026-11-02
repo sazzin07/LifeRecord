@@ -111,10 +111,10 @@ function Accounts({ accounts }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-xs text-slate-500">A place that has transactions can't be deleted; move its money first. Transfers are on the Money page.</p>
+      <p className="mt-2 text-xs text-slate-500">Deleting a place gives its money back to its main account. Transfers are on the Money page.</p>
       <AccountDialog open={dialog.open} setOpen={(o) => setDialog((d) => ({ ...d, open: o }))} account={dialog.account} parent={dialog.parent} parents={roots.filter(canHaveSubPlaces)} />
       <ConfirmDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }} title="Delete place?"
-        description={toDelete ? `"${toDelete.name}" will be removed. This cannot be undone.` : "This place will be removed."}
+        description={toDelete ? `"${toDelete.name}" will be removed. The ${eur(toDelete.balance)} in it goes back to its main account.` : "This place will be removed."}
         onConfirm={() => deleteId && remove(deleteId)} confirmText="Delete" variant="danger" />
     </Card>
   );

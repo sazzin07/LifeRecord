@@ -14,7 +14,7 @@ if not os.environ.get("REACT_APP_BACKEND_URL"):
 # Accounts registered by test_auth_multiuser.py and test_change_password.py (prefix_<hex>@example.com). They are removed once the whole run
 # has finished: its test classes run on different xdist workers, so a per-module teardown would delete users
 # another worker is still using. Their data goes with them (every user FK cascades).
-TEST_USER_EMAIL = r"^(aiiso|authtest|catiso|export|expired|invalid|isolation|limits|onboard|perf|pwchange|refresh|nutri|reset|reused|session|unverified)_[0-9a-f]+@example[.]com$"
+TEST_USER_EMAIL = r"^(aiiso|alloc|authtest|catiso|export|expired|invalid|isolation|limits|onboard|perf|pwchange|refresh|nutri|reset|reused|session|unverified)_[0-9a-f]+@example[.]com$"
 
 
 def pytest_configure(config):

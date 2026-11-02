@@ -330,6 +330,18 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 
 ### Money
 - Dynamic account hierarchy: bank, cash places, Revolut, locked funds, owed accounts.
+- **A main account and its places are one amount of money.** Money in hand and Revolut can be divided into places
+  (wallet, envelope, pot). The main account's balance is the total; each place holds part of it; what no place holds is
+  the main account's *unassigned* balance, so `total = unassigned + places` at all times.
+  - A new place's starting balance comes out of the unassigned balance and the total stays as it was. Ticking
+    **"Add this amount as new money to the main account"** (unticked by default) adds it as extra money instead.
+  - Asking for more than is unassigned is refused with the amount that is available. Spending, transfers, edits and
+    deletions are held to the same rule: no place, and no main account's unassigned part, can go below zero.
+  - Moving money between places, or between a place and its main account, never changes the total. Income raises it and
+    spending lowers it. Deleting (or hiding) a place gives what it holds back to the main account; its history stays.
+  - The server enforces all of this (`lock_money` / `money_check` in `server.py`); two requests at once cannot spend the
+    same euro. Tests: `backend/tests/test_account_allocation.py`, `frontend/src/lib/allocation.test.js`,
+    `frontend/e2e/money-allocation.spec.js`.
 - Transfers between accounts, actual-spending calculation, and locked-funds support.
 - Expenses, income, and transfers all update account balances automatically.
 

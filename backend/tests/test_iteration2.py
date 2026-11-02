@@ -84,7 +84,8 @@ class TestEditExpense:
         assert t2["gross_amount"] == 60.0
         assert t2["personal_amount"] == 30.0
         assert t2["reimbursable_amount"] == 30.0
-        # Update payment_method
+        # Update payment_method. Revolut only holds what it holds, so go back to a share it can cover first.
+        client.put(f"{BASE_URL}/api/transactions/{t['id']}", json={"amount": 30.0})
         r3 = client.put(f"{BASE_URL}/api/transactions/{t['id']}", json={"payment_method": "card"})
         revolut_id = next(a["id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut")
         assert r3.json()["account"] == revolut_id

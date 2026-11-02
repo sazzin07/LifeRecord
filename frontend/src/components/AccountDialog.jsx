@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BadgeInfo } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage, eur } from "@/lib/api";
+import { planAllocation, NEW_MONEY_LABEL } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ export function buildAccountTree(accounts) {
 
 export const canHaveSubPlaces = (a) => a.type === "cash" || a.type === "revolut";
 
-const EMPTY = { name: "", type: "cash_place", parent_id: "", opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR" };
+const EMPTY = { name: "", type: "cash_place", parent_id: "", opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR", add_as_new_money: false };
 
 /**
  * Create a sub-place under `parent`, or edit `account`. `parents` are the places a new sub-place may go under.
@@ -49,14 +50,21 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
         initial_balance: account.initial_balance ?? "",
         is_locked: !!account.is_locked,
         currency: account.currency || "EUR",
+        add_as_new_money: false,
       });
     } else {
       setForm({ ...EMPTY, type: parent?.type === "revolut" ? "revolut_space" : "cash_place", parent_id: parent?.id || "" });
     }
   }, [open, account, parent]);
 
+  // The main account whose money this place is a part of, and what saving would do to it.
+  const host = account ? (account.parent_id ? parents.find((p) => p.id === account.parent_id) : null) : (parents.find((p) => p.id === form.parent_id) || parent);
+  const isMain = !!account && !account.parent_id;
+  const plan = planAllocation({ account, host, amount: form.opening_balance, newMoney: form.add_as_new_money });
+
   const save = async () => {
     if (!form.name.trim()) { toast.error("Give the place a name"); return; }
+    if (plan.error) { toast.error(plan.text); return; }
     const chosenParent = parents.find((p) => p.id === form.parent_id);
     const payload = {
       name: form.name.trim(),
@@ -72,6 +80,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
     const amount = parseFloat(form.opening_balance || "0");
     if (account) payload.balance = amount;
     else payload.opening_balance = amount;
+    if (host) payload.add_as_new_money = !!form.add_as_new_money;
     setSaving(true);
     try {
       if (account) {
@@ -84,7 +93,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
       setOpen(false);
       refreshAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Could not save account");
+      toast.error(errorMessage(err, "Could not save account"));
     } finally {
       setSaving(false);
     }
@@ -95,7 +104,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
       <DialogContent className="max-w-md" data-testid="account-dialog">
         <DialogHeader>
           <DialogTitle>{account ? "Edit place" : "Add place"}</DialogTitle>
-          <DialogDescription>{account ? "Update the name and balance." : "Create a new money place under the selected location."}</DialogDescription>
+          <DialogDescription>{account ? "Update the name and balance." : "Set money aside in a new place under the selected location."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 mt-2">
           <div>
@@ -103,9 +112,19 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
             <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" data-testid="account-name" />
           </div>
           <div>
-            <Label className="text-xs" htmlFor="account-balance">Current balance (€)</Label>
-            <Input id="account-balance" type="number" min={0} step="0.01" value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" />
+            <Label className="text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? "Total balance, including sub-accounts (€)" : host ? (account ? "Balance (€)" : "Amount to set aside (€)") : "Current balance (€)"}</Label>
+            <Input id="account-balance" type="number" min={0} step="0.01" value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" />
           </div>
+          {host && plan.showNewMoney && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="add-new-money" checked={!!form.add_as_new_money} onCheckedChange={(c) => setForm((f) => ({ ...f, add_as_new_money: c === true }))} data-testid="account-new-money" />
+              <Label htmlFor="add-new-money" className="text-xs">{NEW_MONEY_LABEL}</Label>
+            </div>
+          )}
+          <p id="account-allocation" role={plan.error ? "alert" : undefined} aria-live={plan.error ? undefined : "polite"} data-testid="account-allocation"
+            className={plan.error ? "text-xs text-red-700 dark:text-red-400" : "text-xs text-slate-600 dark:text-slate-400"}>
+            {plan.text || (host && !account ? `Unchecked: the money comes out of ${host.name}'s unassigned balance (${eur(host.unallocated_balance ?? 0)}), so its total does not change.` : "")}
+          </p>
           {account?.type === "bank" && (
             <div>
               <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
@@ -130,7 +149,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="account-save">Save</Button>
+          <Button onClick={save} disabled={saving || plan.error} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="account-save">Save</Button>
         </div>
       </DialogContent>
     </Dialog>

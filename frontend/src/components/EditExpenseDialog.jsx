@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
+import { orderAccounts } from "@/lib/allocation";
 import { HandCoins, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -118,7 +119,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment</label>
                 <Select value={f.payment_method} onValueChange={(v) => setF((p) => ({ ...p, payment_method: v }))}>
                   <SelectTrigger className="mt-1" data-testid="edit-method"><SelectValue /></SelectTrigger>
-                  <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{orderAccounts(accounts).map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
@@ -172,7 +173,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
               </Select>
               <Select value={refund.account} onValueChange={(v) => setRefund((r) => ({ ...r, account: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{orderAccounts(accounts).map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <Button onClick={recordRefund} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="refund-submit">Record</Button>

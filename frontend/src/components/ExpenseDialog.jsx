@@ -7,12 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, eur, errorMessage } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
+import { orderAccounts, defaultSpendAccount, checkSpend } from "@/lib/allocation";
 import { Link } from "react-router-dom";
 import { Avatar } from "@/components/common";
 import { Plus, Trash2, Users, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { DatePicker } from "@/components/ui/date-picker";
+
+const isMoneyAccount = (a) => a.type !== "owed" && a.type !== "owed_person";
 
 export function ExpenseDialog({ open, setOpen }) {
   const [cats, setCats] = useState([]);
@@ -39,11 +42,7 @@ export function ExpenseDialog({ open, setOpen }) {
       const r = { data: d };
       setAccounts(r.data);
       setAccountsLoaded(true);
-      if (!account) {
-        const cash = r.data.find((a) => a.type === "cash");
-        const first = r.data.find((a) => a.type !== "owed" && a.type !== "owed_person");
-        setAccount(cash?.id || first?.id || "");
-      }
+      if (!account) setAccount(defaultSpendAccount(r.data.filter(isMoneyAccount))?.id || "");
     });
     // Only run when dialog opens; account state should not reset on edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,11 +71,13 @@ export function ExpenseDialog({ open, setOpen }) {
 
   const reset = () => {
     setAmount(""); setMerchant(""); setNotes(""); setParticipants(["Me"]);
-    setSplitMode("equal"); setItems([]); setCategory("Groceries"); setAccount(accounts[0]?.id || "");
+    setSplitMode("equal"); setItems([]); setCategory("Groceries"); setAccount(defaultSpendAccount(accounts.filter(isMoneyAccount))?.id || "");
   };
 
-  const usableAccounts = accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person");
+  const usableAccounts = accounts.filter(isMoneyAccount);
   const noAccounts = accountsLoaded && usableAccounts.length === 0;
+  // A place (or a main account that has places) cannot go below zero: say so before the server has to refuse.
+  const spendWarning = checkSpend(usableAccounts.find((a) => a.id === account), gross);
 
   const save = async () => {
     if (noAccounts) { toast.error("Create an account under Money first"); return; }
@@ -142,13 +143,21 @@ export function ExpenseDialog({ open, setOpen }) {
               <Select value={account} onValueChange={setAccount}>
                 <SelectTrigger data-testid="expense-account" aria-label="Paid with" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person").map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  {orderAccounts(usableAccounts).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.label} · {eur(a.available)}{(a.place_count || 0) > 0 ? " not in a place" : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {spendWarning && (
+            <p role="alert" data-testid="expense-spend-warning" className="text-xs text-red-700 dark:text-red-400">
+              {spendWarning} Choose another account, or move money there first.
+            </p>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Who participated?</label>
@@ -213,7 +222,7 @@ export function ExpenseDialog({ open, setOpen }) {
             {gross - myShare > 0.005 && <div className="text-right text-emerald-600 dark:text-emerald-400 font-semibold">+{eur(gross - myShare)}<div className="text-xs text-slate-500 font-normal">to receive</div></div>}
           </div>
 
-          <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11">
+          <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts || !!spendWarning} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save expense"}
           </Button>
         </div>

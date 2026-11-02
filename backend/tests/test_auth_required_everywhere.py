@@ -21,6 +21,7 @@ PUBLIC = {
     ("POST", "/api/auth/register"): "creating an account; answers identically whether or not the address exists",
     ("POST", "/api/auth/resend-verification"): "proves nothing about the address; cooldown and rate limit apply",
     ("POST", "/api/auth/verify"): "needs the emailed code; attempts are limited and counted",
+    ("POST", "/api/auth/login/totp"): "the second half of signing in: needs the challenge a correct password earns plus a current code; attempts are limited and counted",
     ("POST", "/api/auth/login"): "needs the password; rate limited",
     ("POST", "/api/auth/forgot-password"): "answers identically for every address; rate limited",
     ("POST", "/api/auth/reset-password"): "needs the single-use emailed token",

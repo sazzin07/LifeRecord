@@ -484,6 +484,27 @@ class AuthSessionInfo(Base):
     last_seen_ms = Column(BigInteger, nullable=False)
 
 
+class TotpCredential(Base):
+    """The optional second step at sign-in. One row per user: the shared secret (ENCRYPTED, see totp.py) and the last 30-second step
+    whose code was accepted, so a code works once. `confirmed_ms` stays NULL while the person is still setting it up; only a row with
+    a confirmation switches the second step on."""
+    __tablename__ = "totp_credentials"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    secret_enc = Column(String(255), nullable=False)
+    confirmed_ms = Column(BigInteger, nullable=True)
+    last_step = Column(BigInteger, nullable=False, default=0, server_default="0")
+    created_ms = Column(BigInteger, nullable=False)
+
+
+class TotpRecoveryCode(Base):
+    """One-time codes for a lost phone. Only a keyed hash is kept (totp.recovery_hash); `used_ms` is set when one is spent."""
+    __tablename__ = "totp_recovery_codes"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(64), nullable=False)
+    used_ms = Column(BigInteger, nullable=True)
+
+
 class AccountDeactivation(Base):
     """A row here means the account is switched off: nobody can start a session for it, its data stays exactly as it is, and
     deleting the row switches it back on. Its own table rather than a column on `users`, so the live database needs no

@@ -113,6 +113,18 @@ def create_device_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
+def create_totp_challenge_token(user_id: str, minutes: int = 5) -> str:
+    """Proof that the password was right a moment ago, good only for finishing sign-in with a second-step code. It opens nothing else:
+    it is a different token type, so no route accepts it as a session."""
+    payload = {
+        "sub": user_id,
+        "type": "totp_challenge",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
 def create_password_reset_token(user_id: str) -> str:
     payload = {
         "sub": user_id,

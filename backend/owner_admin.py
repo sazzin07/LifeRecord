@@ -3,6 +3,7 @@
     python owner_admin.py reset-password        # prompts for a new owner password (hidden)
     python owner_admin.py deactivate EMAIL      # switch an account off: every session ends, nobody can sign in, nothing is deleted
     python owner_admin.py reactivate EMAIL      # switch it back on
+    python owner_admin.py disable-2fa EMAIL     # for someone who lost the phone AND the recovery codes: turns the second step off
 
 The password is no longer reset from ADMIN_PASSWORD on every start, so reset-password is how to regain access if it is lost.
 An account that is deactivated here stays off even if its person uses an emailed reset link; only `reactivate` undoes it.
@@ -15,6 +16,7 @@ import sys
 import account_status
 import auth_sessions
 import server
+import two_factor_api
 from database import AsyncSessionLocal
 from models import User
 from security_utils import hash_password, password_problem
@@ -56,8 +58,25 @@ async def set_deactivated(email: str, off: bool) -> str:
         return "ok" if await account_status.reactivate(db, user.id) else "unchanged"
 
 
+async def disable_second_step(email: str) -> str:
+    """Returns "ok" (it was on and is now off), "unchanged" (it was not on) or "none" (no such account)."""
+    async with AsyncSessionLocal() as db:
+        user = (await db.execute(select(User).where(User.email == email.strip().lower()))).scalar_one_or_none()
+        if user is None:
+            return "none"
+        was_on = await two_factor_api.credential(db, user.id) is not None
+        await two_factor_api.remove_second_step(db, user.id)
+        return "ok" if was_on else "unchanged"
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if len(argv) == 2 and argv[0] == "disable-2fa":
+        outcome = asyncio.run(disable_second_step(argv[1]))
+        print({"ok": f"Done: two-step sign-in is off for {argv[1]}. They sign in with the password alone and can turn it on again in Settings.",
+               "unchanged": f"Nothing to do: two-step sign-in was not on for {argv[1]}.",
+               "none": f"No account with the address {argv[1]}."}[outcome])
+        return 0 if outcome in ("ok", "unchanged") else 1
     if len(argv) == 2 and argv[0] in ("deactivate", "reactivate"):
         outcome = asyncio.run(set_deactivated(argv[1], argv[0] == "deactivate"))
         print({"ok": f"Done: {argv[1]} is {'deactivated and signed out everywhere' if argv[0] == 'deactivate' else 'active again'}.",

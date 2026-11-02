@@ -94,12 +94,19 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
+    // The password was right but the account asks for a second step: nothing is signed in yet, only a challenge to finish with a code.
+    if (data.requires_totp) return { requiresTotp: true, challenge: data.challenge };
     if (data.requires_verification) {
       // Keep the pre-verification token (in memory) so the verify modal can resend/verify
       if (data.token) setAccessToken(data.token);
       setUser(data.user);
       return { requiresVerification: true, user: data.user };
     }
+    return setTokenAndUser(data);
+  };
+
+  const loginWithCode = async (challenge, code) => {
+    const { data } = await api.post("/auth/login/totp", { challenge, code });
     return setTokenAndUser(data);
   };
 
@@ -110,6 +117,8 @@ export function AuthProvider({ children }) {
 
   const resetPassword = async (token, password) => {
     const { data } = await api.post("/auth/reset-password", { token, password });
+    // An account with two-step sign-in is not signed in by an emailed link alone: it still asks for the code.
+    if (data.requires_totp) return { requiresTotp: true, message: data.message };
     return setTokenAndUser(data);
   };
 
@@ -141,6 +150,7 @@ export function AuthProvider({ children }) {
         ready,
         unreachable,
         login,
+        loginWithCode,
         signup,
         verifyCode,
         resendVerification,

@@ -40,7 +40,12 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
-      await resetPassword(token, password);
+      const result = await resetPassword(token, password);
+      if (result?.requiresTotp) {
+        toast.success(result.message || "Password updated. Sign in with your password and the code from your app.");
+        nav("/login");
+        return;
+      }
       setDone(true);
       setTimeout(() => nav("/"), 1500);
     } catch (err) {

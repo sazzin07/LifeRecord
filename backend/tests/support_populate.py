@@ -259,6 +259,9 @@ def _extras(a):
         (str(uuid.uuid4()), a["id"], name, name, TODAY, now))
     _db("INSERT INTO ai_pending_confirmations (user_id,session_id,tool,target_id,expires_at,created_at) VALUES (%s,'populate','delete_task','x',%s,%s)",
         (a["id"], (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=5)).isoformat(), now))
+    # A second step still being set up (never confirmed, so it does not change how this user signs in) and one recovery code.
+    _db("INSERT INTO totp_credentials (user_id,secret_enc,confirmed_ms,last_step,created_ms) VALUES (%s,'populate',NULL,0,%s)", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
+    _db("INSERT INTO totp_recovery_codes (id,user_id,code_hash,used_ms) VALUES (%s,%s,%s,NULL)", (str(uuid.uuid4()), a["id"], "0" * 64))
     # Written straight to the table, so the sessions the test already holds keep working; it only stops NEW sign-ins.
     _db("INSERT INTO account_deactivations (user_id,deactivated_ms,deactivated_by) VALUES (%s,%s,'self')", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
 

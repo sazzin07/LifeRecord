@@ -347,6 +347,8 @@ _NOTICES = {
     "password_reset": ("Your Life Record password was reset", "The password for your Life Record account was just reset with an emailed link, and every device was signed out."),
     "signed_out_everywhere": ("You were signed out of Life Record everywhere", "Every device signed in to your Life Record account was just signed out."),
     "account_deleted": ("Your Life Record account was deleted", "Your Life Record account and everything in it (records, photos and saved chats) was just deleted at your request."),
+    "two_factor_on": ("Two-step sign-in was turned on", "Two-step sign-in (a code from an authenticator app) was just turned on for your Life Record account."),
+    "two_factor_off": ("Two-step sign-in was turned off", "Two-step sign-in was just turned off for your Life Record account, which is now protected by your password alone."),
     "new_sign_in": ("New sign-in to your Life Record account", "A browser your Life Record account has not been used from before just signed in."),
     "account_deactivated": ("Your Life Record account was deactivated", "Your Life Record account was just deactivated at your request and every device was signed out. Nothing was deleted."),
 }

@@ -120,6 +120,10 @@ CASES: Dict[str, Case] = {
 
 # User tables without a REST case of their own, and why that is safe. Each reason names the test that proves it.
 TABLE_EXEMPT = {
+    "totp_credentials": "internal and secret: no route takes an id; every second-step route works on the signed-in user's own row (their id from the "
+                        "token), and test_two_factor.py proves one account's code cannot open another's challenge and that B never sees A's setting",
+    "totp_recovery_codes": "internal and secret: no route takes an id or lists them; they are hashed and bound to one account, and test_two_factor.py "
+                           "proves a code from one account does not sign in to another",
     "auth_session_info": "internal: one row per session, reached only through the session id a token names (auth_sessions.get_live looks it up "
                          "by id AND user); the only route that takes a session id, DELETE /auth/sessions/{sid}, is proved in "
                          "test_session_list.py::test_nobody_can_list_or_end_another_persons_sessions",

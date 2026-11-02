@@ -55,6 +55,7 @@ import scheduling
 import scheduling_api
 import calendar_api
 import account_api
+import two_factor_api
 import nutrition_api
 import nutrition_plan_api
 import nutrition_suggest_api
@@ -67,7 +68,7 @@ from security_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS,
     create_password_reset_token, decode_token, generate_six_digit_code, hash_token,
     is_valid_email, is_strong_password, password_problem, code_fingerprint, code_matches,
-    create_device_token, DEVICE_TOKEN_DAYS,
+    create_device_token, DEVICE_TOKEN_DAYS, create_totp_challenge_token,
 )
 from email_service import send_verification_code, send_password_reset, send_security_notice
 
@@ -1613,6 +1614,10 @@ async def login(body: LoginBody, request: Request, response: Response, backgroun
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.email_verified and await two_factor_api.enabled(db, user.id):
+        # The password is right, but this account asks for a second step. Nothing is opened yet: only a challenge that is good
+        # for finishing sign-in with a code (/auth/login/totp), which also clears the run of failed attempts.
+        return {"requires_totp": True, "challenge": create_totp_challenge_token(user.id)}
     await forgive_logins(email)  # a correct password: the run of failed attempts is over
 
     if not user.email_verified:
@@ -1692,6 +1697,10 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     await forgive_logins(user.email)  # opening the emailed link proved who they are: nothing left of any lock from guessing
     background.add_task(send_security_notice, user.email, user.name, "password_reset")
 
+    if await two_factor_api.enabled(db, user.id):
+        # The emailed link proves the mailbox, not the phone: the second step is still asked for.
+        return {"requires_totp": True, "challenge": create_totp_challenge_token(user.id),
+                "message": "Password updated. Enter the code from your authenticator app to sign in."}
     return await _issue_session(request, response, db, user,
                                 {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
 
@@ -5812,6 +5821,7 @@ nutrition_suggest = nutrition_suggest_api.register(api_router, sys.modules[__nam
 nutrition_plan_gen = nutrition_plan_gen_api.register(api_router, sys.modules[__name__], nutrition, nutrition_plan, nutrition_suggest)
 nutrition_insights_ns = nutrition_insights_api.register(api_router, sys.modules[__name__], nutrition)
 account_api.register(api_router, sys.modules[__name__])
+two_factor_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------

@@ -55,8 +55,10 @@ for (const theme of THEMES) {
         };
         const byId = (id) => (p) => p.getByTestId(id);
         const tap = (id) => (p) => p.getByTestId(id).click();
-        await open("/money", [tap("quick-add-trigger")], byId("quick-add-dialog"), "quick add");
-        await open("/money", [tap("quick-add-trigger"), tap("qa-expense")], byId("expense-dialog"), "add expense");
+        // The top bar's "Add" exists from the sm breakpoint up; on a phone the round "+" in the bottom bar does the same job.
+        const quickAdd = viewport.width < 640 ? "mobile-quick-add" : "quick-add-trigger";
+        await open("/money", [tap(quickAdd)], byId("quick-add-dialog"), "quick add");
+        await open("/money", [tap(quickAdd), tap("qa-expense")], byId("expense-dialog"), "add expense");
         await open("/settings", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
         await open("/settings", [tap("your-data-delete-open")], byId("delete-account-dialog"), "delete account");
         await open("/", [tap("command-bar-trigger")], (p) => p.getByRole("dialog"), "search and commands");

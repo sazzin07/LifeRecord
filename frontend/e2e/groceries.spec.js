@@ -175,7 +175,8 @@ test.describe("Groceries kitchen", () => {
     await expect(page.getByText("No products match")).toBeVisible();
     await page.getByLabel("Search the catalog").fill("");
     await page.getByRole("button", { name: /^Filters/ }).click();
-    await page.getByRole("button", { name: /^Dairy/ }).click();
+    // The filter chip is a toggle (aria-pressed); the "Dairy" section header in the grid has the same name but is not.
+    await page.getByRole("button", { name: /^Dairy/ }).and(page.locator("[aria-pressed]")).click();
     await page.keyboard.press("Escape");
     expect(await page.getByTestId("product-card").count()).toBeLessThan(all);
     await page.getByRole("button", { name: "Clear all filters" }).click();

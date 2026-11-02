@@ -4,13 +4,14 @@ the whole backend is "offline").
 
 Evidence for the rest of the failure sweep is in docs/testing/failure-sweep.md; this module holds the checks that need
 code of their own."""
+import asyncio
 import datetime as dt
 import logging
 import os
 
+import httpx
 import jwt
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
 import server
@@ -22,10 +23,23 @@ ORIGIN = "http://localhost:3000"
 INTERNALS = ("Traceback", "OperationalError", "sqlalchemy", "secret_column", "File \"", "Can't connect", "pymysql", "aiomysql")
 
 
+class _InProcessClient:
+    """Calls the app in this process without a socket or a lifespan, and returns an error response instead of raising it.
+    (Starlette's TestClient would do the same but warns that it wants a newer HTTP library.)"""
+
+    def __init__(self, app):
+        self._transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+
+    def get(self, path, **kwargs):
+        async def call():
+            async with httpx.AsyncClient(transport=self._transport, base_url="http://testserver") as c:
+                return await c.get(path, **kwargs)
+        return asyncio.run(call())
+
+
 @pytest.fixture
 def client():
-    c = TestClient(server.app, raise_server_exceptions=False)
-    yield c
+    yield _InProcessClient(server.app)
     server.app.dependency_overrides.clear()
 
 

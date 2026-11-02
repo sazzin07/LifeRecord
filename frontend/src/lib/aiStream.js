@@ -1,4 +1,4 @@
-import { api, API } from "@/lib/api";
+import { api, API, getAccessToken } from "@/lib/api";
 
 /**
  * Send one message to the assistant and report events as they arrive:
@@ -10,7 +10,7 @@ export async function streamChat({ message, sessionId, image, page, signal, onEv
   const body = JSON.stringify({ message, session_id: sessionId, image_base64: image || null, page });
   const open = () => fetch(`${API}/ai/chat/stream`, {
     method: "POST", signal, body,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("lm_token") || ""}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAccessToken() || ""}` },
   });
 
   let res;

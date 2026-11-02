@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Sun, Moon, Monitor, Sparkles, Plus, Trash2, LogOut, Pencil, Lock, KeyRound, Eye, EyeOff } from "lucide-react";
-import { api, eur, errorMessage } from "@/lib/api";
+import { api, eur, errorMessage, setAccessToken } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useFetch, refreshAll } from "@/lib/useFetch";
@@ -33,8 +33,7 @@ function ChangePassword() {
     try {
       const { data } = await api.post("/auth/change-password", { current_password: f.current, new_password: f.next });
       // Changing the password ends every other session; this device continues on the fresh tokens.
-      if (data.token) localStorage.setItem("lm_token", data.token);
-      if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
+      if (data.token) setAccessToken(data.token);
       toast.success("Password changed", { description: "Other devices were signed out." });
       setF({ current: "", next: "", confirm: "" });
     } catch (err) {

@@ -521,7 +521,7 @@ async def _process_run(srv, session_factory, run_id: str) -> None:
         run = (await db.execute(select(ScheduledTaskRun).where(ScheduledTaskRun.id == run_id))).scalar_one()
         task = (await db.execute(select(ScheduledTask).where(ScheduledTask.id == run.task_id))).scalar_one_or_none()
         owner = (await db.execute(select(User).where(User.id == run.user_id))).scalar_one_or_none()
-        if not task or not owner:
+        if not task or not owner or task.user_id != owner.id or run.user_id != task.user_id:  # a run only ever acts as its task's own owner
             run.status, run.error, run.finished_at = "failed", "The task or its owner no longer exists.", iso(datetime.now(UTC))
             await db.commit()
             return

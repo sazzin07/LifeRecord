@@ -39,8 +39,9 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
-    """`tv` ties the token to the user's current token_version; bumping it ends every earlier session."""
+def create_access_token(user_id: str, email: str, token_version: int = 0, session_id: Optional[str] = None) -> str:
+    """`tv` ties the token to the user's current token_version; bumping it ends every earlier session. `sid` names the
+    server-side session (auth_sessions) the token belongs to; a token with no `sid` is only the pre-verification token."""
     payload = {
         "sub": user_id,
         "email": email,
@@ -49,17 +50,22 @@ def create_access_token(user_id: str, email: str, token_version: int = 0) -> str
         "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
         "iat": datetime.now(timezone.utc),
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-def create_refresh_token(user_id: str, token_version: int = 0) -> str:
+def create_refresh_token(user_id: str, token_version: int = 0, session_id: Optional[str] = None,
+                         expires_at: Optional[datetime] = None) -> str:
     payload = {
         "sub": user_id,
         "tv": token_version,
         "type": "refresh",
-        "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        "exp": expires_at or datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         "iat": datetime.now(timezone.utc),
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
@@ -84,8 +90,9 @@ def create_password_reset_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-def decode_token(token: str, token_type: Optional[str] = None) -> dict:
-    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+def decode_token(token: str, token_type: Optional[str] = None, allow_expired: bool = False) -> dict:
+    """`allow_expired` still checks the signature; it is only for signing out, where an old token must be able to name its session."""
+    payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG], options={"verify_exp": False} if allow_expired else {})
     if token_type and payload.get("type") != token_type:
         raise jwt.InvalidTokenError("Invalid token type")
     return payload

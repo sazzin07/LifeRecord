@@ -458,6 +458,17 @@ class ReportRecipient(Base):
     )
 
 
+class AuthSession(Base):
+    """One signed-in browser or device. Every access and refresh token names its session (`sid`) and is honoured only
+    while the row exists, so signing out simply deletes the row: copies of the tokens stop working at once. All rows
+    are removed when the server starts or stops, so a restart signs everyone out."""
+    __tablename__ = "auth_sessions"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_ms = Column(BigInteger, nullable=False)
+    expires_ms = Column(BigInteger, nullable=False, index=True)
+
+
 class RateLimitEvent(Base):
     """One row per rate-limited attempt. `bucket` is a SHA-256 of client + identifier (no emails stored)."""
     __tablename__ = "rate_limit_events"

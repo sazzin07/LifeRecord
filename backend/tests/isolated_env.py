@@ -191,6 +191,18 @@ class IsolatedEnv:
         shutil.rmtree(self.storage_dir, ignore_errors=True)
         Path(self._log).unlink(missing_ok=True)
 
+    def restart(self) -> None:
+        """Kill the server the hard way (as a crash would) and start it again on the same schema and port."""
+        if self._proc and self._proc.poll() is None:
+            _kill_tree(self._proc)
+            self._proc.wait(timeout=15)
+        port = self.base_url.rsplit(":", 1)[1]
+        with open(self._log, "ab") as log:
+            self._proc = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", port, "--log-level", "warning"],
+                cwd=str(BACKEND), env={**baseline_environ(), **self.settings}, stdout=log, stderr=subprocess.STDOUT)
+        _wait_for_health(self.base_url, self._proc, self._log)
+
     def connect(self):
         """A direct database connection to the scratch schema (administrative login)."""
         return _admin_connection(self.db_name)
@@ -318,6 +330,13 @@ def serve(frontend_port: int = 3100, with_frontend: bool = True) -> None:
     optionally, the React dev server pointed at it. Writes STATE_FILE; exits and cleans up when STATE_FILE.stop appears."""
     import json
     stop_file = Path(str(STATE_FILE) + ".stop")
+    if with_frontend:
+        try:  # a dev server left over from an earlier run would be mistaken for ours and talk to a different backend
+            requests.get(f"http://127.0.0.1:{frontend_port}/", timeout=2)
+            raise SystemExit(f"port {frontend_port} already answers (a React dev server left over from an earlier run?); "
+                             f"stop it or choose another port with --frontend-port N")
+        except requests.RequestException:
+            pass
     stop_file.unlink(missing_ok=True)
     origins = f"http://127.0.0.1:{frontend_port},http://localhost:{frontend_port}"
     env = start(foods=True, sample_data=True, cors_origins=origins)
@@ -378,7 +397,8 @@ def run_command(command: list) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "serve":
-        serve(with_frontend="--no-frontend" not in sys.argv)
+        port = int(sys.argv[sys.argv.index("--frontend-port") + 1]) if "--frontend-port" in sys.argv else 3100
+        serve(frontend_port=port, with_frontend="--no-frontend" not in sys.argv)
     elif len(sys.argv) > 2 and sys.argv[1] == "run" and sys.argv[2] == "--":
         sys.exit(run_command(sys.argv[3:]))
     else:

@@ -301,8 +301,8 @@ def register(router, srv):
         return ref, prof, {"kg": weight, "source": weight_src}, today
 
     @router.get("/nutrition/meta")
-    async def meta():
-        """The nutrient registry, groups, reference sources and the units the diary accepts."""
+    async def meta(user: dict = Depends(get_user)):
+        """The nutrient registry, groups, reference sources and the units the diary accepts (reference data, but signed-in only like every other route)."""
         return {"nutrients": [{k: n[k] for k in ("key", "name", "unit", "group", "about")} for n in NUTRIENTS]
                 + [{"key": k, "name": v["name"], "unit": v["unit"], "group": v["group"], "about": v["about"], "derived": True} for k, v in DERIVED.items()],
                 "groups": [{"key": k, "name": n} for k, n in GROUPS], "sources": SOURCES, "kinds": KIND_LABEL,

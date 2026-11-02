@@ -2,7 +2,7 @@ import { streamChat } from "./aiStream";
 
 // aiStream imports the shared axios client through the "@/" alias, which Jest does not resolve (and axios' ES-module
 // build does not load under it). A virtual mock stands in for it: this test only needs the fetch path.
-jest.mock("@/lib/api", () => ({ api: { get: jest.fn(), post: jest.fn() }, API: "http://server.test/api" }), { virtual: true });
+jest.mock("@/lib/api", () => ({ api: { get: jest.fn(), post: jest.fn() }, API: "http://server.test/api", getAccessToken: () => "memory-token" }), { virtual: true });
 
 const respond = (status, body, headers = {}) => Promise.resolve({
   ok: status >= 200 && status < 300, status, body: status === 429 ? {} : null,

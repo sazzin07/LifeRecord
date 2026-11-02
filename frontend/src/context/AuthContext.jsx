@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, refreshSession } from "@/lib/api";
+import { api, refreshSession, setAccessToken } from "@/lib/api";
 import { clearCaches } from "@/lib/swrCache";
 import { setCacheUser } from "@/lib/query";
 
@@ -13,26 +13,25 @@ export function AuthProvider({ children }) {
   setCacheUser(user ? user.id : null);
 
   useEffect(() => {
-    const token = localStorage.getItem("lm_token");
-    // Signed out means no cached account data either, even if a background refresh wrote some during sign-out.
-    if (!token) { clearCaches(); setUser(false); setReady(true); return; }
-    api.get("/auth/me")
-      .then((r) => setUser(r.data))
-      .catch(() => setUser(false))
-      .finally(() => setReady(true));
+    // The access token lives in memory only, so every page load asks the server whether the HttpOnly refresh cookie still
+    // names a live session. No cookie, or a session that ended (signed out, expired, server restarted): signed out, and no
+    // cached account data either, even if a background refresh wrote some during sign-out.
+    let cancelled = false;
+    refreshSession()
+      .then(() => api.get("/auth/me"))
+      .then((r) => { if (!cancelled) setUser(r.data); })
+      .catch(() => { setAccessToken(null); clearCaches(); if (!cancelled) setUser(false); })
+      .finally(() => { if (!cancelled) setReady(true); });
+    return () => { cancelled = true; };
   }, []);
 
   const setTokenAndUser = (data) => {
-    if (data.token) localStorage.setItem("lm_token", data.token);
-    if (data.refresh_token) localStorage.setItem("lm_refresh_token", data.refresh_token);
+    if (data.token) setAccessToken(data.token);
     setUser(data.user);
     return data.user;
   };
 
-  const clearTokens = () => {
-    localStorage.removeItem("lm_token");
-    localStorage.removeItem("lm_refresh_token");
-  };
+  const clearTokens = () => setAccessToken(null);
 
   const refreshAccessToken = async () => {
     try {
@@ -62,8 +61,8 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     if (data.requires_verification) {
-      // Store the pre-verification token so the verify modal can resend/verify
-      if (data.token) localStorage.setItem("lm_token", data.token);
+      // Keep the pre-verification token (in memory) so the verify modal can resend/verify
+      if (data.token) setAccessToken(data.token);
       setUser(data.user);
       return { requiresVerification: true, user: data.user };
     }
@@ -95,7 +94,8 @@ export function AuthProvider({ children }) {
       setUser(false);
       window.location.href = "/login";
     };
-    // Ask the server to drop this browser's refresh cookie; sign out locally whatever the answer.
+    // The server deletes this browser's session, which ends the access token and the refresh cookie everywhere, not just
+    // here; sign out locally whatever the answer.
     api.post("/auth/logout", null, { timeout: 3000 }).then(finish, finish);
   };
 

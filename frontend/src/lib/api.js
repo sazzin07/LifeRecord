@@ -7,9 +7,17 @@ export const API = `${BACKEND_URL}/api`;
 const AUTH_MODE = { "X-Auth-Mode": "cookie" };
 export const api = axios.create({ baseURL: API, withCredentials: true, headers: AUTH_MODE });
 
+// The short-lived access token lives in memory only: it is never written to web storage, so a script injected into the page
+// cannot copy it out of storage, and a reload or a second tab gets a new one from the HttpOnly refresh cookie.
+let accessToken = null;
+export const getAccessToken = () => accessToken;
+export const setAccessToken = (token) => { accessToken = token || null; };
+
+// Older versions kept the tokens in localStorage; remove any left over so they cannot linger there.
+try { localStorage.removeItem("lm_token"); localStorage.removeItem("lm_refresh_token"); } catch { /* storage unavailable */ }
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("lm_token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
   return config;
 });
 
@@ -25,13 +33,11 @@ function subscribeTokenRefresh(cb) {
   refreshSubscribers.push(cb);
 }
 
-/** Exchange the refresh cookie for a new access token. A refresh token still in localStorage (from before cookies
- *  existed) is sent once; the server answers with a cookie and the stored copy is removed. */
+/** Exchange the refresh cookie for a new access token, held in memory. Fails (401) when the session has ended on the server:
+ *  signed out, expired, or the server restarted. */
 export async function refreshSession() {
-  const legacy = localStorage.getItem("lm_refresh_token");
-  const { data } = await axios.post(`${API}/auth/refresh`, legacy ? { token: legacy } : {}, { withCredentials: true, headers: AUTH_MODE });
-  if (data.token) localStorage.setItem("lm_token", data.token);
-  localStorage.removeItem("lm_refresh_token");
+  const { data } = await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, headers: AUTH_MODE });
+  setAccessToken(data.token);
   return data.token;
 }
 
@@ -47,9 +53,8 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
     if (err.response.status !== 401 || originalRequest._retry || originalRequest.url === "/auth/refresh") {
-      if (err.response.status === 401 && localStorage.getItem("lm_token")) {
-        localStorage.removeItem("lm_token");
-        localStorage.removeItem("lm_refresh_token");
+      if (err.response.status === 401 && accessToken) {
+        setAccessToken(null);
         if (!window.location.pathname.includes("/login")) window.location.href = "/login";
       }
       return Promise.reject(err);
@@ -74,8 +79,7 @@ api.interceptors.response.use(
       return api(originalRequest);
     } catch {
       isRefreshing = false;
-      localStorage.removeItem("lm_token");
-      localStorage.removeItem("lm_refresh_token");
+      setAccessToken(null);
       if (!window.location.pathname.includes("/login")) window.location.href = "/login";
       return Promise.reject(err);
     }

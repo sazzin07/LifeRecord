@@ -142,6 +142,8 @@ Required backend environment variables:
 | `JWT_SECRET` | Secret for signing JWTs |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime (default `30`) |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | Refresh-token lifetime (default `7`) |
+| `SESSION_IDLE_DAYS` / `SESSION_MAX_DAYS` | How long a server-side session lives after its last refresh (default: the refresh-token lifetime) and at most after sign-in (default `30`); see Session and transport security |
+| `API_DOCS` | `1` serves `/docs`, `/redoc` and `/openapi.json` (development only; off by default because they list every route) |
 | `AI_PROVIDER` | Chat provider: `opencode` (default) or `gemini` |
 | `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` / `SENDGRID_EU` | Email for scheduled reports and recipient codes (sender must be verified in SendGrid; `SENDGRID_EU=true` for EU residency) |
 | `SCHEDULER_ENABLED` / `SCHEDULER_TICK_SECONDS` / `SCHEDULED_RUN_TIMEOUT_SECONDS` | Scheduler on/off (default on), poll interval (30) and per-run timeout (120) |
@@ -259,14 +261,20 @@ FRONTEND_URL=https://liferecord.example.com
 
 ### Session and transport security
 
-- Access tokens expire after `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`.
-- Refresh tokens expire after `JWT_REFRESH_TOKEN_EXPIRE_DAYS`.
+- **Sessions live on the server** (table `auth_sessions`, `backend/auth_sessions.py`). Every access and refresh token names its session (`sid`) and is honoured only while that row exists and has not expired, so a copied token is worth nothing once the session is gone:
+  - **Sign out** (`POST /api/auth/logout`) deletes this browser's session: the access token, the refresh cookie and any copy of either stop working at once. It works even when the access token has expired (the cookie names the session) and never fails.
+  - **Sign out everywhere**, a **password change** and a **password reset** delete every session of the user (and raise `token_version`). The device that changed the password gets a new session.
+  - **A server restart, crash or redeploy signs everyone out**: all sessions are deleted at startup and again at a clean shutdown. (With several API workers a worker that starts later ends the sessions made since the first one started; run one process, or accept that.)
+  - A session lasts `SESSION_IDLE_DAYS` (default: `JWT_REFRESH_TOKEN_EXPIRE_DAYS`, 7) after its last refresh and never more than `SESSION_MAX_DAYS` (default 30) after sign-in.
+  - A signed-out or expired session is refused on every route, on refresh, and in the middle of an assistant reply (the next tool is not run).
+- Access tokens expire after `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`; refresh tokens after `JWT_REFRESH_TOKEN_EXPIRE_DAYS`. Only the `Authorization` header is accepted for the access token, never a cookie.
+- `/docs`, `/redoc` and `/openapi.json` (which list every route) are not served unless `API_DOCS=1` is set for development.
 - Tokens are signed with `JWT_SECRET` using HS256 and carry the user's `token_version`. Changing or resetting the password, or **Settings → Sign out on all devices** (`POST /api/auth/logout-all`), raises that version, so every earlier access and refresh token stops working at once; the device that changed the password receives fresh tokens and stays signed in.
 - Refresh refuses unverified accounts. Password-reset tokens are stored only as a SHA-256 hash and are single use.
 - Login takes the same time for unknown emails as for wrong passwords (no account enumeration by timing).
-- The browser app asks for **cookie mode** (`X-Auth-Mode: cookie`): the refresh token travels only in the `lr_refresh` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/api/auth`, `Secure` automatically when `FRONTEND_URL` is https; override with `COOKIE_SECURE` / `COOKIE_SAMESITE`), so page scripts cannot read it. A cookie refresh also needs that header, which a cross-site form post cannot send (CSRF protection). `POST /api/auth/logout` clears the cookie. API clients that do not send the header still get `refresh_token` in the JSON.
-- The short-lived (30 min) access token is still kept in `localStorage` and sent as `Authorization: Bearer <token>`; moving it into memory is tracked as the remainder of SEC-006.
-- On 401, the frontend automatically calls `/api/auth/refresh` to obtain a new access token and retries the original request.
+- The browser app asks for **cookie mode** (`X-Auth-Mode: cookie`): the refresh token travels only in the `lr_refresh` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/api/auth`, `Secure` automatically when `FRONTEND_URL` is https; override with `COOKIE_SECURE` / `COOKIE_SAMESITE`), so page scripts cannot read it. A cookie refresh also needs that header, which a cross-site form post cannot send (CSRF protection). `POST /api/auth/logout` also clears the cookie. API clients that do not send the header still get `refresh_token` in the JSON.
+- The short-lived (30 min) access token is held **in memory only** (`lib/api.js`), never in `localStorage` or `sessionStorage`, and is sent as `Authorization: Bearer <token>`. Every page load (and every second tab) asks `/api/auth/refresh` whether the cookie still names a live session; if not, the person is signed out.
+- On 401, the frontend automatically calls `/api/auth/refresh` to obtain a new access token and retries the original request; when the session itself has ended it goes to the login page.
 - CORS is restricted to `CORS_ORIGINS`; credentials are never sent to `*`.
 - `TrustedHostMiddleware` validates the `Host` header when `ALLOWED_HOSTS` is set.
 - Response security headers are added by middleware: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), microphone=(), camera=()`.
@@ -414,7 +422,7 @@ drops the schema when the run ends (leftovers from a crashed run are removed at 
 other schema name. AI provider keys are empty and mail points at a dead end on loopback, so nothing can call a model
 or send an email. It uses the administrative database login (`ADMIN_DATABASE_*`) only to create and drop that schema.
 `python tests/isolated_env.py serve` starts the same backend plus the React dev server for browser tests (it prints
-where it wrote the address and the test account to).
+where it wrote the address and the test account to). The dev server uses port 3100 (`--frontend-port N` for another); `serve` refuses to start when that port already answers, so a dev server left over from an earlier run is never mistaken for the new one (it would talk to the old backend).
 
 Without `LR_ISOLATED`, the tests run against the real running stack as before:
 

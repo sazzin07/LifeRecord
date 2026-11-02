@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { Plus, Trash2, Scale, Camera, GitCompare, X, Pencil } from "lucide-react";
-import { api, API, errorMessage } from "@/lib/api";
+import { api, API, errorMessage, getAccessToken } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
 import { Card, StatCard, SectionHeading, EmptyState, Label } from "@/components/common";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ function SecurePhoto({ src, alt, className }) {
     let objectUrl = null;
     const load = async () => {
       try {
-        const token = localStorage.getItem("lm_token");
+        const token = getAccessToken();
         const res = await fetch(src, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
         if (!res.ok) return;
         const blob = await res.blob();

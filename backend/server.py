@@ -42,6 +42,7 @@ import file_crypto
 import kitchen_logic
 import starter_data
 import usage_limits
+import auth_sessions
 import ai_tools_extra
 import ai_tools_nutrition
 import ai_opencode
@@ -124,7 +125,9 @@ def _user_owned_query(model, user: dict):
     """Return a base select filtered to the current user."""
     return select(model).where(model.user_id == user["_id"])
 
-app = FastAPI(title="Life Record")
+_API_DOCS = os.environ.get("API_DOCS", "").lower() in ("1", "true", "yes")  # /docs and /openapi.json list every route; development only
+app = FastAPI(title="Life Record", docs_url="/docs" if _API_DOCS else None, redoc_url="/redoc" if _API_DOCS else None,
+              openapi_url="/openapi.json" if _API_DOCS else None)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
@@ -224,11 +227,6 @@ def _check_token_version(payload: dict, user: User) -> None:
         raise HTTPException(status_code=401, detail="Session ended, please sign in again")
 
 
-def _session_tokens(user: User) -> dict:
-    v = int(user.token_version or 0)
-    return {"token": create_access_token(user.id, user.email, v), "refresh_token": create_refresh_token(user.id, v)}
-
-
 REFRESH_COOKIE = "lr_refresh"
 COOKIE_SAMESITE = os.environ.get("COOKIE_SAMESITE", "lax").lower()  # "strict", "lax"; "none" only for a cross-site API
 
@@ -247,13 +245,19 @@ def _wants_cookie(request: Request) -> bool:
     return request.headers.get("X-Auth-Mode", "").lower() == "cookie"
 
 
-def _issue_session(request: Request, response: Response, user: User, extra: dict = None) -> dict:
-    """Tokens for a response. With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and is
-    left out of the JSON, so page scripts (and anything injected into the page) cannot read it."""
-    tokens = _session_tokens(user)
+async def _issue_session(request: Request, response: Response, db: AsyncSession, user: User, extra: dict = None,
+                         session=None) -> dict:
+    """Tokens for a response. Every sign-in starts a server-side session (auth_sessions) that both tokens name; a refresh
+    passes the session it extends instead. With `X-Auth-Mode: cookie` the refresh token goes into an HttpOnly cookie and
+    is left out of the JSON, so page scripts (and anything injected into the page) cannot read it."""
+    session = session or await auth_sessions.start(db, user.id)
+    version = int(user.token_version or 0)
+    expires = datetime.fromtimestamp(session.expires_ms / 1000, timezone.utc)
+    tokens = {"token": create_access_token(user.id, user.email, version, session.id),
+              "refresh_token": create_refresh_token(user.id, version, session.id, expires)}
     if _wants_cookie(request):
         response.set_cookie(
-            REFRESH_COOKIE, tokens.pop("refresh_token"), max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+            REFRESH_COOKIE, tokens.pop("refresh_token"), max_age=max(1, (session.expires_ms - auth_sessions.now_ms()) // 1000),
             httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE, path="/api/auth",
         )
     return {**tokens, **(extra or {})}
@@ -263,55 +267,51 @@ def _issue_session(request: Request, response: Response, user: User, extra: dict
 _DUMMY_HASH = hash_password("not-a-real-password")
 
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    token = None
+def _bearer_token(request: Request) -> Optional[str]:
+    """Only the Authorization header carries an access token. Never a cookie: the browser would send that on its own,
+    which is exactly what a cross-site request relies on."""
     auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        token = auth[7:]
-    if not token:
-        token = request.cookies.get("access_token")
+    return auth[7:] if auth.startswith("Bearer ") else None
+
+
+async def _authenticate(request: Request, db: AsyncSession, allow_unverified: bool) -> dict:
+    """The signed-in user, or a 401/403. Checked on the server on every request: the token's signature and expiry, the
+    user's token version, and that the session it names still exists (so signing out, a restart or a password change
+    ends it at once). A token without a session is only valid for an account that has not verified its email yet."""
+    token = _bearer_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_token(token, token_type="access")
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        _check_token_version(payload, user)
-        if not user.email_verified:
-            raise HTTPException(status_code=403, detail="Email not verified")
-        return {"_id": user.id, "email": user.email, "name": user.name, "role": user.role}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    _check_token_version(payload, user)
+    session_id = payload.get("sid")
+    if session_id or user.email_verified:
+        await auth_sessions.get_live(db, session_id, user.id)
+    if not user.email_verified and not allow_unverified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+    out = {"_id": user.id, "email": user.email, "name": user.name, "role": user.role, "_sid": session_id}
+    if allow_unverified:
+        out["email_verified"] = user.email_verified
+    return out
+
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    return await _authenticate(request, db, allow_unverified=False)
 
 
 async def get_current_user_optional_unverified(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Used by verification/reset flows that need a logged-in-ish context but allow unverified users."""
-    token = None
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        token = auth[7:]
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = decode_token(token, token_type="access")
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        _check_token_version(payload, user)
-        return {"_id": user.id, "email": user.email, "name": user.name, "role": user.role, "email_verified": user.email_verified}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    return await _authenticate(request, db, allow_unverified=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1335,8 +1335,8 @@ async def verify_code(body: VerifyCodeBody, request: Request, response: Response
     await starter_data.ensure_starter_categories(db, user.id)
     await db.commit()
 
-    return _issue_session(request, response, user,
-                          {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True}})
+    return await _issue_session(request, response, db, user,
+                                {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": True}})
 
 
 @api_router.post("/auth/login")
@@ -1359,8 +1359,8 @@ async def login(body: LoginBody, request: Request, response: Response, db: Async
             "user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": False},
         }
 
-    return _issue_session(request, response, user,
-                          {"user": {"id": user.id, "email": email, "name": user.name, "email_verified": True}})
+    return await _issue_session(request, response, db, user,
+                                {"user": {"id": user.id, "email": email, "name": user.name, "email_verified": True}})
 
 
 @api_router.post("/auth/forgot-password")
@@ -1407,10 +1407,11 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
     user.password_reset_expires_at = None
     user.token_version = int(user.token_version or 0) + 1  # a reset ends every existing session
     await db.commit()
+    await auth_sessions.end_all_for_user(db, user.id)
     background.add_task(send_security_notice, user.email, user.name, "password_reset")
 
-    return _issue_session(request, response, user,
-                          {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
+    return await _issue_session(request, response, db, user,
+                                {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
 
 
 @api_router.post("/auth/refresh")
@@ -1436,13 +1437,31 @@ async def refresh_token(body: RefreshBody, request: Request, response: Response,
     _check_token_version(payload, user)
     if not user.email_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
-    return _issue_session(request, response, user)
+    # The refresh token is only as good as the session it names: signed out, restarted or expired means signing in again.
+    session = await auth_sessions.get_live(db, payload.get("sid"), user.id)
+    await auth_sessions.extend(db, session)
+    return await _issue_session(request, response, db, user, session=session)
+
+
+def _forget_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
 
 
 @api_router.post("/auth/logout")
-async def logout(response: Response):
-    """Forget this browser's refresh cookie. (Use /auth/logout-all to invalidate copies of a token.)"""
-    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Sign out this browser: its session is deleted on the server, so the access token, the refresh cookie and any copy
+    of either stop working immediately. Works with an expired access token too (the refresh cookie names the session) and
+    never fails, so a client can always finish signing out."""
+    for token in (_bearer_token(request), request.cookies.get(REFRESH_COOKIE)):
+        if not token:
+            continue
+        try:
+            payload = decode_token(token, allow_expired=True)
+        except jwt.InvalidTokenError:
+            continue  # not one of our tokens: there is no session to end
+        if payload.get("type") in ("access", "refresh") and payload.get("sid") and payload.get("sub"):
+            await auth_sessions.end(db, payload["sid"], payload["sub"])
+    _forget_refresh_cookie(response)
     return {"message": "Signed out"}
 
 
@@ -1461,9 +1480,10 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     db_user.password_hash = hash_password(body.new_password)
     db_user.token_version = int(db_user.token_version or 0) + 1  # every other device is signed out
     await db.commit()
+    await auth_sessions.end_all_for_user(db, db_user.id)
     background.add_task(send_security_notice, db_user.email, db_user.name, "password_changed")
     # This device gets a fresh session so the user is not signed out of the tab they are using.
-    return _issue_session(request, response, db_user, {"message": "Password updated successfully"})
+    return await _issue_session(request, response, db, db_user, {"message": "Password updated successfully"})
 
 
 @api_router.post("/auth/logout-all")
@@ -1474,8 +1494,9 @@ async def logout_all(response: Response, background: BackgroundTasks, user: dict
         raise HTTPException(status_code=401, detail="User not found")
     db_user.token_version = int(db_user.token_version or 0) + 1
     await db.commit()
+    await auth_sessions.end_all_for_user(db, db_user.id)
     background.add_task(send_security_notice, db_user.email, db_user.name, "signed_out_everywhere")
-    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", httponly=True, secure=refresh_cookie_secure(), samesite=COOKIE_SAMESITE)
+    _forget_refresh_cookie(response)
     return {"message": "Signed out on all devices"}
 
 
@@ -4401,6 +4422,16 @@ async def _provider_stream(items: list, system: str, session_id: str, tools: Opt
             yield ev
 
 
+async def _still_signed_in(user: dict) -> bool:
+    """A reply can take a minute and run several tools; signing out in the meantime must stop it before the next tool
+    changes anything. Uses a fresh connection so it sees a sign-out made after this request began. Callers with no
+    browser session (the scheduler) have nothing to check."""
+    if not user.get("_sid"):
+        return True
+    async with AsyncSessionLocal() as fresh:
+        return await auth_sessions.is_live(fresh, user["_sid"], user["_id"])
+
+
 async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
     """Run one assistant turn, yielding events: session, delta, tool, done or error.
 
@@ -4439,6 +4470,9 @@ async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
     failure: Optional[str] = None
     try:
         for step in range(7):
+            if not await _still_signed_in(user):
+                yield {"type": "error", "message": auth_sessions.SESSION_ENDED, "status": 401}
+                return
             calls, text_this_step = [], ""
             async for kind, value in _provider_stream(items, system, session_id):
                 if kind == "text":
@@ -4460,6 +4494,10 @@ async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
             items.append({"role": "assistant", "text": text_this_step, "calls": calls})
             results = []
             for call in calls:
+                if not await _still_signed_in(user):  # no further change once the session has ended
+                    await db.rollback()
+                    yield {"type": "error", "message": auth_sessions.SESSION_ENDED, "status": 401}
+                    return
                 args = call["args"]
                 yield {"type": "tool", "name": call["name"], "status": "running"}
                 try:
@@ -4525,7 +4563,7 @@ async def run_ai_chat(db: AsyncSession, user: dict, body: AIChatBody):
     result = None
     async for ev in ai_chat_events(db, user, body):
         if ev["type"] == "error":
-            raise HTTPException(503, ev["message"])
+            raise HTTPException(ev.get("status", 503), ev["message"])
         if ev["type"] == "done":
             result = ev
     result = result or {"reply": "", "session_id": body.session_id, "actions": [], "changed": False}
@@ -5324,6 +5362,8 @@ async def migrate_legacy_account_refs():
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Sessions do not survive a restart, a crash or a redeploy: everyone signs in again.
+    logger.info("Ended %d session(s) left from before this start.", await auth_sessions.end_every_session(AsyncSessionLocal))
     await seed()
     await ensure_shared_catalog()
     await migrate_legacy_account_refs()
@@ -5333,6 +5373,7 @@ async def lifespan(app: FastAPI):
     logger.info("Life Record ready.")
     yield
     await scheduler.stop()
+    await auth_sessions.end_every_session(AsyncSessionLocal)  # a clean shutdown ends every session too
     await engine.dispose()
 
 

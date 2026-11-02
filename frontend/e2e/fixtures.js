@@ -19,33 +19,38 @@ for (const url of [process.env.API_URL || "http://localhost:8000", process.env.B
   }
 }
 
+const API_URL = process.env.API_URL || "http://localhost:8000";
+
+async function login() {
+  const anon = await request.newContext({ baseURL: API_URL });
+  const res = await anon.post("/api/auth/login", { data: credentials });
+  const body = await res.json();
+  await anon.dispose();
+  return { token: body.token, refresh_token: body.refresh_token };
+}
+
+// One sign-in per worker is reused (UI logins are rate limited to 10/minute). Signing out now really ends the session on
+// the server, so a test that signs out leaves the shared session dead: the next test notices and signs in again.
 let sessionPromise = null;
-function getSession() {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const anon = await request.newContext({ baseURL: process.env.API_URL || "http://localhost:8000" });
-      const res = await anon.post("/api/auth/login", {
-        data: credentials,
-      });
-      const body = await res.json();
-      await anon.dispose();
-      return { token: body.token, refresh_token: body.refresh_token };
-    })();
+async function getSession() {
+  if (sessionPromise) {
+    const session = await sessionPromise;
+    const probe = await request.newContext({ baseURL: API_URL, extraHTTPHeaders: { Authorization: `Bearer ${session.token}` } });
+    const alive = (await probe.get("/api/auth/me")).ok();
+    await probe.dispose();
+    if (alive) return session;
   }
+  sessionPromise = login();
   return sessionPromise;
 }
 
 export const test = base.extend({
-  // Log in once per worker through the API and reuse the session (UI logins are rate limited to 10/minute).
-  authenticatedPage: async ({ page }, use) => {
+  // The page starts signed in the way a returning visitor is: the HttpOnly refresh cookie is in the browser, and the page
+  // gets its (in-memory) access token from it at boot. Nothing is written to web storage.
+  authenticatedPage: async ({ page, context }, use) => {
     const session = await getSession();
-    await page.addInitScript((s) => {
-      // Seed once per tab, so signing out inside a test really signs out.
-      if (sessionStorage.getItem("e2e_seeded")) return;
-      sessionStorage.setItem("e2e_seeded", "1");
-      localStorage.setItem("lm_token", s.token);
-      if (s.refresh_token) localStorage.setItem("lm_refresh_token", s.refresh_token);
-    }, session);
+    await context.addCookies([{ name: "lr_refresh", value: session.refresh_token, domain: new URL(API_URL).hostname,
+                                path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
     await page.goto("/");
     await page.waitForURL("/", { timeout: 15000 });
     await use(page);

@@ -120,6 +120,8 @@ CASES: Dict[str, Case] = {
 
 # User tables without a REST case of their own, and why that is safe. Each reason names the test that proves it.
 TABLE_EXEMPT = {
+    "auth_sessions": "internal: no route lists or takes a session id; a session is only ever reached through the token that names it, "
+                     "and test_session_lifecycle.py proves one user's token can neither read nor end another user's session",
     "ai_pending_confirmations": "internal: written and consumed by the assistant, no route takes its id; "
                                 "test_ai_confirmations.py proves a confirmation cannot be used from another chat or account",
     "nutrition_profiles": "one row per user, never addressed by id; see test_the_profile_and_targets_of_one_user_never_reach_another",

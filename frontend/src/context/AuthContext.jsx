@@ -61,6 +61,8 @@ export function AuthProvider({ children }) {
   const setTokenAndUser = (data) => {
     if (data.token) setAccessToken(data.token);
     setUser(data.user);
+    // The sign-in answer carries who they are; the photo and "member since" come from the profile, asked for right after.
+    if (data.token) api.get("/auth/me").then((r) => setUser((u) => (u && u.id === r.data.id ? { ...u, ...r.data } : u))).catch(() => {});
     return data.user;
   };
 

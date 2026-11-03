@@ -125,6 +125,8 @@ TABLE_EXEMPT = {
                         "token), and test_two_factor.py proves one account's code cannot open another's challenge and that B never sees A's setting",
     "debt_entries": "reached only through /debts routes that look the person up by id AND the signed-in user; "
                     "test_debts.py::test_nobody_reaches_another_persons_records tries every one of them with another account's ids",
+    "user_avatars": "one row per user, reached only through /auth/me/photo with the signed-in user's own id, never a path or id from outside "
+                    "(test_profile_settings.py::test_a_profile_photo_is_private_to_its_owner)",
     "user_preferences": "one row per user, read and written only through GET/PUT /preferences with the signed-in user's own id "
                         "(test_profile_settings.py::test_nobody_sees_or_changes_another_persons_preferences)",
     "idempotency_keys": "internal: keyed by (user, key); a key belongs to the person who sent it (test_debts.py::test_the_same_key_for_two_people_is_two_requests)",

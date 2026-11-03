@@ -733,3 +733,12 @@ class UserPreference(Base):
     money_period = Column(String(10), nullable=False, default="week")
     updated_at = Column(String(32), nullable=False)
 
+
+class UserAvatar(Base):
+    """A person's profile photo: one row per user, the picture itself is a private file under avatars/<user id>/ (encrypted at rest like
+    the other uploads). A new upload replaces the row and the old file."""
+    __tablename__ = "user_avatars"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    storage_path = Column(String(255), nullable=False)
+    content_type = Column(String(30), nullable=False)
+    updated_ms = Column(BigInteger, nullable=False)

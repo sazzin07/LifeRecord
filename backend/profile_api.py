@@ -1,16 +1,20 @@
-"""The person's own profile and preferences: saved app choices and the display name.
+"""The person's own profile and preferences: saved app choices, the display name and the profile photo.
 
 Preferences are low-risk and the assistant may change them (ai_tools_settings.py calls the same functions). The sign-in address is
 deliberately NOT changeable: it is the account's identity and where every security message goes, and nothing here (or anywhere) edits it.
 """
+import time
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import User, UserPreference
+import chat_images
+import usage_limits
+from models import User, UserAvatar, UserPreference
 
 # What each preference may be, in the order a screen offers it. The first value is the default for someone who never chose.
 PREFERENCE_OPTIONS = {
@@ -24,6 +28,8 @@ PREFERENCE_LABELS = {
 }
 DEFAULTS = {k: v[0] for k, v in PREFERENCE_OPTIONS.items()}
 NAME_MAX = 80
+AVATAR_MAX_BYTES = 2 * 1024 * 1024   # the screen sends a 512 pixel square, a few dozen kilobytes; this only stops abuse
+AVATAR_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}   # not GIF: a profile photo does not move
 
 
 def clean_changes(changes: dict) -> dict:
@@ -116,3 +122,51 @@ def register(api_router, srv):
         db_user.name = name
         await db.commit()
         return _me(db_user)
+
+    # ---- the profile photo ---------------------------------------------------------------------------------------------------
+    @api_router.put("/auth/me/photo")
+    async def put_photo(request: Request, file: UploadFile = File(...), user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        await usage_limits.check_user_limit(user["_id"], "photo_upload")
+        data = await file.read(AVATAR_MAX_BYTES + 1)
+        if len(data) > AVATAR_MAX_BYTES:
+            raise HTTPException(413, "That photo is too large. Choose another one.")
+        mime = chat_images.sniff(data)           # what the bytes are, never what the file is called or the client says
+        if mime not in AVATAR_TYPES:
+            raise HTTPException(400, "Use a JPEG, PNG or WebP photo.")
+        uid = user["_id"]
+        relative = f"avatars/{uid}/{srv.new_id()}.{AVATAR_TYPES[mime]}"
+        srv.save_object(relative, data)
+        row = (await db.execute(select(UserAvatar).where(UserAvatar.user_id == uid))).scalar_one_or_none()
+        old = row.storage_path if row else None
+        now = int(time.time() * 1000)
+        if row is None:
+            db.add(UserAvatar(user_id=uid, storage_path=relative, content_type=mime, updated_ms=now))
+        else:
+            row.storage_path, row.content_type, row.updated_ms = relative, mime, now
+        await db.commit()
+        if old:
+            srv.delete_object(old)
+        return {"photo_version": now}
+
+    @api_router.get("/auth/me/photo")
+    async def get_photo(user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        row = (await db.execute(select(UserAvatar).where(UserAvatar.user_id == user["_id"]))).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "No photo")
+        return Response(content=srv.read_object(row.storage_path), media_type=row.content_type,
+                        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
+
+    @api_router.delete("/auth/me/photo")
+    async def delete_photo(user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        row = (await db.execute(select(UserAvatar).where(UserAvatar.user_id == user["_id"]))).scalar_one_or_none()
+        if row is not None:
+            old = row.storage_path
+            await db.delete(row)
+            await db.commit()
+            srv.delete_object(old)
+        return {"photo_version": None}
+
+
+async def photo_version(db: AsyncSession, user_id: str) -> Optional[int]:
+    row = (await db.execute(select(UserAvatar.updated_ms).where(UserAvatar.user_id == user_id))).first()
+    return row[0] if row else None

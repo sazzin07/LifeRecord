@@ -1857,8 +1857,10 @@ async def logout_all(response: Response, background: BackgroundTasks, user: dict
 
 
 @api_router.get("/auth/me")
-async def me(user: dict = Depends(get_current_user_optional_unverified)):
-    return {"id": user["_id"], "email": user["email"], "name": user.get("name", OWNER_NAME), "email_verified": user.get("email_verified", False)}
+async def me(user: dict = Depends(get_current_user_optional_unverified), db: AsyncSession = Depends(get_db)):
+    return {"id": user["_id"], "email": user["email"], "name": user.get("name", OWNER_NAME), "email_verified": user.get("email_verified", False),
+            "created_at": (await db.execute(select(User.created_at).where(User.id == user["_id"]))).scalar_one_or_none(),
+            "photo_version": await profile_api.photo_version(db, user["_id"])}
 
 
 # ---------------------------------------------------------------------------

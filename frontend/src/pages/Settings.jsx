@@ -1,20 +1,18 @@
 import { MotionConfig, motion } from "framer-motion";
 import { useSearchParams } from "react-router-dom";
-import { CalendarDays, Laptop, Palette, Sparkles, Utensils, Wallet } from "lucide-react";
+import { CalendarDays, Laptop, Palette, Wallet } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 import { useFetch } from "@/lib/useFetch";
 import { AccountTabs } from "@/components/AccountTabs";
 import { Appearance } from "@/pages/settings/Appearance";
 import { MoneySettings } from "@/pages/settings/MoneySettings";
-import { AssistantSettings, CalendarSettings, DeviceSettings, NutritionLink } from "@/pages/settings/DisplaySettings";
+import { CalendarSettings, DeviceSettings } from "@/pages/settings/DisplaySettings";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "money", label: "Money", icon: Wallet },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
-  { id: "nutrition", label: "Nutrition", icon: Utensils },
-  { id: "assistant", label: "Assistant", icon: Sparkles },
   { id: "device", label: "This device", icon: Laptop },
 ];
 
@@ -31,8 +29,6 @@ export default function Settings() {
     appearance: <Appearance index={0} />,
     money: <MoneySettings index={0} accounts={accounts} cats={cats} />,
     calendar: <CalendarSettings index={0} />,
-    nutrition: <NutritionLink index={0} />,
-    assistant: <AssistantSettings index={0} />,
     device: <DeviceSettings index={0} />,
   }[active];
 

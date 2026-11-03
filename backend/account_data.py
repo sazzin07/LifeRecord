@@ -73,12 +73,13 @@ async def export_tables(db: AsyncSession, user_id: str) -> Dict[str, list]:
 
 
 def file_paths(srv, user_id: str, photo_paths: Iterable[str]) -> List[str]:
-    """Storage-relative paths of this person's files: progress photos, and every picture attached to a chat."""
+    """Storage-relative paths of this person's files: progress photos, every picture attached to a chat, and the profile photo."""
     paths = [p for p in photo_paths if p]
-    folder = srv._safe_storage_path(f"chat_images/{user_id}")
-    if folder.is_dir():
-        root = srv.STORAGE_DIR.resolve()
-        paths += [str(f.resolve().relative_to(root)).replace("\\", "/") for f in sorted(folder.rglob("*")) if f.is_file()]
+    root = srv.STORAGE_DIR.resolve()
+    for name in ("chat_images", "avatars"):
+        folder = srv._safe_storage_path(f"{name}/{user_id}")
+        if folder.is_dir():
+            paths += [str(f.resolve().relative_to(root)).replace("\\", "/") for f in sorted(folder.rglob("*")) if f.is_file()]
     return paths
 
 
@@ -86,7 +87,7 @@ _README = """Life Record: your data
 =======================
 
 data.json   every record in your account, grouped by table (amounts are plain numbers, dates are ISO text).
-files/      your progress photos and the pictures you attached in chats, as the original images.
+files/      your progress photos, your profile photo and the pictures you attached in chats, as the original images.
 
 Not included: your password and anything derived from it, sign-in codes, and short-lived internal state.
 """
@@ -124,10 +125,11 @@ def remove_files(storage_root: Path, user_id: str, photo_paths: Iterable[str]) -
     """Delete this person's files, only inside their own folders. Call after the database commit."""
     root = Path(storage_root).resolve()
     removed = 0
-    folder = (root / "chat_images" / user_id).resolve()
-    if folder.is_dir() and root in folder.parents and folder.name == user_id:
-        removed += sum(1 for p in folder.rglob("*") if p.is_file())
-        shutil.rmtree(folder, ignore_errors=True)
+    for name in ("chat_images", "avatars"):
+        folder = (root / name / user_id).resolve()
+        if folder.is_dir() and root in folder.parents and folder.name == user_id:
+            removed += sum(1 for p in folder.rglob("*") if p.is_file())
+            shutil.rmtree(folder, ignore_errors=True)
     for rel in photo_paths:
         f = (root / rel).resolve()
         if rel and f.is_file() and root in f.parents:

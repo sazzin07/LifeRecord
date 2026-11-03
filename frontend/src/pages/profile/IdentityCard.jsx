@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, LogOut, Mail, Pencil, ShieldCheck, X } from "lucide-react";
+import { CalendarDays, Camera, Check, LogOut, Mail, Pencil, ShieldCheck, ShieldOff, X } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Avatar } from "@/components/common";
+import { UserAvatar, useProfilePhoto } from "@/components/UserAvatar";
+import { PhotoDialog } from "./PhotoDialog";
+import { useTwoFactorStatus } from "./useTwoFactorStatus";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
@@ -51,23 +53,43 @@ function NameEditor() {
   );
 }
 
-/** Who you are. The address is how you sign in and where security notices go: it is shown here and cannot be edited. */
+const since = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: "long", year: "numeric" }); };
+
+/** Who you are, at a glance: photo, name (editable), address (shown, never edited: it is how you sign in and where security notices go),
+ *  and three facts: verified, two-step on or off, member since. */
 export function IdentityCard({ index, onSignOutAll }) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const twoStep = useTwoFactorStatus(0);
+  const photoUrl = useProfilePhoto();
+  const member = since(user?.created_at);
   return (
     <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.2, 0, 0, 1], delay: index * 0.05 }}
-      className="mny-card mny-hero flex flex-wrap items-center gap-x-5 gap-y-4 p-5 sm:p-6" aria-label="Your profile">
-      <Avatar name={user?.name || "?"} size="h-16 w-16" />
-      <div className="min-w-[12rem] flex-1 space-y-0.5">
+      className="mny-card mny-hero flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:p-6" aria-label="Your profile">
+      <div className="relative shrink-0">
+        <UserAvatar size="h-24 w-24" className="text-2xl" />
+        <button type="button" onClick={() => setPhotoOpen(true)} aria-label={user?.photo_version ? "Change your profile photo" : "Add a profile photo"} data-testid="photo-open"
+          className="absolute -bottom-1 -right-1 grid h-9 w-9 place-items-center rounded-full border-2 border-[var(--mny-surface)] shadow-md transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mny-green)]"
+          style={{ background: "var(--mny-grad)", color: "var(--mny-on-grad)" }}>
+          <Camera className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="min-w-[12rem] flex-1 space-y-1.5">
         <NameEditor />
-        <p className="mny-muted flex flex-wrap items-center gap-x-2 text-sm"><Mail className="h-3.5 w-3.5" aria-hidden="true" /><span className="break-all" data-testid="profile-email">{user?.email}</span>
-          {user?.email_verified && <span className="mny-state"><ShieldCheck className="h-3 w-3" aria-hidden="true" />Verified</span>}
-        </p>
+        <p className="mny-muted flex flex-wrap items-center gap-x-2 text-sm"><Mail className="h-3.5 w-3.5" aria-hidden="true" /><span className="break-all" data-testid="profile-email">{user?.email}</span></p>
+        <ul className="flex flex-wrap gap-1.5 pt-1" aria-label="About this account">
+          {user?.email_verified && <li className="mny-state"><ShieldCheck className="h-3 w-3" aria-hidden="true" />Email verified</li>}
+          <li className={twoStep.enabled ? "mny-state" : "mny-state amber"} data-testid="two-step-chip">
+            {twoStep.enabled ? <ShieldCheck className="h-3 w-3" aria-hidden="true" /> : <ShieldOff className="h-3 w-3" aria-hidden="true" />}{twoStep.enabled ? "Two-step sign-in on" : "Two-step sign-in off"}
+          </li>
+          {member && <li className="mny-state"><CalendarDays className="h-3 w-3" aria-hidden="true" />Member since {member}</li>}
+        </ul>
       </div>
       <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
         <button type="button" className="mny-pill" onClick={logout} data-testid="settings-logout"><LogOut className="h-4 w-4" aria-hidden="true" />Sign out</button>
         <button type="button" className="mny-pill" onClick={onSignOutAll} data-testid="settings-logout-all">Sign out on all devices</button>
       </div>
+      <PhotoDialog open={photoOpen} onOpenChange={setPhotoOpen} currentUrl={photoUrl} onChanged={(v) => updateUser({ photo_version: v })} />
     </motion.section>
   );
 }

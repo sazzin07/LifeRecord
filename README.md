@@ -440,23 +440,23 @@ Setup: `alembic upgrade head`, then once `python import_usda.py` (downloads the 
 ### Profile and Settings
 Two pages, switched from the top of either (`pages/Profile.jsx`, `pages/Settings.jsx`; backend `profile_api.py`, `ai_tools_settings.py`; tests
 `test_profile_settings.py`, `e2e/settings-page.spec.js`, `e2e/profile-page.spec.js`).
-- **Settings** is a set of tabs (Appearance, Money, Calendar, Nutrition, Assistant, This device; the tab is in the address, `?section=money`, and the arrow keys move between them). It holds the everyday choices, each applied at once, with a "Saved" note: **theme** (light, dark, system; system follows the device as it changes),
+- **Settings** is a set of tabs (Appearance, Money, Calendar, This device; the tab is in the address, `?section=money`, and the arrow keys move between them). It holds the everyday choices, each applied at once, with a "Saved" note: **theme** (light, dark, system; system follows the device as it changes),
   **animations**, **calendar week start** (Monday or Sunday: the month grid, the week view and their headings), **what Money opens on** (last 7 days, today,
   all time), **money places**, **categories with monthly budgets** (renaming a category renames it on every past transaction; two with the same name in any
-  case are refused; deleting says what happens to past transactions), a link to the nutrition goals, and **this device**: the **side menu** (a thin icon strip
+  case are refused; deleting says what happens to past transactions), and **this device**: the **side menu** (a thin icon strip
   that opens on hover or focus and folds back after a page is chosen, or always open; never synced, a phone and a desktop differ) and **"use my choices on all my
   devices"**. Reset puts the look and display choices back to their defaults after a warning.
 - **Saved on the account**: theme, animations, week start and the Money period are in `user_preferences` (one row per user; no row means "never saved", and
   then the first browser that opens the app gives the account what it already had). They follow the person to every device that syncs, and a change made by the
   assistant shows up on the open page. A device that turns sync off keeps its own. A choice made here is never overwritten by an older answer from the server.
-- **Profile** holds who you are and how you are protected: the **display name** (edit in place), the **password**, two-step methods,
+- **Profile** holds who you are and how you are protected: the **profile photo** (choose, move and zoom it in a round window, saved as a 512 pixel square; shown in the header and here; private to you, replaced on a new upload, removed with the account and included in your data export; `avatar` routes `PUT/GET/DELETE /auth/me/photo`, table `user_avatars`), the **display name** (edit in place), at-a-glance facts (email verified, two-step on or off, member since), the **password**, two-step methods,
   devices, and your data (download, deactivate, delete). Anything that could lock you out asks for the password first, and when two-step is on, one proof of it.
   - **The sign-in address is shown and cannot be changed**, by design: it is the account's identity and where every security notice goes. No route edits it.
   - **Changing the password** is judged as it is typed (strength meter, the rules as a checklist, a "suggest a strong one" that is random and readable), asks for the
     current password and, with two-step on, a proof (a stolen session and a known password are no longer enough), refuses known-leaked and common passwords,
     signs out every other device and emails a notice. A request already on its way when the password changes waits for the change and uses the new token (`replacingSession` in `lib/api.js`), so the tab that changed it is never signed out by its own change.
 - **The assistant** can read and change the low-risk choices (`get_settings`, `update_settings`: theme, animations, week start, what Money opens on, the display name),
-  and the user can undo. It has no tool for the password, two-step, sessions or deleting data, and says where to do those (Profile). The examples on the Assistant tab open the assistant with the sentence ready.
+  and the user can undo. It has no tool for the password, two-step, sessions or deleting data, and says where to do those (Profile).
 
 ### Home dashboard
 - Summary stats, tasks, people balances, nutrition rings, and today's transactions.

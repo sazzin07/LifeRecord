@@ -1,4 +1,4 @@
-"""Saved preferences, the display name, the sign-in address that can NOT be changed, the second-step proof on a password change, the assistant's
+"""Saved preferences, the display name, the profile photo, the sign-in address that can NOT be changed, the second-step proof on a password change, the assistant's
 settings tools (in-process, like test_ai_people.py) and category renames."""
 import asyncio
 import os
@@ -179,3 +179,55 @@ def test_renaming_a_category_carries_its_past_transactions_and_duplicates_are_re
         cats = {t["category"] for t in call(u, "get", "/transactions").json() if t["type"] == "expense"}
         assert "Espresso" in cats and "Coffee" not in cats
     assert call(u, "delete", f"/categories/{cat['id']}").status_code == 200
+
+
+# -- profile photo ------------------------------------------------------------------------------------------------------------
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+
+def put_photo(user, data=JPEG, name="me.jpg", ctype="image/jpeg"):
+    return requests.put(api(user, "/auth/me/photo"), headers={"Authorization": f"Bearer {user['token']}"}, files={"file": (name, data, ctype)}, timeout=60)
+
+
+def test_a_profile_photo_is_saved_served_replaced_and_removed():
+    u = create_verified_user("avatar")
+    assert call(u, "get", "/auth/me").json()["photo_version"] is None
+    assert call(u, "get", "/auth/me/photo").status_code == 404
+    r = put_photo(u)
+    assert r.status_code == 200 and r.json()["photo_version"]
+    me = call(u, "get", "/auth/me").json()
+    assert me["photo_version"] == r.json()["photo_version"] and me["created_at"]
+    got = call(u, "get", "/auth/me/photo")
+    assert got.status_code == 200 and got.content == JPEG and got.headers["content-type"] == "image/jpeg"
+    assert got.headers["x-content-type-options"] == "nosniff" and "private" in got.headers["cache-control"]
+    # a new photo replaces the old one (and its file)
+    r2 = put_photo(u, PNG, "me.png", "image/png")
+    assert r2.status_code == 200 and r2.json()["photo_version"] >= r.json()["photo_version"]
+    got = call(u, "get", "/auth/me/photo")
+    assert got.content == PNG and got.headers["content-type"] == "image/png"
+    assert call(u, "delete", "/auth/me/photo").status_code == 200
+    assert call(u, "get", "/auth/me/photo").status_code == 404
+    assert call(u, "get", "/auth/me").json()["photo_version"] is None
+    assert call(u, "delete", "/auth/me/photo").status_code == 200       # removing nothing is fine
+
+
+def test_only_real_small_photos_are_accepted_whatever_they_are_called():
+    u = create_verified_user("avatarbad")
+    assert put_photo(u, b"<svg onload=alert(1)></svg>", "me.jpg", "image/jpeg").status_code == 400     # named like a photo, is not one
+    assert put_photo(u, b"GIF89a" + b"\x00" * 20, "me.gif", "image/gif").status_code == 400            # a profile photo does not move
+    assert put_photo(u, b"", "me.png", "image/png").status_code == 400
+    assert put_photo(u, JPEG + b"\x00" * (2 * 1024 * 1024), "big.jpg").status_code == 413
+    assert call(u, "get", "/auth/me").json()["photo_version"] is None
+    assert requests.put(f"{BASE_URL}/api/auth/me/photo", files={"file": ("me.jpg", JPEG, "image/jpeg")}, timeout=30).status_code in (401, 403)
+
+
+def test_a_profile_photo_is_private_to_its_owner():
+    a, b = create_verified_user("avatara"), create_verified_user("avatarb")
+    assert put_photo(a).status_code == 200
+    assert call(b, "get", "/auth/me/photo").status_code == 404                   # no id or path to guess: the route only knows the caller
+    assert call(b, "get", "/auth/me").json()["photo_version"] is None
+    assert requests.get(f"{BASE_URL}/api/auth/me/photo", timeout=30).status_code in (401, 403)
+    assert call(b, "delete", "/auth/me/photo").status_code == 200
+    assert call(a, "get", "/auth/me/photo").status_code == 200                   # b removing "theirs" did not touch a's

@@ -281,6 +281,15 @@ def _extras(a):
     _db("INSERT INTO account_deactivations (user_id,deactivated_ms,deactivated_by) VALUES (%s,%s,'self')", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
 
 
+def c_avatar(a):
+    r = a["session"].put(api(a, "/auth/me/photo"), files={"file": ("me.png", _png(), "image/png")}, timeout=30)
+    assert r.status_code == 200, r.text
+    return {"photo_version": r.json()["photo_version"]}
+
+
+CREATORS["avatar"] = c_avatar
+
+
 def populate(a):
     """One object in every creator, plus the extras. Returns {creator name: created ids}."""
     made = {name: fn(a) for name, fn in CREATORS.items()}

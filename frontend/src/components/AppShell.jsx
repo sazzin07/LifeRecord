@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useSettings } from "@/context/SettingsContext";
 import { AIAssistant } from "@/components/AIAssistant";
 import { CommandBar } from "@/components/CommandBar";
@@ -203,8 +204,9 @@ export function AppShell({ children }) {
               <Plus className="h-4 w-4" aria-hidden="true" />Add
             </button>
             <NavLink to="/profile" data-testid="header-profile" aria-label={`Your profile${user?.name ? `, ${user.name}` : ""}`}
-              className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
-              {(user?.name || "?").trim().charAt(0).toUpperCase()}
+              className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
+              {/* Decorative: the button's label already names the person (the initials would not match it). A fixed size, so a large photo is scaled, not cropped by its own size. */}
+              <span aria-hidden="true" className="block h-[38px] w-[38px] overflow-hidden rounded-full"><UserAvatar size="h-[38px] w-[38px]" className="text-xs" decorative /></span>
             </NavLink>
           </div>
         </div>

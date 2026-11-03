@@ -115,7 +115,7 @@ test("reset puts the look and display choices back after a warning", async ({ fr
 
 test("every tab opens its own page of settings, by click, by keyboard and by address", async ({ freshUserPage: { page } }) => {
   await page.goto("/settings");
-  const expectations = { appearance: "theme-dark", money: "settings-add-place", calendar: "week-start-sunday", nutrition: "settings-nutrition-link", assistant: "assistant-example", device: "side-menu-auto" };
+  const expectations = { appearance: "theme-dark", money: "settings-add-place", calendar: "week-start-sunday", device: "side-menu-auto" };
   for (const [tab, marker] of Object.entries(expectations)) {
     await page.getByTestId(`settings-tab-${tab}`).click();
     await expect(page.getByTestId(`settings-tab-${tab}`)).toHaveAttribute("aria-selected", "true");
@@ -127,18 +127,10 @@ test("every tab opens its own page of settings, by click, by keyboard and by add
   await expect(page.getByTestId("settings-tab-money")).toHaveAttribute("aria-selected", "true");
   await page.goto("/settings?section=device");                              // a link lands on the tab
   await expect(page.getByTestId("side-menu-auto")).toBeVisible();
-  await page.goto("/settings?section=nutrition");
-  await page.getByTestId("settings-nutrition-link").click();
-  await expect(page).toHaveURL(/\/nutrition\?tab=goals/);
-});
-
-test("the assistant examples open the assistant with the sentence ready, and the side menu never scrolls sideways", async ({ freshUserPage: { page } }) => {
-  await page.goto("/settings?section=assistant");
-  await page.getByTestId("assistant-example").first().click();
-  await expect(page.locator("textarea").first()).toHaveValue(/dark mode/i);
-  await page.keyboard.press("Escape");
-  const sideways = await page.getByTestId("sidebar").locator("nav").evaluate((el) => el.scrollWidth - el.clientWidth);
-  expect(sideways).toBeLessThanOrEqual(0);
+  // no empty tabs: nothing here only points somewhere else
+  for (const gone of ["nutrition", "assistant"]) await expect(page.getByTestId(`settings-tab-${gone}`)).toHaveCount(0);
+  await page.goto("/settings?section=assistant");                          // an old link lands on the first tab, not on nothing
+  await expect(page.getByTestId("theme-dark")).toBeVisible();
 });
 
 test("when the account cannot be reached the choice is kept here, said so in words without a pop-up, and sent when tried again", async ({ freshUserPage: { page, fresh } }) => {

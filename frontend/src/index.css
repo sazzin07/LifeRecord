@@ -333,3 +333,5 @@ html { overflow-anchor: auto; }
 
 /* Cards of components shared with the rest of the app (two-step, devices, your data) take the same surface inside these pages. */
 .mny-theme .card-ambient { background: var(--mny-surface); border-color: var(--mny-line); border-radius: 1.5rem; box-shadow: var(--mny-shadow); }
+
+.initials-pseudo::before { content: attr(data-initials); }

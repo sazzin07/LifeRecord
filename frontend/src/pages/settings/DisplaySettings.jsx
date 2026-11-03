@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { CalendarDays, Laptop, MessageSquareText, RotateCcw, ShieldAlert, Sparkles, Utensils } from "lucide-react";
-import { Link } from "react-router-dom";
+import { CalendarDays, Laptop, RotateCcw } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
-import { openAI } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Switch } from "@/components/ui/switch";
 import { Row, SavedBadge, Section, Segmented } from "@/components/settings/controls";
@@ -16,39 +14,6 @@ export function CalendarSettings({ index }) {
         <Segmented label="Weeks start on" value={weekStart} onChange={setWeekStart} testid="week-start"
           options={[{ value: "monday", label: "Monday" }, { value: "sunday", label: "Sunday" }]} />
       </Row>
-    </Section>
-  );
-}
-
-const EXAMPLES = ["Switch to dark mode", "Turn animations off", "Start my weeks on Sunday", "Open Money on today", "Call me Alex"];
-
-export function AssistantSettings({ index }) {
-  return (
-    <Section id="assistant" index={index} icon={Sparkles} title="Assistant" description="Chat, voice and receipt photos. Your API keys stay on the server and never reach your browser.">
-      <p className="mny-title text-sm font-medium">You can ask it to change the everyday settings</p>
-      <ul className="mt-2 flex flex-wrap gap-2" aria-label="Examples">
-        {EXAMPLES.map((e) => (
-          <li key={e}>
-            <button type="button" className="mny-pill sm" onClick={() => openAI(e)} data-testid="assistant-example"><MessageSquareText className="h-3 w-3" aria-hidden="true" />{e}</button>
-          </li>
-        ))}
-      </ul>
-      <p className="mny-muted mt-2 text-xs">Pick one to open the assistant with it ready to send.</p>
-      <div className="mny-tile mt-4 flex gap-3 p-3.5">
-        <ShieldAlert className="mny-amber mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-        <p className="mny-muted text-sm">
-          <span className="mny-title font-medium">It cannot touch your sign-in.</span> Your email address, password, two-step methods, devices and your data are only changed on the{" "}
-          <Link to="/profile" className="mny-green font-medium underline underline-offset-2">Profile page</Link>, where they ask for your password.
-        </p>
-      </div>
-    </Section>
-  );
-}
-
-export function NutritionLink({ index }) {
-  return (
-    <Section id="nutrition" index={index} icon={Utensils} title="Nutrition" description="Your profile, daily targets and meal reminders live next to your food diary.">
-      <Link to="/nutrition?tab=goals" className="mny-pill mny-cta" data-testid="settings-nutrition-link">Open nutrition goals</Link>
     </Section>
   );
 }

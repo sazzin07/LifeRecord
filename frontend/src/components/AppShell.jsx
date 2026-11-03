@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell,
   HeartPulse, CheckSquare, Calendar, Settings as SettingsIcon,
-  Plus, Search, Sparkles, LogOut, Sun, Moon, Ellipsis,
+  Plus, Search, Sparkles, LogOut, Sun, Moon, Ellipsis, Pin, PinOff,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
@@ -69,6 +69,29 @@ export function AppShell({ children }) {
   const [offline, setOffline] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButton = useRef(null);
+  // On a wide screen the side menu is a thin strip of icons that widens over the page while the pointer (or keyboard focus) is
+  // on it. A screen that cannot hover keeps it open, and the pin keeps it open for anyone who prefers that.
+  const [pinned, setPinned] = useState(() => { try { return localStorage.getItem("lr-sidebar") === "pinned"; } catch { return false; } });
+  const [canHover, setCanHover] = useState(() => (typeof window.matchMedia !== "function" ? true : window.matchMedia("(hover: hover)").matches));
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef(null);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia("(hover: hover)");
+    const on = () => setCanHover(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  useEffect(() => () => clearTimeout(peekTimer.current), []);
+  const docked = pinned || !canHover;
+  const expanded = docked || peek;
+  const showPeek = () => { clearTimeout(peekTimer.current); setPeek(true); };
+  const hidePeek = () => { clearTimeout(peekTimer.current); peekTimer.current = setTimeout(() => setPeek(false), 220); };
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    try { localStorage.setItem("lr-sidebar", next ? "pinned" : "auto"); } catch { /* the choice just is not remembered */ }
+  };
   const inMore = MORE_NAV.some((n) => loc.pathname === n.to || loc.pathname.startsWith(n.to + "/"));
 
   // Once things are quiet after sign-in, download every page and warm its data, one page at a time.
@@ -107,34 +130,44 @@ export function AppShell({ children }) {
       <AnimatePresence>{intro && <Intro key="intro" name={user?.name} onDone={() => setIntro(false)} />}</AnimatePresence>
 
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 border-r border-border bg-card/60 backdrop-blur-sm z-30">
-        <div className="h-16 flex items-center gap-2 px-5 border-b border-border">
-          <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
-          <span className="font-bold tracking-tight text-slate-900 dark:text-slate-50">Life Record</span>
+      <aside data-testid="sidebar" data-expanded={expanded}
+        onMouseEnter={showPeek} onMouseLeave={hidePeek} onFocus={showPeek}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hidePeek(); }}
+        className={cn("hidden lg:flex flex-col fixed inset-y-0 left-0 overflow-hidden border-r border-border backdrop-blur-sm transition-[width,box-shadow] duration-300 ease-out motion-reduce:transition-none",
+          expanded ? "w-60" : "w-16", docked ? "bg-card/60 z-30" : "bg-card z-40", expanded && !docked && "shadow-2xl")}>
+        <div className="h-16 flex shrink-0 items-center gap-2 border-b border-border px-4">
+          <div className="h-8 w-8 shrink-0 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
+          <span className={cn("whitespace-nowrap font-bold tracking-tight text-slate-900 transition-opacity duration-200 dark:text-slate-50", expanded ? "opacity-100" : "opacity-0")}>Life Record</span>
+          {canHover && expanded && (
+            <button type="button" data-testid="sidebar-pin" onClick={togglePin} aria-pressed={pinned} aria-label={pinned ? "Let the menu hide again" : "Keep the menu open"}
+              className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+              {pinned ? <PinOff className="h-4 w-4" aria-hidden="true" /> : <Pin className="h-4 w-4" aria-hidden="true" />}
+            </button>
+          )}
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`nav-${n.label.toLowerCase()}`}
               onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)}
               className={({ isActive }) => cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium transition-colors",
                 isActive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
                          : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60"
               )}>
-              <n.icon className="h-[18px] w-[18px]" />{n.label}
+              <n.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>{n.label}</span>
             </NavLink>
           ))}
         </nav>
         <div className="p-3 border-t border-border">
           <button data-testid="logout-btn" onClick={logout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60">
-            <LogOut className="h-[18px] w-[18px]" />Sign out
+            className="flex w-full items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60">
+            <LogOut className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>Sign out</span>
           </button>
         </div>
       </aside>
 
       {/* Top bar */}
-      <header className="glass sticky top-0 z-20 h-16 border-b border-border lg:pl-60 flex items-center px-4 sm:px-6 gap-3">
+      <header className={cn("glass sticky top-0 z-20 h-16 border-b border-border flex items-center px-4 sm:px-6 gap-3", docked ? "lg:pl-60" : "lg:pl-16")}>
         <div className="lg:hidden flex items-center gap-2">
           <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
           <span className="font-bold tracking-tight">Life Record</span>
@@ -157,7 +190,7 @@ export function AppShell({ children }) {
       </header>
 
       {/* Content */}
-      <main className="lg:pl-60">
+      <main className={docked ? "lg:pl-60" : "lg:pl-16"}>
         {offline && (
           <div data-testid="offline-banner" className="bg-amber-700 text-white text-sm font-medium text-center py-2 px-4">
             ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.

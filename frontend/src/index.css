@@ -256,7 +256,7 @@ html { overflow-anchor: auto; }
   --popover: 0 0% 100%; --popover-foreground: 160 55% 10%; --muted: 150 22% 90%; --muted-foreground: 156 16% 32%;
   --border: 152 18% 80%; --input: 152 18% 72%; --ring: 160 80% 24%; --accent: 150 28% 90%; --accent-foreground: 160 55% 10%;
   --primary: 160 82% 22%; --primary-foreground: 0 0% 100%; --secondary: 150 22% 90%; --secondary-foreground: 160 55% 10%;
-  --mny-bg: #edf2ef;
+  --mny-bg: #fcfdfd; /* the side menu's background: card at 60% over the page */
   --mny-lights: linear-gradient(transparent, transparent);
   --mny-surface: #ffffff; --mny-surface-2: #f3f7f5; --mny-line: rgba(8, 50, 32, 0.12); --mny-shadow: 0 1px 2px rgba(6, 60, 38, 0.06), 0 14px 34px -22px rgba(6, 60, 38, 0.35);
   --mny-text: #082a1b; --mny-muted: #456a58;
@@ -272,7 +272,7 @@ html { overflow-anchor: auto; }
   --popover: 158 48% 8%; --popover-foreground: 150 35% 92%; --muted: 158 32% 14%; --muted-foreground: 152 16% 68%;
   --border: 154 26% 22%; --input: 154 26% 28%; --ring: 156 70% 52%; --accent: 158 34% 15%; --accent-foreground: 150 35% 92%;
   --primary: 156 70% 52%; --primary-foreground: 160 80% 7%; --secondary: 158 32% 14%; --secondary-foreground: 150 35% 92%;
-  --mny-bg: #060908;
+  --mny-bg: #121926; /* the side menu's background: card at 60% over the page */
   --mny-lights: linear-gradient(transparent, transparent);
   --mny-surface: #0c1210; --mny-surface-2: #121a17; --mny-line: rgba(190, 235, 215, 0.1); --mny-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.8);
   --mny-text: #eef4f1; --mny-muted: #93aaa0;

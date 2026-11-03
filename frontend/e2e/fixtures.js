@@ -49,6 +49,8 @@ export const test = base.extend({
   // gets its (in-memory) access token from it at boot. Nothing is written to web storage.
   authenticatedPage: async ({ page, context }, use) => {
     const session = await getSession();
+    // The side menu hides until the pointer reaches the left edge; the suite clicks its links directly, so it keeps it open.
+    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); } catch { /* none */ } });
     await context.addCookies([{ name: "lr_refresh", value: session.refresh_token, domain: new URL(API_URL).hostname,
                                 path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
     await page.goto("/");

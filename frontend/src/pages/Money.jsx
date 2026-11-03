@@ -11,6 +11,7 @@ import {
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
+import { useSettings } from "@/context/SettingsContext";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
 import { Label } from "@/components/common";
@@ -91,15 +92,16 @@ export default function Money() {
   const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const PERIODS = [{ id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "all", label: "All Time" }];
 
-  const [period, setPeriod] = useState("week");
+  const { moneyPeriod } = useSettings();
+  const [period, setPeriod] = useState(moneyPeriod);
   const [pm, setPm] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   // Start from the last-seen data for the default view so the page paints instantly.
   const seed = useMemo(() => {
-    const m = moneyPaths("week");
+    const m = moneyPaths(moneyPeriod);
     const s0 = peekQuery(m.summary);
     return s0 ? { sum: s0, txns: peekQuery(m.transactions) || [], categories: peekQuery(m.categories) || [] } : null;
-  }, []);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps -- only the first paint reads it
   const [sum, setSum] = useState(seed?.sum ?? null);
   const [txns, setTxns] = useState(seed?.txns ?? []);
   const [categories, setCategories] = useState(seed?.categories ?? []);

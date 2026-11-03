@@ -45,7 +45,8 @@ test.describe("Browsing between pages", () => {
     await page.waitForTimeout(2600);
     await page.addInitScript(() => Object.keys(localStorage).filter((k) => k.startsWith("lm_cache:")).forEach((k) => localStorage.removeItem(k)));
     await page.route("**/api/**", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
-    for (const p of ["tasks", "people", "body", "nutrition", "calendar", "money", "fitness", "settings"]) {
+    // (Settings and Profile have no data to wait for on arrival: they draw at once, which is the point.)
+    for (const p of ["tasks", "people", "body", "nutrition", "calendar", "money", "fitness"]) {
       await page.goto(`/${p}`);
       await page.waitForTimeout(350);
       const text = await mainText(page);

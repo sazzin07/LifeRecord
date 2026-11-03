@@ -4,6 +4,7 @@ import { addMonths, addWeeks, eachDayOfInterval, format, isSameMonth, parseISO, 
 import { ChevronLeft, ChevronRight, CheckSquare, Apple, ShoppingCart, Dumbbell, Scale, Utensils, Repeat } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
+import { useSettings } from "@/context/SettingsContext";
 import { calendarPath, iso, monthGridRange, weekRange } from "@/lib/calendarRange";
 import { Card, SectionHeading } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ const KINDS = {
   weight: { label: "Weigh-ins", icon: Scale, to: "/body", chip: "bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200", dot: "bg-teal-500" },
   meals: { label: "Meals", icon: Utensils, to: "/nutrition", chip: "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200", dot: "bg-orange-500" },
 };
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_FROM_MONDAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const FILTER_KEY = "lm_calendar_hidden";
 
 const readHidden = () => { try { return JSON.parse(localStorage.getItem(FILTER_KEY) || "[]"); } catch { return []; } };
@@ -71,7 +72,10 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState(() => iso(new Date()));
   const [hidden, setHidden] = useState(readHidden);
 
-  const range = useMemo(() => (view === "month" ? monthGridRange(anchor) : weekRange(anchor)), [view, anchor]);
+  const { weekStart } = useSettings();
+  const WEEKDAYS = weekStart === "sunday" ? ["Sun", ...WEEKDAYS_FROM_MONDAY.slice(0, 6)] : WEEKDAYS_FROM_MONDAY;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the week's first day is a module setting that changes with weekStart
+  const range = useMemo(() => (view === "month" ? monthGridRange(anchor) : weekRange(anchor)), [view, anchor, weekStart]);
   const { data, loading } = useFetch(calendarPath(range));
   const today = iso(new Date());
   const days = useMemo(() => eachDayOfInterval(range), [range]);

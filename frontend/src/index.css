@@ -330,3 +330,6 @@ html { overflow-anchor: auto; }
 @media (prefers-reduced-motion: reduce) { .mny-in { animation: none; } .mny-pill, .mny-row, .mny-bar > span { transition: none; } }
 
 .mny-theme .skeleton { background: var(--mny-surface-2); }
+
+/* Cards of components shared with the rest of the app (two-step, devices, your data) take the same surface inside these pages. */
+.mny-theme .card-ambient { background: var(--mny-surface); border-color: var(--mny-line); border-radius: 1.5rem; box-shadow: var(--mny-shadow); }

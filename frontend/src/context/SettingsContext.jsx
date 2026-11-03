@@ -1,4 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { setWeekStartsOn } from "@/lib/calendarRange";
+import { setDefaultMoneyPeriod } from "@/lib/periods";
 
 const SettingsCtx = createContext(null);
 export const useSettings = () => useContext(SettingsCtx);
@@ -7,33 +11,120 @@ const load = (k, d) => {
   try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }
   catch { return d; }
 };
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* the choice just is not remembered here */ } };
+
+// The choices that follow the person to every device (and that the assistant can change), with the name each has on the server.
+const SERVER_KEY = { theme: "theme", animations: "animations", weekStart: "week_start", moneyPeriod: "money_period" };
+const DEFAULTS = { theme: "system", animations: true, weekStart: "monday", moneyPeriod: "week" };
+const fromServer = (p) => ({ theme: p.theme, animations: p.animations, weekStart: p.week_start, moneyPeriod: p.money_period });
+
+// The side menu is about this screen (a phone and a desktop differ), so it is never synced. The old key held "pinned" or "auto".
+const loadSideMenu = () => { try { return localStorage.getItem("lr-sidebar") === "pinned" ? "open" : "auto"; } catch { return "auto"; } };
 
 export function SettingsProvider({ children }) {
-  const [theme, setTheme] = useState(() => load("lm_theme", "light"));
-  const [animations, setAnimations] = useState(() => load("lm_anim", true));
+  const [theme, setThemeState] = useState(() => load("lm_theme", DEFAULTS.theme));
+  const [animations, setAnimationsState] = useState(() => load("lm_anim", DEFAULTS.animations));
+  const [weekStart, setWeekStartState] = useState(() => load("lm_week_start", DEFAULTS.weekStart));
+  const [moneyPeriod, setMoneyPeriodState] = useState(() => load("lm_money_period", DEFAULTS.moneyPeriod));
+  const [sideMenu, setSideMenuState] = useState(loadSideMenu);
+  const [sync, setSyncState] = useState(() => load("lm_sync", true));
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const bound = useRef(false);            // a signed-in screen is attached: choices can be saved to the server
+  const lastPull = useRef(0);
+  const changedAt = useRef(0);          // when this person last changed a choice here: an answer from the server that left earlier is out of date
+
+  const syncRef = useRef(sync);
+  syncRef.current = sync;
+
+  // Set during render, before any page reads it: the calendar's first day of the week.
+  setWeekStartsOn(weekStart === "sunday" ? 0 : 1);
+  setDefaultMoneyPeriod(moneyPeriod);
 
   useEffect(() => {
     const root = document.documentElement;
     const apply = (t) => {
       if (t === "dark") root.classList.add("dark");
       else if (t === "light") root.classList.remove("dark");
-      else {
-        const m = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        root.classList.toggle("dark", m);
-      }
+      else root.classList.toggle("dark", window.matchMedia("(prefers-color-scheme: dark)").matches);
     };
     apply(theme);
-    localStorage.setItem("lm_theme", JSON.stringify(theme));
+    store("lm_theme", theme);
+    if (theme !== "system" || typeof window.matchMedia !== "function") return undefined;
+    // "System" follows the device as it changes (evening, a switch in the OS), not only at load.
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = () => apply("system");
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
   }, [theme]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("no-anim", !animations);
-    localStorage.setItem("lm_anim", JSON.stringify(animations));
+    store("lm_anim", animations);
   }, [animations]);
+  useEffect(() => { store("lm_week_start", weekStart); }, [weekStart]);
+  useEffect(() => { store("lm_money_period", moneyPeriod); }, [moneyPeriod]);
+  useEffect(() => { store("lm_sync", sync); }, [sync]);
 
-  return (
-    <SettingsCtx.Provider value={{ theme, setTheme, animations, setAnimations }}>
-      {children}
-    </SettingsCtx.Provider>
-  );
+  const setters = { theme: setThemeState, animations: setAnimationsState, weekStart: setWeekStartState, moneyPeriod: setMoneyPeriodState };
+
+  const push = useCallback(async (body) => {
+    setSaving(true);
+    try {
+      await api.put("/preferences", body);
+      setSavedAt(Date.now());
+    } catch {
+      toast.error("Could not save that choice to your account. It is kept on this device.", { id: "prefs-save-failed" });   // one message, however many choices fail
+    } finally { setSaving(false); }
+  }, []);
+
+  /** Change one synced choice: here at once, and on the account when this device syncs. */
+  const setPref = useCallback((key, value) => {
+    changedAt.current = Date.now();
+    setters[key](value);   // eslint-disable-line react-hooks/exhaustive-deps -- the setters never change
+    if (syncRef.current && bound.current) push({ [SERVER_KEY[key]]: value });
+  }, [push]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Ask the account what it has saved. The first time (nothing saved yet) this device's choices become the account's. */
+  const pull = useCallback(async ({ force = false } = {}) => {
+    if (!bound.current || !syncRef.current) return;
+    if (!force && Date.now() - lastPull.current < 1500) return;
+    const started = Date.now();
+    lastPull.current = started;
+    try {
+      const { data } = await api.get("/preferences");
+      if (changedAt.current >= started) return;   // a choice was made here while this was on its way: that one is newer
+      if (!data.saved) {
+        await api.put("/preferences", { theme, animations, week_start: weekStart, money_period: moneyPeriod });
+        return;
+      }
+      const next = fromServer(data.preferences);
+      Object.entries(next).forEach(([k, v]) => setters[k](v));
+    } catch { /* offline or signed out: this device's choices stay as they are */ }
+  }, [theme, animations, weekStart, moneyPeriod]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const bindServer = useCallback((on) => { bound.current = on; }, []);
+  const setSync = (on) => {
+    setSyncState(on);
+    syncRef.current = on;
+    if (on) pull({ force: true });
+  };
+  const setSideMenu = (mode) => {
+    setSideMenuState(mode);
+    try { localStorage.setItem("lr-sidebar", mode === "open" ? "pinned" : "auto"); } catch { /* not remembered */ }
+  };
+  const resetAll = async () => {
+    Object.entries(DEFAULTS).forEach(([k, v]) => setters[k](v));
+    if (syncRef.current && bound.current) await push({ theme: DEFAULTS.theme, animations: DEFAULTS.animations, week_start: DEFAULTS.weekStart, money_period: DEFAULTS.moneyPeriod });
+  };
+
+  const value = useMemo(() => ({
+    theme, setTheme: (v) => setPref("theme", v),
+    animations, setAnimations: (v) => setPref("animations", v),
+    weekStart, setWeekStart: (v) => setPref("weekStart", v),
+    moneyPeriod, setMoneyPeriod: (v) => setPref("moneyPeriod", v),
+    sideMenu, setSideMenu, sync, setSync, saving, savedAt, bindServer, pull, resetAll, DEFAULTS,
+  }), [theme, animations, weekStart, moneyPeriod, sideMenu, sync, saving, savedAt, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;
 }

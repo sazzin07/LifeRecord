@@ -231,6 +231,8 @@ def register(api_router, srv):
             raise HTTPException(400, BAD_PASSKEY if body.passkey is not None else BAD_CODE)
         await srv.forgive_account("totp", db_user.email)
 
+    srv.require_second_step = _require_proof   # also asked for by changing the password and the sign-in address
+
     async def _gate(request, user, db, body: PasswordBody, what: str) -> User:
         """Password, then (when two-step is on) one proof. Returns the user."""
         await srv.check_rate_limit(request, f"{user['_id']}:2fa-{what}")

@@ -6,7 +6,8 @@ import { audit, prepare, settle, THEMES, WIDTHS } from "./support/a11y";
 // accounts with no data are covered by a11y-empty-states.spec.js, public pages by a11y-public.spec.js.
 
 const PAGES = [["home", "/"], ["money", "/money"], ["people", "/people"], ["fitness", "/fitness"], ["body", "/body"], ["tasks", "/tasks"],
-  ["calendar", "/calendar"], ["settings", "/settings"], ["profile", "/profile"]];
+  ["calendar", "/calendar"], ["settings", "/settings"], ["settings money", "/settings?section=money"], ["settings calendar", "/settings?section=calendar"],
+  ["settings assistant", "/settings?section=assistant"], ["settings device", "/settings?section=device"], ["profile", "/profile"]];
 // An audit visits many pages (and, for the grocery catalog, ~500 cards), so it gets more than the default 30 seconds.
 test.describe.configure({ timeout: 300_000 });
 
@@ -59,7 +60,7 @@ for (const theme of THEMES) {
         const quickAdd = viewport.width < 640 ? "mobile-quick-add" : "quick-add-trigger";
         await open("/money", [tap(quickAdd)], byId("quick-add-dialog"), "quick add");
         await open("/money", [tap(quickAdd), tap("qa-expense")], byId("expense-dialog"), "add expense");
-        await open("/settings", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
+        await open("/settings?section=money", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
         await open("/profile", [tap("your-data-delete-open")], byId("delete-account-dialog"), "delete account");
         await open("/profile", [tap("your-data-deactivate-open")], byId("deactivate-account-dialog"), "deactivate account");
         await open("/", [tap("command-bar-trigger")], (p) => p.getByRole("dialog"), "search and commands");

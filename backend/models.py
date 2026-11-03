@@ -720,3 +720,16 @@ class HydrationEntry(Base):
     beverage = Column(String(24), nullable=False, default="water")  # water | tea | coffee | other
     created_at = Column(String(32), nullable=False)
 
+
+
+class UserPreference(Base):
+    """How the app looks and behaves for one person, kept on the server so every browser and the assistant see the same choices.
+    No row means "never saved": the screen then offers what that browser already had."""
+    __tablename__ = "user_preferences"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    theme = Column(String(10), nullable=False, default="system")
+    animations = Column(Boolean, nullable=False, default=True)
+    week_start = Column(String(10), nullable=False, default="monday")
+    money_period = Column(String(10), nullable=False, default="week")
+    updated_at = Column(String(32), nullable=False)
+

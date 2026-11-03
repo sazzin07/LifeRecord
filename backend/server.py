@@ -37,7 +37,7 @@ from models import (
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
-    Food, FoodFavorite, HydrationEntry, NutritionProfile, MealPlanEntry,
+    Food, FoodFavorite, HydrationEntry, NutritionProfile, MealPlanEntry, UserPreference,
 )
 import file_crypto
 import kitchen_logic
@@ -59,9 +59,11 @@ import calendar_api
 import account_api
 import account_favorites
 import ai_tools_people
+import ai_tools_settings
 import debts
 import debts_api
 import two_factor_api
+import profile_api
 import nutrition_api
 import nutrition_plan_api
 import nutrition_suggest_api
@@ -454,7 +456,7 @@ class RefreshBody(BaseModel):
     token: Optional[str] = Field(None, max_length=2048)  # omitted when the refresh token is in the HttpOnly cookie
 
 
-class ChangePasswordBody(BaseModel):
+class ChangePasswordBody(two_factor_api.ProofBody):
     current_password: str = Field(..., max_length=255)
     new_password: str = Field(..., max_length=255)
 
@@ -1819,6 +1821,8 @@ async def change_password(body: ChangePasswordBody, request: Request, response: 
     # 400, not 401: the session is valid, and a 401 makes the app sign the user out over a typo.
     if not db_user or not verify_password(body.current_password, db_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
+    # With two-step on, a stolen session and a known password are not enough to take the account over: one proof of the second step too.
+    await require_second_step(db, db_user, body)
     problem = password_problem(body.new_password, db_user.email)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -2096,10 +2100,20 @@ async def get_categories(user: dict = Depends(get_current_user), db: AsyncSessio
     )).scalars().all()]
 
 
+async def _category_name_taken(db: AsyncSession, user_id: str, name: str, except_id: Optional[str] = None) -> bool:
+    rows = (await db.execute(select(Category.id, Category.name).where(Category.user_id == user_id))).all()
+    return any(cid != except_id and (n or "").strip().lower() == name.lower() for cid, n in rows)
+
+
 @api_router.post("/categories")
 async def create_category(body: CategoryBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(400, "A category needs a name.")
+    if await _category_name_taken(db, user["_id"], name):
+        raise HTTPException(400, f'You already have a category called "{name}".')
     c = Category(
-        id=new_id(), user_id=user["_id"], name=body.name, icon=body.icon, color=body.color,
+        id=new_id(), user_id=user["_id"], name=name, icon=body.icon, color=body.color,
         monthly_budget=round(body.monthly_budget, 2) if body.monthly_budget is not None else None,
         created_at=now_iso(),
     )
@@ -2116,7 +2130,15 @@ async def update_category(cid: str, body: CategoryBody, user: dict = Depends(get
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(404, "Category not found")
-    c.name = body.name
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(400, "A category needs a name.")
+    if await _category_name_taken(db, user["_id"], name, except_id=c.id):
+        raise HTTPException(400, f'You already have a category called "{name}".')
+    if name != c.name:
+        # Transactions keep their category as a name: renaming must carry the past with it, or it would be left under a name that no longer exists.
+        await db.execute(update(Transaction).where(Transaction.user_id == user["_id"], Transaction.category == c.name).values(category=name))
+    c.name = name
     c.icon = body.icon
     c.color = body.color
     c.monthly_budget = round(body.monthly_budget, 2) if body.monthly_budget is not None else None
@@ -4274,6 +4296,21 @@ async def remember_new_transfers(db: AsyncSession, user_id: str, created: list, 
     created.extend({"collection": "transactions", "id": t} for t in sorted(now - known))
 
 
+async def _undo_setting(db: AsyncSession, user_id: str, ref: dict) -> None:
+    """Put back a setting or the display name an assistant action changed (they are one row per user, not rows with an id)."""
+    before = ref.get("before") or {}
+    if before.get("user_id") != user_id:
+        return
+    if ref["collection"] == "user_name":
+        await db.execute(update(User).where(User.id == user_id).values(name=before["name"]))
+        return
+    if not before.get("saved"):
+        await db.execute(delete(UserPreference).where(UserPreference.user_id == user_id))
+        return
+    values = {k: before[k] for k in profile_api.DEFAULTS if k in before}
+    await db.execute(update(UserPreference).where(UserPreference.user_id == user_id).values(updated_at=now_iso(), **values))
+
+
 @api_router.post("/ai/actions/{aid}/undo")
 async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     action = (await db.execute(
@@ -4287,6 +4324,9 @@ async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSes
     # Newest change first. A ref with "before" was changed or deleted by the action: put its values back (or the
     # whole row if it is gone). A ref without it was created by the action: remove it.
     for ref in reversed(action.created or []):
+        if ref["collection"] in ("user_preferences", "user_name"):
+            await _undo_setting(db, user["_id"], ref)
+            continue
         model = models.get(ref["collection"])
         if not model:
             continue
@@ -4699,6 +4739,7 @@ AI_TOOLS = [
 AI_TOOLS += ai_tools_extra.EXTRA_TOOLS
 AI_TOOLS += ai_tools_nutrition.NUTRITION_TOOLS
 AI_TOOLS += ai_tools_people.PEOPLE_TOOLS
+AI_TOOLS += ai_tools_settings.SETTINGS_TOOLS
 
 AI_SYSTEM ="""You are Life Record's personal assistant, a friendly multi-user life-management helper.
 You turn natural language into structured, connected data by calling tools. You handle money/expenses, shared expenses and reimbursements, groceries, meals/nutrition, workouts, weight and tasks for the current user.
@@ -4724,6 +4765,7 @@ Rules:
 
 Formatting (the chat renders Markdown):
 - Write money as €14.00: the symbol first, two decimals, a comma for thousands (€1,250.00). Never write 14.00€ or 14 euros.
+- Settings: get_settings reads them and update_settings changes the low-risk ones (theme, animations, week start, what Money opens on, the display name; they apply on every device that syncs) straight away, and the user can undo. You can NOT change the email address, password, two-step sign-in, sessions, or export/delete data: say that, and that the user does it on the Profile page, where it asks for their password. Never ask the user to type a password or code into the chat.
 - Never wrap amounts, numbers, dates or units in ** or backticks. Do not bold figures. Use bold only for a short label or a name when it really helps, never next to a currency symbol.
 - Keep answers short: a sentence or two, then a bulleted list if there are several items. Use a table only when comparing three or more rows with two or more columns. Dates read like 23 Oct 2026. No emojis. Do not show internal ids.
 - Today's date is {today}.
@@ -5380,6 +5422,8 @@ async def needs_account_answer(db: AsyncSession, user_id: str, tool: str) -> dic
 async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None,
                         ctx: Optional[dict] = None) -> dict:
     try:
+        if name in ai_tools_settings.SETTINGS_NAMES:
+            return await ai_tools_settings.dispatch_settings(sys.modules[__name__], db, user, name, args, created, ctx, session_id, previewed_this_turn)
         if name in ai_tools_people.PEOPLE_NAMES:
             return await ai_tools_people.dispatch_people(sys.modules[__name__], db, user, name, args, created, ctx, session_id, previewed_this_turn)
         if name in ai_tools_nutrition.NUTRITION_NAMES:
@@ -5999,6 +6043,7 @@ nutrition_plan_gen = nutrition_plan_gen_api.register(api_router, sys.modules[__n
 nutrition_insights_ns = nutrition_insights_api.register(api_router, sys.modules[__name__], nutrition)
 account_api.register(api_router, sys.modules[__name__])
 two_factor_api.register(api_router, sys.modules[__name__])
+profile_api.register(api_router, sys.modules[__name__])
 debts_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 

@@ -1,4 +1,5 @@
 import { test as base, expect, request } from "@playwright/test";
+import { newEmail, verificationCode, deleteUser } from "./support-new-user";
 
 // Owner account used by the e2e suite. TEST_PASSWORD comes from the encrypted secrets store; run the suite with
 //   python backend/local_secrets.py run -- npx playwright test
@@ -50,7 +51,8 @@ export const test = base.extend({
   authenticatedPage: async ({ page, context }, use) => {
     const session = await getSession();
     // The side menu hides until the pointer reaches the left edge; the suite clicks its links directly, so it keeps it open.
-    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); } catch { /* none */ } });
+    // The owner account is shared by every worker: its look must not follow the account, or one test's theme would reach another's page.
+    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); localStorage.setItem("lm_sync", "false"); } catch { /* none */ } });
     await context.addCookies([{ name: "lr_refresh", value: session.refresh_token, domain: new URL(API_URL).hostname,
                                 path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
     await page.goto("/");
@@ -61,6 +63,28 @@ export const test = base.extend({
     // would start from a token that has already been replaced, which the server rightly takes for a stolen copy.
     const current = (await context.cookies()).find((c) => c.name === "lr_refresh");
     if (current) session.refresh_token = current.value;
+  },
+
+  // A brand-new verified account of its own (for tests that change settings the account keeps), signed in the way a returning visitor is.
+  // `fresh.email` is updated by a test that changes the address; the account is removed afterwards.
+  freshUserPage: async ({ page, context }, use) => {
+    const fresh = { email: newEmail(), password: "TestPass123", name: "Fresh Tester" };
+    const anon = await request.newContext({ baseURL: API_URL });
+    const made = await anon.post("/api/auth/register", { data: { email: fresh.email, password: fresh.password, name: fresh.name } });
+    if (!made.ok()) throw new Error(`could not create the test account: ${made.status()}`);
+    const verified = await anon.post("/api/auth/verify", { data: { email: fresh.email, code: verificationCode(fresh.email), password: fresh.password } });
+    if (!verified.ok()) throw new Error(`could not verify the test account: ${verified.status()}`);
+    const login = await (await anon.post("/api/auth/login", { data: { email: fresh.email, password: fresh.password } })).json();
+    await anon.dispose();
+    fresh.token = login.token;
+    fresh.api = await request.newContext({ baseURL: API_URL, extraHTTPHeaders: { Authorization: `Bearer ${login.token}` } });
+    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); sessionStorage.setItem("lm_intro", "1"); } catch { /* none */ } });
+    await context.addCookies([{ name: "lr_refresh", value: login.refresh_token, domain: new URL(API_URL).hostname, path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
+    await page.goto("/");
+    await page.waitForURL("/", { timeout: 15000 });
+    await use({ page, fresh });
+    await fresh.api.dispose();
+    deleteUser(fresh.email);
   },
 
   // API client for setup and cleanup. It reuses the worker's session so tests do not spend the login rate limit.

@@ -60,7 +60,7 @@ function Intro({ name, onDone }) {
 
 export function AppShell({ children }) {
   const { user, logout } = useAuth();
-  const { theme, setTheme } = useSettings();
+  const { theme, setTheme, sideMenu, setSideMenu, bindServer, pull } = useSettings();
   const nav = useNavigate();
   const loc = useLocation();
   const [intro, setIntro] = useState(true);
@@ -71,7 +71,7 @@ export function AppShell({ children }) {
   const moreButton = useRef(null);
   // On a wide screen the side menu is a thin strip of icons that widens over the page while the pointer (or keyboard focus) is
   // on it. A screen that cannot hover keeps it open, and the pin keeps it open for anyone who prefers that.
-  const [pinned, setPinned] = useState(() => { try { return localStorage.getItem("lr-sidebar") === "pinned"; } catch { return false; } });
+  const pinned = sideMenu === "open";
   const [canHover, setCanHover] = useState(() => (typeof window.matchMedia !== "function" ? true : window.matchMedia("(hover: hover)").matches));
   const [peek, setPeek] = useState(false);
   const peekTimer = useRef(null);
@@ -89,11 +89,23 @@ export function AppShell({ children }) {
   const hidePeek = () => { clearTimeout(peekTimer.current); peekTimer.current = setTimeout(() => setPeek(false), 220); };
   // Choosing a page folds the menu back to its strip, even while the pointer is still on it; it opens again when the pointer re-enters.
   const retract = () => { clearTimeout(peekTimer.current); setPeek(false); };
-  const togglePin = () => {
-    const next = !pinned;
-    setPinned(next);
-    try { localStorage.setItem("lr-sidebar", next ? "pinned" : "auto"); } catch { /* the choice just is not remembered */ }
-  };
+  const togglePin = () => setSideMenu(pinned ? "auto" : "open");
+
+  // The person's saved choices (theme, animations, week start...) are asked for at sign-in, when the tab comes back to the front, and after
+  // anything that refreshes the data (the assistant changing a setting is one). `pull` is read through a ref so a choice made here is never
+  // answered by an older copy from the server.
+  const pullRef = useRef(pull);
+  pullRef.current = pull;
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    bindServer(true);
+    pullRef.current({ force: true });
+    const again = () => pullRef.current();
+    const visible = () => { if (document.visibilityState === "visible") again(); };
+    window.addEventListener("lm:refresh", again);
+    document.addEventListener("visibilitychange", visible);
+    return () => { window.removeEventListener("lm:refresh", again); document.removeEventListener("visibilitychange", visible); bindServer(false); };
+  }, [user?.id, bindServer]);
   const inMore = MORE_NAV.some((n) => loc.pathname === n.to || loc.pathname.startsWith(n.to + "/"));
 
   // Once things are quiet after sign-in, download every page and warm its data, one page at a time.
@@ -147,7 +159,7 @@ export function AppShell({ children }) {
             </button>
           )}
         </div>
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`nav-${n.label.toLowerCase()}`}
               onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)} onClick={retract}

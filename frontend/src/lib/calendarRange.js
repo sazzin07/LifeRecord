@@ -1,15 +1,18 @@
 import { addDays, endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
 
-export const WEEK_STARTS_ON = 1; // Monday
+// 1 = Monday, 0 = Sunday. Set from the person's setting (SettingsContext) before the pages that read it render.
+let weekStartsOn = 1;
+export const setWeekStartsOn = (day) => { weekStartsOn = day === 0 ? 0 : 1; };
+export const getWeekStartsOn = () => weekStartsOn;
 export const iso = (d) => format(d, "yyyy-MM-dd");
 
-/** The weeks a month grid shows: Monday before the 1st to Sunday after the last day. */
+/** The weeks a month grid shows: first day of the week before the 1st to the last day of the week after the last day. */
 export function monthGridRange(anchor) {
-  return { start: startOfWeek(startOfMonth(anchor), { weekStartsOn: WEEK_STARTS_ON }), end: endOfWeek(endOfMonth(anchor), { weekStartsOn: WEEK_STARTS_ON }) };
+  return { start: startOfWeek(startOfMonth(anchor), { weekStartsOn }), end: endOfWeek(endOfMonth(anchor), { weekStartsOn }) };
 }
 
 export function weekRange(anchor) {
-  const start = startOfWeek(anchor, { weekStartsOn: WEEK_STARTS_ON });
+  const start = startOfWeek(anchor, { weekStartsOn });
   return { start, end: addDays(start, 6) };
 }
 

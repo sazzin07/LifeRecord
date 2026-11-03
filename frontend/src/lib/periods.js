@@ -1,3 +1,8 @@
+// The period the Money page opens on (the person's setting, set by SettingsContext), so prefetching warms the page they will really see.
+let defaultPeriod = "week";
+export const setDefaultMoneyPeriod = (p) => { defaultPeriod = ["day", "week", "all"].includes(p) ? p : "week"; };
+export const getDefaultMoneyPeriod = () => defaultPeriod;
+
 /** Date-range query params for the Money page's period filter (shared so prefetching can build the same URLs). */
 export function periodParams(period) {
   const now = new Date();

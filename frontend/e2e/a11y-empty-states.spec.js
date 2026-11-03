@@ -11,7 +11,7 @@ test.describe.configure({ timeout: 300_000 });
 
 const PASSWORD = "TestPass123";
 const PAGES = [["home", "/"], ["money", "/money"], ["people", "/people"], ["groceries", "/groceries"], ["nutrition", "/nutrition"],
-  ["fitness", "/fitness"], ["body", "/body"], ["tasks", "/tasks"], ["calendar", "/calendar"], ["settings", "/settings"], ["profile", "/profile"]];
+  ["fitness", "/fitness"], ["body", "/body"], ["tasks", "/tasks"], ["calendar", "/calendar"], ["settings", "/settings"], ["settings money", "/settings?section=money"], ["settings device", "/settings?section=device"], ["profile", "/profile"]];
 
 for (const theme of THEMES) {
   for (const [size, viewport] of WIDTHS) {

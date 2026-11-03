@@ -1,12 +1,11 @@
 import { test, expect } from "./fixtures";
 
-// ACCT-001 / AUTH-001. The password test never submits a correct current password: that would change the real
-// owner password. The successful change is covered by backend/tests/test_change_password.py with a throwaway user.
+// ACCT-001. Money places on Settings, and signing out everywhere. The password, name and address flows are in profile-page.spec.js, on throwaway accounts.
 const tag = () => `E2E-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
 test("add, edit and delete a money place from Settings", async ({ authenticatedPage: page, apiContext }) => {
   const name = tag();
-  await page.goto("/settings");
+  await page.goto("/settings?section=money");
   try {
     await page.getByTestId("settings-add-place").click();
     const dialog = page.getByTestId("account-dialog");
@@ -35,32 +34,6 @@ test("add, edit and delete a money place from Settings", async ({ authenticatedP
     const left = (await (await apiContext.get("/api/accounts")).json()).find((a) => a.name === name);
     if (left) await apiContext.delete(`/api/accounts/${left.id}`);
   }
-});
-
-test("change password: checks the new password and a wrong current password keeps you signed in", async ({ authenticatedPage: page }) => {
-  await page.goto("/profile");
-  const form = page.getByTestId("change-password-form");
-  const save = form.getByTestId("pw-save");
-  await expect(save).toBeDisabled();
-
-  await form.getByTestId("pw-current").fill("definitely-wrong-1");
-  await form.getByTestId("pw-new").fill("short");
-  await expect(form).toContainText("At least 8 characters");
-  await expect(save).toBeDisabled();
-
-  await form.getByTestId("pw-new").fill("Brandnew123");
-  await form.getByTestId("pw-confirm").fill("Brandnew124");
-  await expect(form).toContainText("do not match");
-  await expect(save).toBeDisabled();
-
-  await form.getByTestId("pw-confirm").fill("Brandnew123");
-  await expect(save).toBeEnabled();
-  await save.click();
-  await expect(page.getByText("Current password is incorrect")).toBeVisible();
-  // Still signed in and still on Profile (a 401 here used to send the user to the login page).
-  await page.waitForTimeout(1000);
-  await expect(page).toHaveURL(/\/profile$/);
-  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
 });
 
 test("sign out on all devices asks first, calls the server, then returns to the login page", async ({ authenticatedPage: page }) => {

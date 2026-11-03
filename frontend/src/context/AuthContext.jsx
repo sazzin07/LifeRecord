@@ -66,6 +66,9 @@ export function AuthProvider({ children }) {
 
   const clearTokens = () => setAccessToken(null);
 
+  /** Show a change to the signed-in person (their name, their address) without asking the server who they are again. */
+  const updateUser = (changes) => setUser((u) => (u ? { ...u, ...changes } : u));
+
   const refreshAccessToken = async () => {
     try {
       return await refreshSession();
@@ -176,6 +179,7 @@ export function AuthProvider({ children }) {
         forgotPassword,
         resetPassword,
         changePassword,
+        updateUser,
         refreshAccessToken,
         logout,
       }}

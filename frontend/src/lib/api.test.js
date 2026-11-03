@@ -1,6 +1,6 @@
 import axios from "axios";
 import { noteServerTime, sessionKeyHeader, signProof } from "./sessionKey";
-import { getAccessToken, refreshPolicy, refreshSession, sessionRefused, setAccessToken } from "./api";
+import { getAccessToken, refreshPolicy, refreshSession, replacingSession, sessionRefused, setAccessToken } from "./api";
 
 // The shared axios client is not needed (and its ES-module build does not load under Jest). A stand-in records what the app
 // registers on it and what it posts, so the refresh logic can be driven directly. Its state hangs off the mocked module,
@@ -145,6 +145,53 @@ describe("a request that finds its access token expired", () => {
     const outcomes = await Promise.allSettled([first, second]);
     expect(outcomes.map((o) => o.status)).toEqual(["rejected", "rejected"]);
     expect(mockPost).toHaveBeenCalledTimes(1 + refreshPolicy.retries);  // one refresh with its repeats, not one per request
+  });
+});
+
+describe("a request caught in the middle of a password change", () => {
+  const sentWith = (token) => ({ config: { url: "/tasks", headers: { Authorization: `Bearer ${token}` } }, response: { status: 401 } });
+  let location;
+  beforeEach(() => {
+    location = window.location;
+    delete window.location;
+    window.location = { pathname: "/profile", href: "http://localhost/profile" };
+  });
+  afterEach(() => { window.location = location; });
+
+  test("waits for the change, then uses the token it brought: nobody is signed out and no refresh is attempted", async () => {
+    setAccessToken("old");
+    let finish;
+    const change = new Promise((resolve) => { finish = resolve; });
+    replacingSession(change);
+    mockReplay.mockResolvedValue({ data: "ok" });
+    const caught = mockHandlers.bad(sentWith("old"));      // the 401 for the old token arrives while the change is still going
+    setAccessToken("new");                                  // the change answers with the new session's token
+    finish();
+    await expect(caught).resolves.toEqual({ data: "ok" });
+    expect(mockReplay.mock.calls[0][0].headers.Authorization).toBe("Bearer new");
+    expect(mockPost).not.toHaveBeenCalled();                // /auth/refresh with the ended session was never asked
+    expect(window.location.href).toBe("http://localhost/profile");
+  });
+
+  test("a refresh that the server refuses is not a sign-out when a newer token arrived meanwhile", async () => {
+    setAccessToken("old");
+    let refuse;
+    mockPost.mockImplementation(() => new Promise((_, reject) => { refuse = () => reject(answer(401)); }));
+    mockReplay.mockResolvedValue({ data: "ok" });
+    const caught = mockHandlers.bad(sentWith("old"));
+    await new Promise((r) => setTimeout(r, 0));
+    setAccessToken("new");                                  // the password change finished while the refresh was in flight
+    refuse();
+    await expect(caught).resolves.toEqual({ data: "ok" });
+    expect(window.location.href).toBe("http://localhost/profile");
+  });
+
+  test("an ordinary expired token is still refreshed as before", async () => {
+    setAccessToken("stale");
+    mockPost.mockResolvedValue({ data: { token: "fresh" } });
+    mockReplay.mockResolvedValue({ data: "ok" });
+    await expect(mockHandlers.bad(sentWith("stale"))).resolves.toEqual({ data: "ok" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
   });
 });
 

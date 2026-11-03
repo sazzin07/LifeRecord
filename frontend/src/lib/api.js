@@ -93,6 +93,23 @@ export async function refreshSession() {
   }
 }
 
+// A call that replaces this browser's session (changing the password ends every session and starts a new one for this tab). Requests that
+// were already on their way carry the old token and fail with 401 while it happens; they must wait for it and use the new token, not
+// try to refresh a session that has just been ended on purpose (which would sign this very tab out).
+let sessionChange = null;
+export function replacingSession(promise) {
+  const mine = promise.then(() => {}, () => {}).then(() => { if (sessionChange === mine) sessionChange = null; });
+  sessionChange = mine;
+  return promise;
+}
+const sentToken = (config) => String(config?.headers?.Authorization || config?.headers?.get?.("Authorization") || "").replace(/^Bearer /, "");
+/** True when a newer token has been issued since this request was sent (after waiting for a session change in progress). */
+async function newerTokenAvailable(config) {
+  if (sessionChange) await sessionChange;
+  const sent = sentToken(config);
+  return !!accessToken && !!sent && sent !== accessToken;
+}
+
 api.interceptors.response.use(
   (r) => {
     window.dispatchEvent(new CustomEvent("lm:online"));
@@ -114,6 +131,12 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
+    if (!originalRequest._replayed && await newerTokenAvailable(originalRequest)) {
+      originalRequest._replayed = true;
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      return api(originalRequest);
+    }
+
     originalRequest._retry = true;
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
@@ -133,6 +156,12 @@ api.interceptors.response.use(
       return api(originalRequest);
     } catch (refreshErr) {
       isRefreshing = false;
+      if (sessionRefused(refreshErr) && !originalRequest._replayed && await newerTokenAvailable(originalRequest)) {
+        originalRequest._replayed = true;
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        refreshWaiters.splice(0).forEach((w) => w.resolve(accessToken));
+        return api(originalRequest);
+      }
       if (sessionRefused(refreshErr)) {
         refreshWaiters.splice(0).forEach((w) => w.reject(err));
         setAccessToken(null);

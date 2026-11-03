@@ -270,6 +270,9 @@ def _extras(a):
         (str(uuid.uuid4()), a["id"], now_ms + 300000))
     _db("INSERT INTO sms_factors (user_id,phone_enc,phone_hint,confirmed_ms,created_ms) VALUES (%s,'populate','+•• ••• ••• 000',NULL,%s)", (a["id"], now_ms))
     _db("INSERT INTO sms_codes (user_id,code_hash,expires_ms,attempts,sent_ms) VALUES (%s,%s,%s,0,%s)", (a["id"], "0" * 64, now_ms + 300000, now_ms))
+    # Saved preferences (exported).
+    _db("INSERT INTO user_preferences (user_id,theme,animations,week_start,money_period,updated_at) VALUES (%s,'dark',1,'monday','week',%s)",
+        (a["id"], dt.datetime.now(dt.timezone.utc).isoformat()))
     # A line of the debt ledger, and a remembered request key (internal, never exported).
     _db("INSERT INTO debt_entries (id,user_id,person_id,person_name,direction,kind,amount_cents,currency,description,origin,created_ms,created_at) "
         "VALUES (%s,%s,%s,'Populated','they_owe','add',1250,'EUR','populate','manual',%s,%s)", (str(uuid.uuid4()), a["id"], str(uuid.uuid4()), now_ms, dt.datetime.now(dt.timezone.utc).isoformat()))

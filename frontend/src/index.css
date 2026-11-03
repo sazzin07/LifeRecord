@@ -245,3 +245,88 @@ html { overflow-anchor: auto; }
 .dark .ppl-theme .ppl-btn-danger, .dark .ppl-theme .ppl-btn-danger:hover { background: #ef4444; color: #1b0505; }
 .dark .ppl-theme .ppl-btn-danger:hover { filter: brightness(1.08); }
 @media (prefers-reduced-motion: reduce) { .ppl-row, .ppl-chip { transition: none; } }
+
+/* ------------------------------------------------------------------------------------------------------------------------------
+   Money: a bento of rounded surfaces on a deep green stage, outlined pill controls, one filled gradient for the active choice and
+   the main action. Scoped as .mny-theme, which also remaps the shared component tokens so inputs, selects and buttons inside take
+   the palette. Colour never carries a meaning alone: signs, arrows and words say gain / spend / locked.
+   ------------------------------------------------------------------------------------------------------------------------------ */
+.mny-theme {
+  --background: 150 28% 94%; --foreground: 160 55% 10%; --card: 0 0% 100%; --card-foreground: 160 55% 10%;
+  --popover: 0 0% 100%; --popover-foreground: 160 55% 10%; --muted: 150 22% 90%; --muted-foreground: 156 16% 32%;
+  --border: 152 18% 80%; --input: 152 18% 72%; --ring: 160 80% 24%; --accent: 150 28% 90%; --accent-foreground: 160 55% 10%;
+  --primary: 160 82% 22%; --primary-foreground: 0 0% 100%; --secondary: 150 22% 90%; --secondary-foreground: 160 55% 10%;
+  --mny-bg: #edf2ef;
+  --mny-lights: linear-gradient(transparent, transparent);
+  --mny-surface: #ffffff; --mny-surface-2: #f3f7f5; --mny-line: rgba(8, 50, 32, 0.12); --mny-shadow: 0 1px 2px rgba(6, 60, 38, 0.06), 0 14px 34px -22px rgba(6, 60, 38, 0.35);
+  --mny-text: #082a1b; --mny-muted: #456a58;
+  --mny-green: #0a6a44; --mny-green-tint: rgba(16, 150, 100, 0.12);
+  --mny-grad: #0b7a50; --mny-on-grad: #ffffff;
+  --mny-glow: linear-gradient(transparent, transparent);
+  --mny-neg: #b42318; --mny-neg-tint: rgba(220, 60, 40, 0.1);
+  --mny-amber: #8a3b0a; --mny-amber-tint: rgba(245, 158, 11, 0.16);
+  color: var(--mny-text); caret-color: var(--mny-green); scrollbar-color: rgba(8, 90, 56, 0.35) transparent;
+}
+.dark .mny-theme {
+  --background: 156 60% 5%; --foreground: 150 35% 92%; --card: 158 45% 9%; --card-foreground: 150 35% 92%;
+  --popover: 158 48% 8%; --popover-foreground: 150 35% 92%; --muted: 158 32% 14%; --muted-foreground: 152 16% 68%;
+  --border: 154 26% 22%; --input: 154 26% 28%; --ring: 156 70% 52%; --accent: 158 34% 15%; --accent-foreground: 150 35% 92%;
+  --primary: 156 70% 52%; --primary-foreground: 160 80% 7%; --secondary: 158 32% 14%; --secondary-foreground: 150 35% 92%;
+  --mny-bg: #060908;
+  --mny-lights: linear-gradient(transparent, transparent);
+  --mny-surface: #0c1210; --mny-surface-2: #121a17; --mny-line: rgba(190, 235, 215, 0.1); --mny-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.8);
+  --mny-text: #eef4f1; --mny-muted: #93aaa0;
+  --mny-green: #4fe0a0; --mny-green-tint: rgba(79, 224, 160, 0.13);
+  --mny-grad: #34d399; --mny-on-grad: #04150d;
+  --mny-glow: linear-gradient(transparent, transparent);
+  --mny-neg: #ff9a8a; --mny-neg-tint: rgba(255, 130, 110, 0.13);
+  --mny-amber: #f6b94b; --mny-amber-tint: rgba(246, 185, 75, 0.14);
+  scrollbar-color: rgba(167, 243, 208, 0.26) transparent;
+}
+.mny-theme ::selection { background: var(--mny-green-tint); color: inherit; }
+.mny-theme :focus-visible { outline: 2px solid var(--mny-green); outline-offset: 2px; }
+.mny-stage { position: relative; isolation: isolate; background: var(--mny-lights), var(--mny-bg); border: 1px solid var(--mny-line); border-radius: 1.75rem; padding: 0.75rem; }
+@media (min-width: 640px) { .mny-stage { padding: 1.25rem; } }
+@media (min-width: 1024px) { .mny-stage { padding: 1.5rem; } }
+.mny-card { background: var(--mny-surface); border: 1px solid var(--mny-line); border-radius: 1.5rem; box-shadow: var(--mny-shadow); min-width: 0; }
+.mny-card.mny-hero { border-color: color-mix(in srgb, var(--mny-green) 45%, var(--mny-line)); }
+.mny-tile { background: var(--mny-surface-2); border: 1px solid var(--mny-line); border-radius: 1.1rem; min-width: 0; }
+.mny-title { color: var(--mny-text); }
+.mny-muted { color: var(--mny-muted); }
+.mny-green { color: var(--mny-green); }
+.mny-neg { color: var(--mny-neg); }
+.mny-amber { color: var(--mny-amber); }
+.mny-num { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.mny-hair { border-color: var(--mny-line); }
+/* Pill controls: outlined at rest, the green gradient when chosen. */
+.mny-pill { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; height: 2.25rem; padding: 0 1rem; border-radius: 9999px; border: 1px solid var(--mny-line);
+  background: transparent; color: var(--mny-muted); font-size: 0.875rem; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+  transition: background-color 160ms cubic-bezier(0.2, 0, 0, 1), color 160ms, border-color 160ms, transform 120ms; }
+.mny-pill:hover:not(:disabled) { background: var(--mny-surface-2); color: var(--mny-text); }
+.mny-pill:active:not(:disabled) { transform: scale(0.97); }
+.mny-pill[aria-pressed="true"] { background: var(--mny-grad); color: var(--mny-on-grad); border-color: transparent; font-weight: 600; }
+.mny-pill:disabled { border-style: dashed; opacity: 0.6; cursor: not-allowed; }
+.mny-pill.sm { height: 1.9rem; padding: 0 0.8rem; font-size: 0.75rem; }
+.mny-cta, .mny-cta:hover:not(:disabled) { background: var(--mny-grad); color: var(--mny-on-grad); border-color: transparent; font-weight: 600; }
+.mny-cta:hover:not(:disabled) { filter: brightness(1.06); }
+.mny-theme .mny-field { border-radius: 9999px; background: var(--mny-surface-2); border-color: var(--mny-line); }
+.mny-icon-btn { display: inline-grid; place-items: center; height: 2rem; width: 2rem; border-radius: 9999px; color: var(--mny-muted); transition: background-color 160ms, color 160ms; }
+.mny-icon-btn:hover { background: var(--mny-surface-2); color: var(--mny-text); }
+.mny-icon-btn.danger:hover { color: var(--mny-neg); }
+.mny-badge { display: inline-grid; place-items: center; height: 2.5rem; width: 2.5rem; flex-shrink: 0; border-radius: 9999px; background: var(--mny-surface); border: 1px solid var(--mny-line); color: var(--mny-green); }
+.mny-row { transition: background-color 160ms cubic-bezier(0.2, 0, 0, 1); }
+.mny-row:hover, .mny-row:focus-within { background: var(--mny-surface-2); }
+.mny-bar { height: 0.5rem; border-radius: 9999px; background: var(--mny-surface-2); overflow: hidden; border: 1px solid var(--mny-line); }
+.mny-bar > span { display: block; height: 100%; border-radius: 9999px; background: var(--mny-grad); transition: width 500ms cubic-bezier(0.2, 0, 0, 1); }
+.mny-bar > span.warn { background: #e0a93a; }
+.mny-bar > span.over { background: #e5604d; }
+.mny-tip { background: var(--mny-surface); border: 1px solid var(--mny-line); border-radius: 0.9rem; padding: 0.6rem 0.8rem; box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.45); color: var(--mny-text); }
+.mny-state { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 9999px; padding: 0.1rem 0.55rem; font-size: 0.6875rem; font-weight: 600; background: var(--mny-green-tint); color: var(--mny-green); }
+.mny-state.amber { background: var(--mny-amber-tint); color: var(--mny-amber); }
+.mny-state.neg { background: var(--mny-neg-tint); color: var(--mny-neg); }
+/* The one authored moment: the cards rise in a short stagger when the page opens. */
+@keyframes mny-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.mny-in { animation: mny-rise 520ms cubic-bezier(0.2, 0, 0, 1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+@media (prefers-reduced-motion: reduce) { .mny-in { animation: none; } .mny-pill, .mny-row, .mny-bar > span { transition: none; } }
+
+.mny-theme .skeleton { background: var(--mny-surface-2); }

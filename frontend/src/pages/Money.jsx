@@ -13,9 +13,7 @@ import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
-import {
-  Card, StatCard, SectionHeading, EmptyState, Label, SkeletonCard, ConfidenceBadge,
-} from "@/components/common";
+import { Label } from "@/components/common";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { EditExpenseDialog } from "@/components/EditExpenseDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -81,8 +79,8 @@ function FavoriteStar({ on, name, onSet }) {
     <Hint label={on ? "Favorite" : "Make favorite"}>
       <button type="button" onClick={on ? undefined : onSet} aria-pressed={on} aria-disabled={on || undefined}
         aria-label={on ? `${name} is your favorite` : `Make ${name} your favorite`} data-testid={on ? "favorite-on" : "favorite-set"}
-        className={cn("inline-flex h-5 w-5 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", on ? "cursor-default" : "hover:bg-slate-100 dark:hover:bg-slate-800")}>
-        <Star className={cn("h-3.5 w-3.5", on ? "fill-amber-400 text-amber-500" : "text-slate-400")} aria-hidden="true" />
+        className={cn("inline-flex h-5 w-5 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", on ? "cursor-default" : "hover:bg-[var(--mny-surface-2)]")}>
+        <Star className={cn("h-3.5 w-3.5", on ? "fill-amber-400 text-amber-500" : "mny-muted")} aria-hidden="true" />
       </button>
     </Hint>
   );
@@ -296,50 +294,46 @@ export default function Money() {
     ];
   }, [sum, trendPct]);
 
-  const BalanceSection = ({ icon: Icon, label, amount, color, children, onEdit, onAddSub, onTransferIn, testid, account }) => (
-    <Card className={cn("p-4 flex flex-col gap-3 h-full", color && "border-l-4")} style={color ? { borderLeftColor: color } : {}} data-testid={testid}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center">
-            <Icon className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-          </div>
-          <div>
-            <p className="flex items-center gap-1 text-xs text-slate-500">{label}{account && <FavoriteStar on={!!account.is_favorite} name={account.name} onSet={() => setFavorite(account)} />}</p>
-            <p className="text-xl font-bold">{eur(amount || 0)}</p>
-          </div>
-        </div>
-        <div className="flex gap-1">
+  // One account as a tile: badge, name (with its star), balance; a line of facts and the three small actions underneath.
+  const AccountRow = ({ icon: Icon, label, amount, meta, children, onEdit, onAddSub, onTransferIn, testid, account }) => (
+    <div className="mny-tile flex flex-col gap-2.5 p-3.5" data-testid={testid}>
+      <div className="flex items-center gap-3">
+        <span className="mny-badge"><Icon className="h-5 w-5" aria-hidden="true" /></span>
+        <p className="mny-title flex min-w-0 flex-1 items-center gap-1 text-sm font-medium"><span className="truncate">{label}</span>{account && <FavoriteStar on={!!account.is_favorite} name={account.name} onSet={() => setFavorite(account)} />}</p>
+        <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(amount || 0)}</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="mny-muted min-w-0 space-y-0.5 text-xs">{meta}</div>
+        <div className="flex gap-0.5">
           {onAddSub && (
-            <Hint label="Add sub-place"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onAddSub} aria-label="Add sub-place">
+            <Hint label="Add sub-place"><button type="button" className="mny-icon-btn" onClick={onAddSub} aria-label="Add sub-place">
               <Plus className="h-4 w-4" />
-            </Button></Hint>
+            </button></Hint>
           )}
           {onEdit && (
-            <Hint label="Edit"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} aria-label="Edit">
+            <Hint label="Edit"><button type="button" className="mny-icon-btn" onClick={onEdit} aria-label="Edit">
               <Pencil className="h-4 w-4" />
-            </Button></Hint>
+            </button></Hint>
           )}
           {onTransferIn && (
-            <Hint label="Transfer in"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={onTransferIn} aria-label="Transfer in">
+            <Hint label="Transfer in"><button type="button" className="mny-icon-btn" onClick={onTransferIn} aria-label="Transfer in">
               <ArrowRightLeft className="h-4 w-4" />
-            </Button></Hint>
+            </button></Hint>
           )}
         </div>
       </div>
       {children}
-    </Card>
+    </div>
   );
 
-  // How a main account's money is divided: the bar is the part held by places, the rest is not in any place yet.
+  // How a main account's money is divided: the total and which place is the favourite.
   const AllocationSummary = ({ account }) => {
     if (!account || !(account.place_count > 0)) return null;
     const total = account.total_balance || 0;
     return (
-      <div className="space-y-1.5" data-testid={`allocation-${account.type}`}>
-        <p className="text-xs text-slate-600 dark:text-slate-400">
-          Total {eur(total)} · {account.place_count} {account.place_count === 1 ? "place" : "places"}{account.favorite_place_name ? ` · favorite ${account.favorite_place_name}` : ""}
-        </p>
-      </div>
+      <p data-testid={`allocation-${account.type}`}>
+        Total {eur(total)} · {account.place_count} {account.place_count === 1 ? "place" : "places"}{account.favorite_place_name ? ` · favorite ${account.favorite_place_name}` : ""}
+      </p>
     );
   };
 
@@ -351,7 +345,7 @@ export default function Money() {
     return (
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger asChild>
-          <button className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+          <button className="mny-muted flex items-center gap-1 rounded-full text-xs hover:text-[var(--mny-text)]">
             {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             {open ? "Hide details" : `Show ${account.children.length} ${account.children.length === 1 ? "place" : "places"}`}
           </button>
@@ -359,29 +353,29 @@ export default function Money() {
         <CollapsibleContent>
           <div className="mt-2 space-y-1.5">
             {Math.abs(account.unplaced_balance || 0) > 0.005 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm py-1.5 px-2 rounded-lg border border-dashed border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100" data-testid={`unplaced-${account.type}`}>
+              <div className="mny-amber flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-current bg-[var(--mny-amber-tint)] px-2.5 py-1.5 text-sm" data-testid={`unplaced-${account.type}`}>
                 <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{eur(account.unplaced_balance)} is outside every place</span>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => placeUnplaced(account)} data-testid={`place-unplaced-${account.type}`}>
+                <button type="button" className="mny-pill sm" onClick={() => placeUnplaced(account)} data-testid={`place-unplaced-${account.type}`}>
                   Move to {account.favorite_place_name || "Default"}
-                </Button>
+                </button>
               </div>
             )}
             {account.children.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)).map((child) => (
-              <div key={child.id} data-testid={`place-${child.name.toLowerCase().replace(/\s+/g, "-")}`} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
-                <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+              <div key={child.id} data-testid={`place-${child.name.toLowerCase().replace(/\s+/g, "-")}`} className={cn("flex items-center justify-between gap-2 rounded-xl border border-[var(--mny-line)] px-2.5 py-1.5 text-sm", child.is_locked ? "bg-[var(--mny-amber-tint)]" : "bg-[var(--mny-surface)]")}>
+                <span className="mny-title flex min-w-0 items-center gap-1.5">
                   <FavoriteStar on={!!child.is_favorite} name={child.name} onSet={() => setFavorite(child)} />
-                  {child.name}
-                  {child.is_locked && <Hint label="Locked / not available"><span className="inline-flex"><Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-label="Locked" /></span></Hint>}
+                  <span className="truncate">{child.name}</span>
+                  {child.is_locked && <Hint label="Locked / not available"><span className="inline-flex"><Lock className="mny-amber h-3 w-3" aria-label="Locked" /></span></Hint>}
                 </span>
-                <div className="flex items-center gap-2">
-                  <span className={cn("font-medium", child.is_locked && "text-amber-700 dark:text-amber-300")}>{eur(child.balance || 0)}</span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAccount(child)} aria-label={`Edit ${child.name}`}>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className={cn("mny-num font-medium", child.is_locked && "mny-amber")}>{eur(child.balance || 0)}</span>
+                  <button type="button" className="mny-icon-btn !h-7 !w-7" onClick={() => openEditAccount(child)} aria-label={`Edit ${child.name}`}>
                     <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  </button>
                   {account.children.length > 1 && (   /* a main account always keeps one place */
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)} aria-label={`Delete ${child.name}`}>
+                    <button type="button" className="mny-icon-btn danger !h-7 !w-7" onClick={() => setDeleteAccountId(child.id)} aria-label={`Delete ${child.name}`}>
                       <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    </button>
                   )}
                 </div>
               </div>
@@ -394,362 +388,366 @@ export default function Money() {
 
   const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
-  return (
-    <div className="space-y-6">
-      <SectionHeading title="Money" sub="Bank, cash, Revolut and actual spending"
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }} className="h-9 hidden sm:flex">
-              <ArrowRightLeft className="h-4 w-4 mr-1" /> Transfer
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); }} className="h-9 hidden sm:flex">
-              <Target className="h-4 w-4 mr-1" /> Budgets
-            </Button>
-            <Button variant="outline" size="sm" onClick={onExport} className="h-9">
-              <Download className="h-4 w-4 mr-1" /> Export
-            </Button>
-            <Button data-testid="add-expense-btn" onClick={() => setExpenseOpen(true)} className="h-9 bg-emerald-700 hover:bg-emerald-800 text-white">
-              <Plus className="h-4 w-4 mr-1" />Add expense
-            </Button>
-          </div>
-        } />
+  const openBudgets = () => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); };
+  const lockedTotal = (sum?.cash_locked || 0) + (sum?.revolut_locked || 0);
+  const catTotal = (sum?.by_category || []).reduce((a, c) => a + c.value, 0);
+  const rise = (i) => ({ "--i": i });
 
-      {/* Period filter */}
-      <div className="relative">
-        <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
-          {PERIODS.map((p) => (
-            <button key={p.id} data-testid={`period-${p.id}`} onClick={() => setPeriod(p.id)}
-              className={cn("snap-start rounded-full px-4 h-9 text-sm font-medium border transition-colors shrink-0",
-                period === p.id ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "border-border text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
-              {p.label}
-            </button>
-          ))}
-          {months.map((m) => {
-            const enabled = m.key <= curYM;
-            return (
-              <button key={m.key} data-testid={`period-${m.key}`} disabled={!enabled} onClick={() => enabled && setPeriod(m.key)}
-                className={cn("snap-start rounded-full px-4 h-9 text-sm font-medium border transition-colors shrink-0",
-                  !enabled ? "border-dashed border-border text-slate-300 dark:text-slate-600 cursor-not-allowed"
-                    : period === m.key ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                      : "border-border text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
-                {m.label}{!enabled && " · soon"}
-              </button>
-            );
-          })}
+  return (
+    <div className="mny-theme mny-stage space-y-4 sm:space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
+        <div className="min-w-0">
+          <h2 className="mny-title text-2xl font-semibold tracking-tight sm:text-3xl">Money</h2>
+          <p className="mny-muted mt-0.5 text-sm">Bank, cash, Revolut and actual spending</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="mny-pill hidden sm:inline-flex" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }}>
+            <ArrowRightLeft className="h-4 w-4" aria-hidden="true" /> Transfer
+          </button>
+          <button type="button" className="mny-pill hidden sm:inline-flex" onClick={openBudgets}>
+            <Target className="h-4 w-4" aria-hidden="true" /> Budgets
+          </button>
+          <button type="button" className="mny-pill" onClick={onExport}>
+            <Download className="h-4 w-4" aria-hidden="true" /> Export
+          </button>
+          <button type="button" data-testid="add-expense-btn" className="mny-pill mny-cta" onClick={() => setExpenseOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" />Add expense
+          </button>
         </div>
       </div>
 
+      {/* Period filter */}
+      <div ref={scrollRef} className="scrollbar-hide -mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+        {PERIODS.map((p) => (
+          <button key={p.id} type="button" data-testid={`period-${p.id}`} aria-pressed={period === p.id} onClick={() => setPeriod(p.id)} className="mny-pill snap-start">
+            {p.label}
+          </button>
+        ))}
+        {months.map((m) => {
+          const enabled = m.key <= curYM;
+          return (
+            <button key={m.key} type="button" data-testid={`period-${m.key}`} disabled={!enabled} aria-pressed={period === m.key} onClick={() => enabled && setPeriod(m.key)} className="mny-pill snap-start">
+              {m.label}{!enabled && " · soon"}
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
-        <>
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}</div>
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}</div>
-        </>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12" aria-busy="true" aria-label="Loading money">
+          <div className="mny-card p-5 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-12 w-48" /><div className="skeleton mt-4 h-3 w-32" /></div>
+          <div className="mny-card p-5 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-20 w-full" /><div className="skeleton mt-3 h-20 w-full" /></div>
+          <div className="mny-card p-5 md:col-span-2 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-28 w-full" /></div>
+          <div className="mny-card p-5 md:col-span-2 lg:col-span-12"><div className="skeleton h-3 w-32" /><div className="skeleton mt-4 h-48 w-full" /></div>
+        </div>
       ) : (
         <>
           {accounts.length === 0 && <FirstAccounts />}
-          {/* Primary balances */}
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-            <BalanceSection
-              icon={Building2}
-              label="Bank account"
-              amount={mainAccounts.bank?.balance}
-              color="#3B82F6"
-              testid="money-bank"
-              account={mainAccounts.bank}
-              onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
-              onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
-            >
-              {sum?.bank_initial ? (
-                <div className="text-xs text-slate-500">
-                  Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
+            {/* The total, and where money left the bank */}
+            <div className="flex flex-col gap-4 lg:col-span-4">
+              <section className="mny-card mny-hero mny-in p-5 sm:p-6" style={rise(0)} aria-labelledby="mny-total-h">
+                <h3 id="mny-total-h" className="mny-muted text-sm font-medium">Total available now</h3>
+                <p data-testid="money-total" className="mny-num mny-title mt-2 break-words text-4xl font-medium sm:text-5xl">{eur(sum?.total_available)}</p>
+                {lockedTotal > 0 && <p className="mny-amber mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
+                <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                  {[["Bank", sum?.bank], ["Hand", sum?.cash_available], ["Revolut", sum?.revolut]].map(([l, v]) => (
+                    <div key={l} className="mny-tile px-1.5 py-2">
+                      <p className="mny-muted text-[11px]">{l}</p>
+                      <p className="mny-num mny-title truncate text-sm font-semibold">{eur(v)}</p>
+                    </div>
+                  ))}
                 </div>
-              ) : null}
-            </BalanceSection>
-            <BalanceSection
-              icon={Wallet}
-              label="Money in hand"
-              amount={sum?.cash_available}
-              color="#10B981"
-              testid="money-cash"
-              account={mainAccounts.cash}
-              onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
-              onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
-              onTransferIn={() => mainAccounts.cash && openTransferTo(mainAccounts.cash.id)}
-            >
-              {(sum?.cash_locked || 0) > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {eur(sum.cash_locked)} locked
-                </p>
-              )}
-              <AllocationSummary account={mainAccounts.cash} />
-              <SubPlaces account={mainAccounts.cash} />
-            </BalanceSection>
-            <BalanceSection
-              icon={Smartphone}
-              label="Revolut"
-              amount={sum?.revolut}
-              color="#1964FF"
-              testid="money-revolut"
-              account={mainAccounts.revolut}
-              onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
-              onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
-              onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}
-            >
-              {(sum?.revolut_locked || 0) > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {eur(sum.revolut_locked)} locked
-                </p>
-              )}
-              <AllocationSummary account={mainAccounts.revolut} />
-              <SubPlaces account={mainAccounts.revolut} />
-            </BalanceSection>
-          </div>
+              </section>
 
-          {/* Spending summary */}
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-            <Card className="p-4 bg-slate-50 dark:bg-slate-800/30">
-              <p className="text-xs text-slate-500">Money that left the bank</p>
-              <p className="text-2xl font-bold">{eur(sum?.money_left_bank)}</p>
-              <p className="text-xs text-slate-400">Bank started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p>
-            </Card>
-            <Card className="p-4 bg-slate-50 dark:bg-slate-800/30">
-              <p className="text-xs text-slate-500">Still in hand (cash + Revolut)</p>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{eur(sum?.in_hand)}</p>
-              <p className="text-xs text-slate-400">Available cash + Revolut, locked money excluded</p>
-            </Card>
-            <Card className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
-              <p className="text-xs text-emerald-700 dark:text-emerald-300">Actual spending</p>
-              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-200">{eur(sum?.actual_spent)}</p>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">Money left bank − still in hand</p>
-            </Card>
-          </div>
-
-          {/* Total available */}
-          <Card className="p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs text-slate-500">Total available now</p>
-                <p className="text-2xl font-bold">{eur(sum?.total_available)}</p>
-                {((sum?.cash_locked || 0) + (sum?.revolut_locked || 0)) > 0 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    + {eur((sum.cash_locked || 0) + (sum.revolut_locked || 0))} locked
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-4 text-sm">
-                <span className="text-slate-500">Bank <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.bank)}</span></span>
-                <span className="text-slate-500">Hand <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.cash_available)}</span></span>
-                <span className="text-slate-500">Revolut <span className="font-medium text-slate-700 dark:text-slate-200">{eur(sum?.revolut)}</span></span>
-              </div>
+              <section className="mny-card mny-in flex-1 p-5" style={rise(1)} aria-labelledby="mny-flow-h">
+                <h3 id="mny-flow-h" className="mny-title text-base font-semibold">Where it went</h3>
+                <div className="mt-3 space-y-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0"><p className="mny-title">Left the bank</p><p className="mny-muted text-xs">Started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p></div>
+                    <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(sum?.money_left_bank)}</p>
+                  </div>
+                  <div className="mny-hair border-t" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0"><p className="mny-title">Still in hand</p><p className="mny-muted text-xs">Cash + Revolut, locked money excluded</p></div>
+                    <p className="mny-num mny-green shrink-0 text-lg font-semibold">{eur(sum?.in_hand)}</p>
+                  </div>
+                  <div className="mny-hair border-t" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0"><p className="mny-title">Actual spending</p><p className="mny-muted text-xs">Left the bank − still in hand</p></div>
+                    <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(sum?.actual_spent)}</p>
+                  </div>
+                </div>
+              </section>
             </div>
-          </Card>
 
-          {/* Period spending */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-            <StatCard testid="money-gross" label="Spent (period)" value={eur(sum?.gross)} hint={`Your share ${eur(sum?.personal)}`} />
-            <StatCard testid="money-card-spent" label="Card spending" value={eur(sum?.card_spent)} icon={CreditCard} />
-            <StatCard testid="money-cash-spent" label="Cash spending" value={eur(sum?.cash_spent)} icon={Wallet} />
-            <StatCard testid="money-pending" label="Pending refunds" value={eur(sum?.pending)} accent="text-amber-600 dark:text-amber-400" hint={`Refunded ${eur(sum?.refunded)}`} />
+            {/* The three accounts */}
+            <section className="mny-card mny-in p-5 lg:col-span-4" style={rise(2)} aria-labelledby="mny-accounts-h">
+              <h3 id="mny-accounts-h" className="mny-title mb-3 text-base font-semibold">Accounts</h3>
+              <div className="space-y-3">
+                <AccountRow
+                  icon={Building2} label="Bank account" amount={mainAccounts.bank?.balance} testid="money-bank" account={mainAccounts.bank}
+                  meta={sum?.bank_initial ? <p>Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}</p> : null}
+                  onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
+                  onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
+                />
+                <AccountRow
+                  icon={Wallet} label="Money in hand" amount={sum?.cash_available} testid="money-cash" account={mainAccounts.cash}
+                  meta={<>{(sum?.cash_locked || 0) > 0 && <p className="mny-amber">{eur(sum.cash_locked)} locked</p>}<AllocationSummary account={mainAccounts.cash} /></>}
+                  onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
+                  onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
+                  onTransferIn={() => mainAccounts.cash && openTransferTo(mainAccounts.cash.id)}
+                >
+                  <SubPlaces account={mainAccounts.cash} />
+                </AccountRow>
+                <AccountRow
+                  icon={Smartphone} label="Revolut" amount={sum?.revolut} testid="money-revolut" account={mainAccounts.revolut}
+                  meta={<>{(sum?.revolut_locked || 0) > 0 && <p className="mny-amber">{eur(sum.revolut_locked)} locked</p>}<AllocationSummary account={mainAccounts.revolut} /></>}
+                  onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
+                  onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
+                  onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}
+                >
+                  <SubPlaces account={mainAccounts.revolut} />
+                </AccountRow>
+              </div>
+            </section>
+
+            {/* The period in four tiles, then the pace */}
+            <section className="mny-card mny-in p-5 md:col-span-2 lg:col-span-4" style={rise(3)} aria-labelledby="mny-period-h">
+              <h3 id="mny-period-h" className="mny-title text-base font-semibold">This period</h3>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {[
+                  { id: "money-gross", label: "Spent", value: eur(sum?.gross), hint: `Your share ${eur(sum?.personal)}`, icon: ArrowUpRight },
+                  { id: "money-card-spent", label: "Card", value: eur(sum?.card_spent), hint: "Card spending", icon: CreditCard },
+                  { id: "money-cash-spent", label: "Cash", value: eur(sum?.cash_spent), hint: "Cash spending", icon: Wallet },
+                  { id: "money-pending", label: "Pending refunds", value: eur(sum?.pending), hint: `Refunded ${eur(sum?.refunded)}`, icon: PiggyBank, amber: true },
+                ].map((t) => (
+                  <div key={t.id} data-testid={t.id} className="mny-tile p-3">
+                    <p className="mny-muted flex items-center gap-1.5 text-xs"><t.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{t.label}</span></p>
+                    <p className={cn("mny-num mt-1.5 truncate text-lg font-semibold sm:text-xl", t.amber ? "mny-amber" : "mny-title")}>{t.value}</p>
+                    <p className="mny-muted mt-0.5 truncate text-[11px]">{t.hint}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mny-hair mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-4">
+                {insightCards.map((i, idx) => (
+                  <div key={idx} className="min-w-0">
+                    <p className="mny-muted flex items-center gap-1.5 text-xs"><i.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{i.label}</span></p>
+                    <p className={cn("mny-num mt-0.5 truncate text-base font-semibold", i.accent ? (i.label === "vs previous period" && trendPct > 0 ? "mny-neg" : "mny-green") : "mny-title")}>{i.value}</p>
+                    {i.hint && <p className="mny-muted truncate text-[11px]">{i.hint}</p>}
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
 
-          {/* Insights */}
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-            {insightCards.map((i, idx) => (
-              <StatCard key={idx} label={i.label} value={i.value} icon={i.icon} hint={i.hint} accent={i.accent} />
-            ))}
-          </div>
-
-          {/* Charts + side panels */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="p-5 lg:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <Label>Spending over time</Label>
-                <span className="text-xs text-slate-400">{sum?.by_day?.length || 0} days</span>
+          {/* Spending over time, and where it went by category */}
+          <div className="grid gap-4 lg:grid-cols-12">
+            <section className="mny-card mny-in p-5 lg:col-span-8" style={rise(4)} aria-labelledby="mny-time-h">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id="mny-time-h" className="mny-title text-base font-semibold">Spending over time</h3>
+                <div className="flex items-center gap-2">
+                  {trendPct != null && (
+                    <span className={cn("mny-state", trendPct > 0 ? "neg" : "")}>
+                      {trendPct > 0 ? <ArrowUpRight className="h-3 w-3" aria-hidden="true" /> : <ArrowDownRight className="h-3 w-3" aria-hidden="true" />}
+                      {Math.abs(trendPct)}% {trendPct > 0 ? "more" : "less"} than before
+                    </span>
+                  )}
+                  <span className="mny-muted text-xs">{sum?.by_day?.length || 0} days</span>
+                </div>
               </div>
               {sum?.by_day?.length ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={sum.by_day}>
-                    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10B981" stopOpacity={0.35} /><stop offset="100%" stopColor="#10B981" stopOpacity={0} /></linearGradient></defs>
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} stroke="#94A3B8" />
-                    <Tooltip formatter={(v) => eur(v)} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                    <Area type="monotone" dataKey="value" stroke="#10B981" strokeWidth={2} fill="url(#g)" />
+                <ResponsiveContainer width="100%" height={260} className="mt-4">
+                  <AreaChart data={sum.by_day} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+                    <defs><linearGradient id="mny-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.16} /><stop offset="100%" stopColor="#34d399" stopOpacity={0} /></linearGradient></defs>
+                    <CartesianGrid vertical={false} stroke="var(--mny-line)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--mny-muted)" }} tickFormatter={(d) => d.slice(5)} axisLine={false} tickLine={false} minTickGap={24} />
+                    <YAxis width={44} tick={{ fontSize: 11, fill: "var(--mny-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : v)} />
+                    <Tooltip content={<ChartTip />} cursor={{ stroke: "var(--mny-green)", strokeDasharray: "4 4" }} />
+                    <Area type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2.5} fill="url(#mny-g)" activeDot={{ r: 6, fill: "#d6fbe8", stroke: "#34d399", strokeWidth: 3 }} />
                   </AreaChart>
                 </ResponsiveContainer>
-              ) : <p className="text-sm text-slate-500 mt-10 text-center">No spending in this period.</p>}
-            </Card>
+              ) : <p className="mny-muted mt-12 text-center text-sm">No spending in this period.</p>}
+            </section>
 
-            <div className="space-y-4">
-              <Card className="p-5">
-                <Label>By category</Label>
-                {sum?.by_category?.length ? (
-                  <ResponsiveContainer width="100%" height={180} className="mt-3">
+            <section className="mny-card mny-in p-5 lg:col-span-4" style={rise(5)} aria-labelledby="mny-cat-h">
+              <h3 id="mny-cat-h" className="mny-title text-base font-semibold">By category</h3>
+              {sum?.by_category?.length ? (
+                <>
+                  <ResponsiveContainer width="100%" height={170} className="mt-2">
                     <PieChart>
-                      <Pie data={sum.by_category} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                      <Pie data={sum.by_category} dataKey="value" nameKey="name" innerRadius={48} outerRadius={76} paddingAngle={3} stroke="none">
                         {sum.by_category.map((e, i) => <Cell key={i} fill={CATEGORY_COLORS[e.name] || "#94A3B8"} />)}
                       </Pie>
                       <Tooltip formatter={(v, n) => [eur(v), n]} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
                     </PieChart>
                   </ResponsiveContainer>
-                ) : <p className="text-sm text-slate-500 mt-8 text-center">No data.</p>}
-              </Card>
-
-              <Card className="p-5">
-                <Label className="flex items-center gap-2"><Store className="h-4 w-4" /> Top merchants</Label>
-                {sum?.top_merchants?.length ? (
-                  <div className="mt-3 space-y-2">
-                    {sum.top_merchants.map((m) => (
-                      <div key={m.name} className="flex items-center justify-between text-sm">
-                        <span className="truncate max-w-[60%]">{m.name}</span>
-                        <span className="font-medium">{eur(m.value)}</span>
-                      </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {sum.by_category.slice(0, 5).map((c) => (
+                      <li key={c.name} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="mny-title flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CATEGORY_COLORS[c.name] || "#94A3B8" }} aria-hidden="true" /><span className="truncate">{c.name}</span></span>
+                        <span className="mny-num mny-muted shrink-0">{eur(c.value)}{catTotal > 0 && ` · ${Math.round((c.value / catTotal) * 100)}%`}</span>
+                      </li>
                     ))}
-                  </div>
-                ) : <p className="text-sm text-slate-500 mt-4 text-center">No data.</p>}
-              </Card>
-            </div>
+                  </ul>
+                </>
+              ) : <p className="mny-muted mt-10 text-center text-sm">No data.</p>}
+            </section>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <section className="mny-card mny-in p-5" style={rise(6)} aria-labelledby="mny-merch-h">
+              <h3 id="mny-merch-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Store className="h-4 w-4" aria-hidden="true" /> Top merchants</h3>
+              {sum?.top_merchants?.length ? (
+                <ul className="mt-3 space-y-2.5">
+                  {sum.top_merchants.map((m) => (
+                    <li key={m.name} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="mny-title truncate">{m.name}</span>
+                      <span className="mny-num mny-title shrink-0 font-medium">{eur(m.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mny-muted mt-6 text-center text-sm">No data.</p>}
+            </section>
+
+            <section className="mny-card mny-in p-5" style={rise(7)} aria-labelledby="mny-inex-h">
+              <h3 id="mny-inex-h" className="mny-title text-base font-semibold">Income vs expense</h3>
+              <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Income</p><p className="mny-num mny-green truncate text-base font-semibold">{eur(sum?.income)}</p></div>
+                <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Expense</p><p className="mny-num mny-title truncate text-base font-semibold">{eur(sum?.gross)}</p></div>
+                <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Net</p><p className={cn("mny-num truncate text-base font-semibold", (sum?.net || 0) >= 0 ? "mny-green" : "mny-neg")}>{eur(sum?.net)}</p></div>
+              </div>
+              <ResponsiveContainer width="100%" height={90} className="mt-4">
+                <BarChart data={[{ name: "Period", income: sum?.income || 0, expense: sum?.gross || 0 }]} layout="vertical" margin={{ left: 0, right: 12, top: 0, bottom: 0 }}>
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" hide />
+                  <Tooltip formatter={(v) => eur(v)} contentStyle={{ borderRadius: 12, fontSize: 12 }} cursor={false} />
+                  <Bar dataKey="income" fill="#34d399" radius={[6, 6, 6, 6]} barSize={14} />
+                  <Bar dataKey="expense" fill="#7aa592" radius={[6, 6, 6, 6]} barSize={14} />
+                </BarChart>
+              </ResponsiveContainer>
+            </section>
           </div>
 
           {/* Budget progress */}
           {sum?.by_category?.some((c) => c.budget) && (
-            <Card className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <Label className="flex items-center gap-2"><Target className="h-4 w-4" /> Category budgets</Label>
-                <Button variant="ghost" size="sm" onClick={() => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); }}>Edit</Button>
+            <section className="mny-card mny-in p-5" style={rise(8)} aria-labelledby="mny-budget-h">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h3 id="mny-budget-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Target className="h-4 w-4" aria-hidden="true" /> Category budgets</h3>
+                <button type="button" className="mny-pill sm" onClick={openBudgets}>Edit</button>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {sum.by_category.filter((c) => c.budget).map((c) => {
                   const pct = Math.min(100, Math.round((c.value / c.budget) * 100));
                   const over = c.value > c.budget;
                   return (
                     <div key={c.name} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{ background: CATEGORY_COLORS[c.name] || "#94A3B8" }} />{c.name}</span>
-                        <span className={cn("font-medium", over && "text-red-500")}>{eur(c.value)} <span className="text-slate-400">/ {eur(c.budget)}</span></span>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="mny-title flex min-w-0 items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CATEGORY_COLORS[c.name] || "#94A3B8" }} aria-hidden="true" /><span className="truncate">{c.name}</span></span>
+                        <span className={cn("mny-num shrink-0 font-medium", over ? "mny-neg" : "mny-title")}>{eur(c.value)} <span className="mny-muted">/ {eur(c.budget)}</span></span>
                       </div>
-                      <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div className={cn("h-full rounded-full transition-all", over ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: `${pct}%` }} />
+                      <div className="mny-bar" role="progressbar" aria-label={`${c.name} budget used`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                        <span className={over ? "over" : pct >= 80 ? "warn" : ""} style={{ width: `${pct}%` }} />
                       </div>
-                      <p className="text-xs text-slate-500">{pct}% used{over && " · over budget"}</p>
+                      <p className="mny-muted text-xs">{pct}% used{over && " · over budget"}</p>
                     </div>
                   );
                 })}
               </div>
-            </Card>
+            </section>
           )}
 
-          {/* Income vs expense */}
-          <Card className="p-5">
-            <Label>Income vs expense</Label>
-            <div className="grid grid-cols-3 gap-4 mt-3 text-center">
-              <div><p className="text-xs text-slate-500">Income</p><p className="text-lg font-semibold text-emerald-600">{eur(sum?.income)}</p></div>
-              <div><p className="text-xs text-slate-500">Expense</p><p className="text-lg font-semibold text-slate-700 dark:text-slate-200">{eur(sum?.gross)}</p></div>
-              <div><p className="text-xs text-slate-500">Net</p><p className={cn("text-lg font-semibold", (sum?.net || 0) >= 0 ? "text-emerald-600" : "text-red-500")}>{eur(sum?.net)}</p></div>
-            </div>
-            <ResponsiveContainer width="100%" height={120} className="mt-4">
-              <BarChart data={[{ name: "Period", income: sum?.income || 0, expense: sum?.gross || 0 }]} layout="vertical" margin={{ left: 0, right: 20, top: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" hide />
-                <Tooltip formatter={(v) => eur(v)} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                <Bar dataKey="income" fill="#10B981" radius={[4, 4, 4, 4]} barSize={16} />
-                <Bar dataKey="expense" fill="#64748B" radius={[4, 4, 4, 4]} barSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
           {/* Transactions */}
-          <Card>
-            <div className="p-4 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="font-semibold">Transactions</h3>
-              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+          <section className="mny-card mny-in overflow-hidden" style={rise(9)} aria-labelledby="mny-txn-h">
+            <div className="flex flex-col justify-between gap-3 p-5 pb-3 xl:flex-row xl:items-center">
+              <h3 id="mny-txn-h" className="mny-title text-base font-semibold">Transactions</h3>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 w-full sm:w-48" />
-                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>}
+                  <Search className="mny-muted absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
+                  <Input placeholder="Search..." aria-label="Search transactions" value={search} onChange={(e) => setSearch(e.target.value)} className="mny-field h-9 w-full pl-9 sm:w-48" />
+                  {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="mny-muted absolute right-2.5 top-1/2 -translate-y-1/2 hover:text-[var(--mny-text)]"><X className="h-3.5 w-3.5" /></button>}
                 </div>
                 <Select value={catFilter} onValueChange={setCatFilter}>
-                  <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
+                  <SelectTrigger className="mny-field h-9 w-full sm:w-40" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All categories</SelectItem>
                     {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={sort} onValueChange={setSort}>
-                  <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Sort transactions"><SelectValue placeholder="Sort" /></SelectTrigger>
+                  <SelectTrigger className="mny-field h-9 w-full sm:w-40" aria-label="Sort transactions"><SelectValue placeholder="Sort" /></SelectTrigger>
                   <SelectContent>
                     {SORTS.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 shrink-0">
+                <div className="scrollbar-hide flex gap-1.5 overflow-x-auto" role="group" aria-label="Type">
                   {[["all", "All"], ["expense", "Expenses"], ["income", "Income"], ["transfer", "Transfers"]].map(([k, l]) => (
-                    <button key={k} data-testid={`type-${k}`} onClick={() => setTypeFilter(k)}
-                      className={cn("rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                        typeFilter === k ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500")}>
-                      {l}
-                    </button>
+                    <button key={k} type="button" data-testid={`type-${k}`} aria-pressed={typeFilter === k} onClick={() => setTypeFilter(k)} className="mny-pill sm">{l}</button>
                   ))}
                 </div>
-                <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 shrink-0">
+                <div className="flex items-center gap-1.5" role="group" aria-label="Paid with">
+                  <span className="mny-muted text-xs">Paid with</span>
                   {["all", "card", "cash"].map((m) => (
-                    <button key={m} data-testid={`pm-${m}`} onClick={() => setPm(m)}
-                      className={cn("rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors",
-                        pm === m ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500")}>
-                      {m}
-                    </button>
+                    <button key={m} type="button" data-testid={`pm-${m}`} aria-pressed={pm === m} onClick={() => setPm(m)} className="mny-pill sm capitalize">{m}</button>
                   ))}
                 </div>
               </div>
             </div>
 
             {groupedExpenses.length === 0 ? (
-              <EmptyState icon={Wallet} title="No transactions here" sub="Add an expense or change the filters above."
-                action={<Button onClick={() => setExpenseOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" />Add expense</Button>} />
+              <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+                <span className="mny-badge !h-14 !w-14"><Wallet className="h-6 w-6" aria-hidden="true" /></span>
+                <p className="mny-title mt-4 font-semibold">No transactions here</p>
+                <p className="mny-muted mt-1 max-w-sm text-sm">Add an expense or change the filters above.</p>
+                <button type="button" className="mny-pill mny-cta mt-5" onClick={() => setExpenseOpen(true)}><Plus className="h-4 w-4" aria-hidden="true" />Add expense</button>
+              </div>
             ) : (
-              <div className="divide-y divide-border">
+              <div>
                 {groupedExpenses.map(([date, group]) => (
                   <div key={date}>
-                    <div className="sticky top-0 z-10 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur px-5 py-1.5 text-xs font-semibold text-slate-500 flex items-center justify-between">
+                    <div className="mny-muted mny-hair sticky top-0 z-10 flex items-center justify-between border-y bg-[var(--mny-surface-2)] px-5 py-1.5 text-xs font-semibold">
                       <span>{new Date(date).toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric" })}</span>
-                      <span>{eur(group.reduce((a, t) => a + signedAmount(t), 0))}</span>
+                      <span className="mny-num">{eur(group.reduce((a, t) => a + signedAmount(t), 0))}</span>
                     </div>
                     {group.map((t) => {
                       const isExpense = t.type === "expense";
                       const isIncome = t.type === "income";
                       const isTransfer = t.type === "transfer";
                       const badge = isExpense ? REFUND_BADGE[t.refund_status] : null;
-                      const color = isIncome ? "#10B981" : isTransfer ? "#3B82F6" : (CATEGORY_COLORS[t.category] || "#94A3B8");
+                      const color = isIncome ? "#34d399" : isTransfer ? "#60a5fa" : (CATEGORY_COLORS[t.category] || "#94A3B8");
                       const title = isTransfer
                         ? `${accountName(t.from_account, t.from_account_name)} → ${accountName(t.to_account, t.to_account_name)}`
                         : (t.merchant || t.description || t.category);
                       return (
-                        <div key={t.id} data-testid={`txn-${t.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 group">
-                          <div className="h-9 w-9 rounded-xl grid place-items-center shrink-0" style={{ background: color + "22" }}>
-                            {isIncome ? <ArrowDownRight className="h-4 w-4" style={{ color }} />
-                              : isTransfer ? <ArrowRightLeft className="h-4 w-4" style={{ color }} />
-                                : <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />}
+                        <div key={t.id} data-testid={`txn-${t.id}`} className="mny-row group flex items-center gap-3 px-5 py-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full" style={{ background: color + "26" }}>
+                            {isIncome ? <ArrowDownRight className="h-4 w-4" style={{ color }} aria-hidden="true" />
+                              : isTransfer ? <ArrowRightLeft className="h-4 w-4" style={{ color }} aria-hidden="true" />
+                                : <span className="h-3 w-3 rounded-full" style={{ background: color }} aria-hidden="true" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-medium text-sm truncate">{title}</p>
-                              <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" /> : <CreditCard className="h-3 w-3" />}{isExpense ? t.payment_method : accountName(t.account, t.account_name)}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="mny-title truncate text-sm font-medium">{title}</p>
+                              <span className="mny-muted flex items-center gap-1 text-[11px] font-medium">
+                                {t.payment_method === "cash" ? <Wallet className="h-3 w-3" aria-hidden="true" /> : <CreditCard className="h-3 w-3" aria-hidden="true" />}{isExpense ? t.payment_method : accountName(t.account, t.account_name)}
                               </span>
-                              {badge && t.reimbursable_amount > 0.005 && <ConfidenceBadge type={badge.type}>{badge.label}</ConfidenceBadge>}
+                              {badge && t.reimbursable_amount > 0.005 && <span data-testid={`confidence-${badge.type}`} className={cn("mny-state", badge.type === "exact" ? "" : "amber")}>{badge.label}</span>}
                             </div>
-                            <p className="text-xs text-slate-500">
+                            <p className="mny-muted text-xs">
                               {isIncome ? "Income" : isTransfer ? "Transfer" : t.category}
                               {isIncome && t.description && t.description !== title ? ` · ${t.description}` : ""}
                               {isTransfer && t.description ? ` · ${t.description}` : ""}
                               {t.responsible?.length ? ` · with ${t.responsible.join(", ")}` : ""}
                             </p>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className={cn("stat-num font-semibold text-sm", isIncome && "text-emerald-600 dark:text-emerald-400")}>{isIncome ? "+" : ""}{eur(t.gross_amount)}</p>
-                            {isExpense && t.reimbursable_amount > 0.005 && <p className="text-xs text-amber-600 dark:text-amber-400">{eur(t.remaining_refund)} owed</p>}
+                          <div className="shrink-0 text-right">
+                            <p className={cn("mny-num text-sm font-semibold", isIncome ? "mny-green" : "mny-title")}>{isIncome ? "+" : ""}{eur(t.gross_amount)}</p>
+                            {isExpense && t.reimbursable_amount > 0.005 && <p className="mny-amber text-xs">{eur(t.remaining_refund)} owed</p>}
                           </div>
-                          <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                            {isExpense && <button data-testid={`edit-txn-${t.id}`} aria-label={`Edit ${t.merchant || t.description || "transaction"}`} onClick={() => setEditTxn(t)} className="p-1.5 rounded-md text-slate-400 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="h-4 w-4" /></button>}
-                            <button data-testid={`del-txn-${t.id}`} aria-label={`Delete ${t.merchant || t.description || "transaction"}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Trash2 className="h-4 w-4" /></button>
+                          <div className="flex items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+                            {isExpense && <button type="button" data-testid={`edit-txn-${t.id}`} aria-label={`Edit ${t.merchant || t.description || "transaction"}`} onClick={() => setEditTxn(t)} className="mny-icon-btn"><Pencil className="h-4 w-4" /></button>}
+                            <button type="button" data-testid={`del-txn-${t.id}`} aria-label={`Delete ${t.merchant || t.description || "transaction"}`} onClick={() => { setDeleteTxnId(t.id); setDeleteTxnOpen(true); }} className="mny-icon-btn danger"><Trash2 className="h-4 w-4" /></button>
                           </div>
                         </div>
                       );
@@ -758,7 +756,7 @@ export default function Money() {
                 ))}
               </div>
             )}
-          </Card>
+          </section>
         </>
       )}
 
@@ -877,6 +875,20 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to || !!tooMuch} className="bg-emerald-700 hover:bg-emerald-800 text-white">Transfer</Button>
       </div>
+    </div>
+  );
+}
+
+
+/** The hover card of the spending chart: the day and what was spent. */
+function ChartTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  const day = new Date(`${p.date}T00:00:00`).toLocaleDateString("default", { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <div className="mny-tip">
+      <p className="mny-muted text-xs">{day}</p>
+      <p className="mny-num mt-0.5 text-base font-semibold">{eur(p.value)}</p>
     </div>
   );
 }

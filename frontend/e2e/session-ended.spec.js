@@ -25,7 +25,7 @@ test("signing out kills a copied access token and signs out the other tab", asyn
   await other.goto("/money");
   await expect(other.getByRole("heading", { name: "Money" })).toBeVisible();
 
-  await page.goto("/settings");
+  await page.goto("/profile");
   await page.getByTestId("settings-logout").click();
   await expect(page).toHaveURL(/\/login$/);
 

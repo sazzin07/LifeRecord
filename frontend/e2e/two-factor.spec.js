@@ -40,7 +40,7 @@ async function signUp(page, email) {
 }
 
 async function turnOn(page) {
-  await page.goto("/settings");
+  await page.goto("/profile");
   await page.getByTestId("two-factor-open").click();                // "Set up" on the authenticator app (nothing is on yet, so no proof is asked)
   await page.getByTestId("stepup-password").fill(PASSWORD);
   await page.getByTestId("stepup-submit").click();
@@ -108,7 +108,7 @@ test.describe("two-step sign-in", () => {
     await page.getByTestId("login-recovery-submit").click();
     await page.waitForURL("/");
 
-    await page.goto("/settings");
+    await page.goto("/profile");
     await expect(page.getByTestId("two-factor-status")).toContainText("7 recovery codes left");
     await page.getByTestId("two-factor-turn-off-open").click();
     await page.getByTestId("stepup-password").fill(PASSWORD);

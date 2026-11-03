@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell, HeartPulse, CheckSquare, Calendar, Settings, Plus, Sparkles } from "lucide-react";
+import { LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell, HeartPulse, CheckSquare, Calendar, Settings, Plus, Sparkles, UserRound } from "lucide-react";
 import { openAI } from "@/components/AppShell";
 
 const NAV = [
@@ -14,6 +14,7 @@ const NAV = [
   { to: "/tasks", label: "Tasks", icon: CheckSquare },
   { to: "/calendar", label: "Calendar", icon: Calendar },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
 export function CommandBar({ open, setOpen, onQuickAdd }) {

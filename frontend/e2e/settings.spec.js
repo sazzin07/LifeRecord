@@ -38,7 +38,7 @@ test("add, edit and delete a money place from Settings", async ({ authenticatedP
 });
 
 test("change password: checks the new password and a wrong current password keeps you signed in", async ({ authenticatedPage: page }) => {
-  await page.goto("/settings");
+  await page.goto("/profile");
   const form = page.getByTestId("change-password-form");
   const save = form.getByTestId("pw-save");
   await expect(save).toBeDisabled();
@@ -57,17 +57,17 @@ test("change password: checks the new password and a wrong current password keep
   await expect(save).toBeEnabled();
   await save.click();
   await expect(page.getByText("Current password is incorrect")).toBeVisible();
-  // Still signed in and still on Settings (a 401 here used to send the user to the login page).
+  // Still signed in and still on Profile (a 401 here used to send the user to the login page).
   await page.waitForTimeout(1000);
-  await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
 });
 
 test("sign out on all devices asks first, calls the server, then returns to the login page", async ({ authenticatedPage: page }) => {
   // The endpoint is answered by the test: calling the real one would end the owner's own session for the whole suite.
   let called = 0;
   await page.route("**/api/auth/logout-all", (route) => { called += 1; route.fulfill({ status: 200, json: { message: "Signed out on all devices" } }); });
-  await page.goto("/settings");
+  await page.goto("/profile");
   await page.getByTestId("settings-logout-all").click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("Sign out on all devices?");

@@ -26,6 +26,7 @@ const Body = lazy(pageLoaders["/body"]);
 const Tasks = lazy(pageLoaders["/tasks"]);
 const CalendarPage = lazy(pageLoaders["/calendar"]);
 const Settings = lazy(pageLoaders["/settings"]);
+const Profile = lazy(pageLoaders["/profile"]);
 
 /** Shown while the first sign-in check is under way. If the server cannot be reached it says so, and keeps trying. */
 function Waiting() {
@@ -82,6 +83,7 @@ export default function App() {
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -87,6 +87,8 @@ export function AppShell({ children }) {
   const expanded = docked || peek;
   const showPeek = () => { clearTimeout(peekTimer.current); setPeek(true); };
   const hidePeek = () => { clearTimeout(peekTimer.current); peekTimer.current = setTimeout(() => setPeek(false), 220); };
+  // Choosing a page folds the menu back to its strip, even while the pointer is still on it; it opens again when the pointer re-enters.
+  const retract = () => { clearTimeout(peekTimer.current); setPeek(false); };
   const togglePin = () => {
     const next = !pinned;
     setPinned(next);
@@ -131,7 +133,7 @@ export function AppShell({ children }) {
 
       {/* Desktop sidebar */}
       <aside data-testid="sidebar" data-expanded={expanded}
-        onMouseEnter={showPeek} onMouseLeave={hidePeek} onFocus={showPeek}
+        onMouseEnter={showPeek} onMouseLeave={hidePeek} onFocus={(e) => { if (e.target.matches(":focus-visible")) showPeek(); }}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hidePeek(); }}
         className={cn("hidden lg:flex flex-col fixed inset-y-0 left-0 overflow-hidden border-r border-border backdrop-blur-sm transition-[width,box-shadow] duration-300 ease-out motion-reduce:transition-none",
           expanded ? "w-60" : "w-16", docked ? "bg-card/60 z-30" : "bg-card z-40", expanded && !docked && "shadow-2xl")}>
@@ -148,7 +150,7 @@ export function AppShell({ children }) {
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`nav-${n.label.toLowerCase()}`}
-              onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)}
+              onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)} onClick={retract}
               className={({ isActive }) => cn(
                 "flex items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium transition-colors",
                 isActive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
@@ -159,7 +161,7 @@ export function AppShell({ children }) {
           ))}
         </nav>
         <div className="p-3 border-t border-border">
-          <button data-testid="logout-btn" onClick={logout}
+          <button data-testid="logout-btn" onClick={() => { retract(); logout(); }}
             className="flex w-full items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60">
             <LogOut className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>Sign out</span>
           </button>
@@ -188,7 +190,7 @@ export function AppShell({ children }) {
               className="hidden h-10 items-center gap-1.5 rounded-full bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 sm:flex">
               <Plus className="h-4 w-4" aria-hidden="true" />Add
             </button>
-            <NavLink to="/settings" data-testid="header-profile" aria-label={`Account settings${user?.name ? ` for ${user.name}` : ""}`}
+            <NavLink to="/profile" data-testid="header-profile" aria-label={`Your profile${user?.name ? `, ${user.name}` : ""}`}
               className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
               {(user?.name || "?").trim().charAt(0).toUpperCase()}
             </NavLink>

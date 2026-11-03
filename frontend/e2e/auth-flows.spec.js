@@ -36,7 +36,7 @@ test.describe("account lifecycle", () => {
     // background request would find out by itself and this would prove nothing about the message between tabs.)
     await other.route("**/api/**", (route) => route.abort());
 
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("settings-logout").click();
     await expect(page).toHaveURL(/\/login$/);
 
@@ -45,13 +45,13 @@ test.describe("account lifecycle", () => {
 
   test("deactivating signs you out, signing in says why, and the emailed link switches the account back on", async ({ page }) => {
     await signUp(page, email);
-    await page.goto("/settings");
+    await page.goto("/profile");
 
     await page.getByTestId("your-data-deactivate-open").click();
     await page.getByTestId("deactivate-account-password").fill("Wrong-pass-1");
     await page.getByTestId("deactivate-account-submit").click();
     await expect(page.getByTestId("deactivate-account-error")).toContainText(/incorrect/i);  // nothing happened
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/profile$/);
 
     await page.getByTestId("deactivate-account-password").fill(PASSWORD);
     await page.getByTestId("deactivate-account-submit").click();
@@ -69,7 +69,7 @@ test.describe("account lifecycle", () => {
     await page.getByLabel("Confirm password").fill("Welcome-back-5");
     await page.getByRole("button", { name: "Reset password" }).click();
     await page.waitForURL("/");
-    await page.goto("/settings");
+    await page.goto("/profile");
     await expect(page.getByTestId("your-data")).toBeVisible();
   });
 
@@ -104,7 +104,7 @@ test.describe("account lifecycle", () => {
     await otherPage.getByTestId("login-submit").click();
     await otherPage.waitForURL("/");
 
-    await page.goto("/settings");
+    await page.goto("/profile");
     const rows = page.getByTestId("sessions-list").locator("li");
     await expect(rows).toHaveCount(2);
     await expect(page.getByTestId("session-current")).toHaveCount(1);
@@ -181,7 +181,7 @@ test.describe("account lifecycle", () => {
 
   test("locked out of new devices by somebody's guessing: the sign-in page says so and offers the way back in by email", async ({ page, request }) => {
     await signUp(page, email);
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("settings-logout").click();
     await expect(page).toHaveURL(/\/login$/);
     await page.context().clearCookies();  // this browser is now a stranger to the account, like a new device
@@ -219,7 +219,7 @@ test.describe("account lifecycle", () => {
     expect(stranger.status(), "a stranger holding the right password waits like any other").toBe(429);
 
     // the owner's own browser signs out and in again without any delay
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("settings-logout").click();
     await expect(page).toHaveURL(/\/login$/);
     await page.getByTestId("login-email").fill(email);

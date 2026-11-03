@@ -98,7 +98,7 @@ test.describe("passkeys and text messages as a second step", () => {
     await signUp(page, email);
     const { client, authenticatorId } = await addVirtualAuthenticator(page);
 
-    await page.goto("/settings");
+    await page.goto("/profile");
     await expect(page.getByTestId("two-factor-status")).toHaveText("Off");
     await audited(page, "settings, two-step off");
     await page.getByTestId("passkey-add").click();
@@ -133,7 +133,7 @@ test.describe("passkeys and text messages as a second step", () => {
   test("the passkey really signs in: one tap, a session, and the passkey shows when it was last used", async ({ page }) => {
     await signUp(page, email);
     await addVirtualAuthenticator(page);
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("passkey-add").click();
     await stepUp(page);
     await saveRecoveryCodes(page);
@@ -141,7 +141,7 @@ test.describe("passkeys and text messages as a second step", () => {
     await signOutAndEnterPassword(page, email);
     await page.getByTestId("login-passkey-button").click();
     await page.waitForURL("/");
-    await page.goto("/settings");
+    await page.goto("/profile");
     await expect(page.getByTestId("passkey-list")).toContainText("last used");
   });
 
@@ -149,7 +149,7 @@ test.describe("passkeys and text messages as a second step", () => {
     test.skip(!SMS_BASE, "needs the scratch stack's stand-in for the text-message provider");
     const phone = newPhone();
     await signUp(page, email);
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("sms-add").click();
     await page.getByTestId("sms-phone").fill(phone);
     await stepUp(page);
@@ -175,7 +175,7 @@ test.describe("passkeys and text messages as a second step", () => {
   test("with two-step on, adding and removing methods asks for a proof; switching ways at sign-in; recovery codes work with any method", async ({ page }) => {
     await signUp(page, email);
     await addVirtualAuthenticator(page);
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("passkey-add").click();
     await stepUp(page);
     const codes = await saveRecoveryCodes(page);
@@ -197,7 +197,7 @@ test.describe("passkeys and text messages as a second step", () => {
     await page.waitForURL("/");
 
     // removing the passkey: a recovery code as the proof instead of the passkey
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("passkey-list").locator("li").first().getByRole("button", { name: /^Remove/ }).click();
     await page.getByTestId("stepup-password").fill(PASSWORD);
     await page.getByTestId("stepup-method-recovery").click();
@@ -213,7 +213,7 @@ test.describe("passkeys and text messages as a second step", () => {
     await page.getByTestId("login-recovery").fill(codes[0]);
     await page.getByTestId("login-recovery-submit").click();
     await page.waitForURL("/");
-    await page.goto("/settings");
+    await page.goto("/profile");
     await expect(page.getByTestId("two-factor-status")).toContainText("6 recovery codes left");   // two spent: one as a proof, one to sign in
   });
 
@@ -222,7 +222,7 @@ test.describe("passkeys and text messages as a second step", () => {
     await signUp(page, email);
     await prepare(page, "dark", { width: 390, height: 844 });
     await addVirtualAuthenticator(page);
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("passkey-add").click();
     await stepUp(page);
     await saveRecoveryCodes(page);

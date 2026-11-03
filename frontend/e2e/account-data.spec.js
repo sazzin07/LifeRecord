@@ -20,7 +20,7 @@ test.describe("your data", () => {
     await page.getByLabel("6-digit verification code").fill(verificationCode(email));
     await page.getByRole("button", { name: "Verify email" }).click();
     await page.waitForURL("/");
-    await page.goto("/settings");
+    await page.goto("/profile");
   });
   test.afterEach(() => deleteUser(email));
 
@@ -45,7 +45,7 @@ test.describe("your data", () => {
     await expect(submit).toBeEnabled();
     await submit.click();
     await expect(page.getByTestId("delete-account-error")).toContainText("Password is incorrect");
-    await expect(page).toHaveURL(/\/settings$/);                                      // a typo does not sign you out
+    await expect(page).toHaveURL(/\/profile$/);                                      // a typo does not sign you out
 
     await page.getByTestId("delete-account-password").fill(PASSWORD);
     await submit.click();

@@ -18,6 +18,7 @@ export const pageLoaders = {
   "/tasks": () => import("@/pages/Tasks"),
   "/calendar": () => import("@/pages/Calendar"),
   "/settings": () => import("@/pages/Settings"),
+  "/profile": () => import("@/pages/Profile"),
   "/people/:id": () => import("@/pages/PersonDetail"),
 };
 
@@ -44,7 +45,7 @@ export function prefetchRoute(to, userId, { maxAgeMs = 15_000, data = true } = {
   else (routeQueries[to]?.() || []).forEach((path) => prefetchQuery(path, maxAgeMs));
 }
 
-const ORDER = ["/", "/money", "/groceries", "/tasks", "/people", "/nutrition", "/fitness", "/body", "/calendar", "/settings"];
+const ORDER = ["/", "/money", "/groceries", "/tasks", "/people", "/nutrition", "/fitness", "/body", "/calendar", "/settings", "/profile"];
 
 /** After sign-in, once the browser is idle: fetch every page's code, then its data one page at a time. */
 export function warmAllRoutes(userId) {

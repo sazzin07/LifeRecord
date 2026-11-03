@@ -39,7 +39,7 @@ test("no token is ever stored by the page, and the session recovers from the coo
   await other.close();
 
   // Signing out removes the cookie, and the page can no longer recover a session.
-  await page.goto("/settings");
+  await page.goto("/profile");
   await page.getByTestId("settings-logout").click();
   await expect(page).toHaveURL("/login");
   expect((await context.cookies()).find((c) => c.name === "lr_refresh")).toBeUndefined();

@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Smoke tests", () => {
   test("all main tabs load", async ({ authenticatedPage: page }) => {
-    const tabs = ["/", "/money", "/people", "/groceries", "/nutrition", "/fitness", "/body", "/tasks", "/calendar", "/settings"];
+    const tabs = ["/", "/money", "/people", "/groceries", "/nutrition", "/fitness", "/body", "/tasks", "/calendar", "/settings", "/profile"];
 
     for (const path of tabs) {
       await page.goto(path);
@@ -13,7 +13,7 @@ test.describe("Smoke tests", () => {
   });
 
   test("logout flow", async ({ authenticatedPage: page }) => {
-    await page.goto("/settings");
+    await page.goto("/profile");
     await page.getByTestId("settings-logout").click();
     await expect(page).toHaveURL("/login");
     await expect(page.getByTestId("login-form")).toBeVisible();

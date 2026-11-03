@@ -167,25 +167,32 @@ export function AppShell({ children }) {
       </aside>
 
       {/* Top bar */}
-      <header className={cn("glass sticky top-0 z-20 h-16 border-b border-border flex items-center px-4 sm:px-6 gap-3", docked ? "lg:pl-60" : "lg:pl-16")}>
-        <div className="lg:hidden flex items-center gap-2">
-          <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
-          <span className="font-bold tracking-tight">Life Record</span>
-        </div>
-        <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
-          className="ml-auto lg:ml-0 flex items-center gap-2 rounded-xl border border-border bg-card px-3 h-9 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-w-[180px] max-w-[280px]">
-          <Search className="h-4 w-4" aria-hidden="true" /><span className="sr-only sm:not-sr-only">Search or command…</span>
-          <kbd className="ml-auto hidden sm:inline text-[10px] font-mono border border-border rounded px-1.5 py-0.5" aria-hidden="true">⌘K</kbd>
-        </button>
-        <div className="lg:ml-auto flex items-center gap-2">
-          <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="h-9 w-9 grid place-items-center rounded-xl border border-border bg-card hover:bg-slate-100 dark:hover:bg-slate-800">
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <header className={cn("glass sticky top-0 z-20 h-16 border-b border-border", docked ? "lg:pl-60" : "lg:pl-16")}>
+        {/* The same width as the page below, so the bar lines up with the content. */}
+        <div className="mx-auto flex h-full max-w-7xl items-center gap-3 px-4 sm:px-6">
+          <div className="lg:hidden flex items-center gap-2">
+            <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
+            <span className="font-bold tracking-tight">Life Record</span>
+          </div>
+          <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
+            className="ml-auto flex h-10 items-center gap-2.5 rounded-full border border-border bg-card px-4 text-sm text-slate-500 transition-colors hover:border-emerald-600/50 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 lg:ml-0 lg:w-full lg:max-w-md">
+            <Search className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="sr-only sm:not-sr-only">Search or command…</span>
+            <kbd className="ml-auto hidden rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] sm:inline" aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl K"}</kbd>
           </button>
-          <button data-testid="quick-add-trigger" onClick={() => setQuickOpen(true)}
-            className="hidden sm:flex items-center gap-1.5 h-9 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 text-sm font-semibold">
-            <Plus className="h-4 w-4" />Add
-          </button>
+          <div className="flex items-center gap-2 lg:ml-auto">
+            <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-slate-600 transition-colors hover:border-emerald-600/50 dark:text-slate-300">
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <button data-testid="quick-add-trigger" onClick={() => setQuickOpen(true)}
+              className="hidden h-10 items-center gap-1.5 rounded-full bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 sm:flex">
+              <Plus className="h-4 w-4" aria-hidden="true" />Add
+            </button>
+            <NavLink to="/settings" data-testid="header-profile" aria-label={`Account settings${user?.name ? ` for ${user.name}` : ""}`}
+              className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
+              {(user?.name || "?").trim().charAt(0).toUpperCase()}
+            </NavLink>
+          </div>
         </div>
       </header>
 

@@ -140,3 +140,25 @@ test("the assistant examples open the assistant with the sentence ready, and the
   const sideways = await page.getByTestId("sidebar").locator("nav").evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(sideways).toBeLessThanOrEqual(0);
 });
+
+test("when the account cannot be reached the choice is kept here, said so in words without a pop-up, and sent when tried again", async ({ freshUserPage: { page, fresh } }) => {
+  await page.goto("/settings");
+  let failing = true;
+  const hits = [];
+  await page.route("**/api/preferences", async (route) => {
+    if (route.request().method() === "PUT" && failing) { hits.push(1); await route.fulfill({ status: 500, json: { detail: "down" } }); return; }
+    await route.continue();
+  });
+  await page.getByTestId("theme-dark").click();
+  await page.getByTestId("anim-toggle").click();
+  await page.getByTestId("theme-light").click();
+  await expect(html(page)).not.toHaveClass(/dark/);                                  // applied here regardless
+  await expect(page.getByTestId("settings-save-error")).toContainText("Not saved to your account");
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);                  // never a pile of pop-ups
+  expect((await prefs(fresh)).preferences.theme).toBe("system");
+
+  failing = false;
+  await page.getByTestId("settings-save-retry").click();
+  await expect(page.getByTestId("settings-save-error")).toHaveCount(0);
+  await expect.poll(async () => (await prefs(fresh)).preferences).toMatchObject({ theme: "light", animations: false });   // the newest of each, together
+});

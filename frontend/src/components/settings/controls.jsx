@@ -58,7 +58,7 @@ export function Row({ title, description, children, htmlFor, danger }) {
 
 /** "Saved" for two seconds after a choice reached the account, so a change never leaves the person wondering. */
 export function SavedBadge() {
-  const { savedAt, saving, sync } = useSettings();
+  const { savedAt, saving, sync, saveError, retrySave } = useSettings();
   const [show, setShow] = useState(false);
   useEffect(() => {
     if (!savedAt) return undefined;
@@ -67,9 +67,14 @@ export function SavedBadge() {
     return () => clearTimeout(t);
   }, [savedAt]);
   return (
-    <div role="status" aria-live="polite" className="h-7 min-w-[5.5rem] text-right">
+    <div role="status" aria-live="polite" className="min-h-7 min-w-[5.5rem] text-right">
       <AnimatePresence mode="wait" initial={false}>
-        {saving ? (
+        {saveError && !saving ? (
+          <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mny-state neg" data-testid="settings-save-error" role="alert">
+            Not saved to your account
+            <button type="button" onClick={retrySave} className="ml-1 underline underline-offset-2" data-testid="settings-save-retry">Try again</button>
+          </motion.span>
+        ) : saving ? (
           <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mny-muted text-xs">Saving…</motion.span>
         ) : show ? (
           <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="mny-state" data-testid="settings-saved">

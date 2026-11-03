@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { setWeekStartsOn } from "@/lib/calendarRange";
 import { setDefaultMoneyPeriod } from "@/lib/periods";
@@ -30,6 +29,7 @@ export function SettingsProvider({ children }) {
   const [sync, setSyncState] = useState(() => load("lm_sync", true));
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
+  const [saveError, setSaveError] = useState(false);   // the last attempt to reach the account failed: shown in Settings, with a way to try again
   const bound = useRef(false);            // a signed-in screen is attached: choices can be saved to the server
   const lastPull = useRef(0);
   const changedAt = useRef(0);          // when this person last changed a choice here: an answer from the server that left earlier is out of date
@@ -68,15 +68,35 @@ export function SettingsProvider({ children }) {
 
   const setters = { theme: setThemeState, animations: setAnimationsState, weekStart: setWeekStartState, moneyPeriod: setMoneyPeriodState };
 
-  const push = useCallback(async (body) => {
+  // Saving to the account is a queue of one: choices made while a save is on its way are merged and sent together afterwards, and a
+  // failure keeps what was not saved so "Try again" (or the next time the server answers) sends it. No pop-up: the state is shown where
+  // the choices are made. Being signed out or having no such server route is not this device's problem to announce.
+  const queued = useRef({});
+  const sending = useRef(false);
+  const flush = useCallback(async () => {
+    if (sending.current || Object.keys(queued.current).length === 0) return;
+    sending.current = true;
     setSaving(true);
     try {
-      await api.put("/preferences", body);
-      setSavedAt(Date.now());
-    } catch {
-      toast.error("Could not save that choice to your account. It is kept on this device.", { id: "prefs-save-failed" });   // one message, however many choices fail
-    } finally { setSaving(false); }
+      while (Object.keys(queued.current).length > 0) {
+        const body = queued.current;
+        queued.current = {};
+        try {
+          await api.put("/preferences", body);
+          setSaveError(false);
+          setSavedAt(Date.now());
+        } catch (err) {
+          const status = err?.response?.status;
+          if (status === 401 || status === 403) return;              // signed out: the app is taking care of that
+          queued.current = { ...body, ...queued.current };            // keep it, newer choices win
+          setSaveError(true);
+          return;
+        }
+      }
+    } finally { sending.current = false; setSaving(false); }
   }, []);
+  const push = useCallback((body) => { queued.current = { ...queued.current, ...body }; return flush(); }, [flush]);
+  const retrySave = useCallback(() => flush(), [flush]);
 
   /** Change one synced choice: here at once, and on the account when this device syncs. */
   const setPref = useCallback((key, value) => {
@@ -98,10 +118,11 @@ export function SettingsProvider({ children }) {
         await api.put("/preferences", { theme, animations, week_start: weekStart, money_period: moneyPeriod });
         return;
       }
+      if (Object.keys(queued.current).length > 0) { flush(); return; }   // the server is reachable again: send what was kept first
       const next = fromServer(data.preferences);
       Object.entries(next).forEach(([k, v]) => setters[k](v));
     } catch { /* offline or signed out: this device's choices stay as they are */ }
-  }, [theme, animations, weekStart, moneyPeriod]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [theme, animations, weekStart, moneyPeriod, flush]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const bindServer = useCallback((on) => { bound.current = on; }, []);
   const setSync = (on) => {
@@ -123,8 +144,8 @@ export function SettingsProvider({ children }) {
     animations, setAnimations: (v) => setPref("animations", v),
     weekStart, setWeekStart: (v) => setPref("weekStart", v),
     moneyPeriod, setMoneyPeriod: (v) => setPref("moneyPeriod", v),
-    sideMenu, setSideMenu, sync, setSync, saving, savedAt, bindServer, pull, resetAll, DEFAULTS,
-  }), [theme, animations, weekStart, moneyPeriod, sideMenu, sync, saving, savedAt, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
+    sideMenu, setSideMenu, sync, setSync, saving, savedAt, saveError, retrySave, bindServer, pull, resetAll, DEFAULTS,
+  }), [theme, animations, weekStart, moneyPeriod, sideMenu, sync, saving, savedAt, saveError, retrySave, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;
 }

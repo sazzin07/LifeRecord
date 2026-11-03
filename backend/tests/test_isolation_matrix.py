@@ -122,6 +122,15 @@ CASES: Dict[str, Case] = {
 TABLE_EXEMPT = {
     "totp_credentials": "internal and secret: no route takes an id; every second-step route works on the signed-in user's own row (their id from the "
                         "token), and test_two_factor.py proves one account's code cannot open another's challenge and that B never sees A's setting",
+    "webauthn_credentials": "internal and secret (public keys only): no route takes a credential id from outside except the owner-checked "
+                            "rename/remove, which look it up by id AND the signed-in user (test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey), "
+                            "and someone else's passkey signs nobody in (test_someone_elses_passkey_does_nothing_for_me)",
+    "webauthn_challenges": "internal: a pending ceremony is claimed by its id AND the user and purpose it was made for, once "
+                           "(test_passkeys.py::test_a_registration_challenge_works_once_and_only_for_the_person_it_was_made_for)",
+    "sms_factors": "internal and secret: one row per user reached only through the signed-in user's own id; the number is encrypted and shown masked "
+                   "(test_sms_factor.py::test_the_code_arrives_by_text_and_confirms_it_with_recovery_codes_and_the_number_stays_masked_and_encrypted)",
+    "sms_codes": "internal and secret: one row per user, a keyed hash, spent once; one account's code means nothing for another "
+                 "(test_sms_factor.py::test_the_authenticator_endpoint_does_not_accept_a_texted_code_and_nobody_else_can_use_it)",
     "totp_recovery_codes": "internal and secret: no route takes an id or lists them; they are hashed and bound to one account, and test_two_factor.py "
                            "proves a code from one account does not sign in to another",
     "auth_session_info": "internal: one row per session, reached only through the session id a token names (auth_sessions.get_live looks it up "
@@ -145,6 +154,8 @@ ROUTE_EXEMPT = {
     ("PUT", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",
     ("DELETE", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",
     ("GET", "/prices/{}"): "a product name; covered by test_price_history_is_per_user",
+    ("POST", "/auth/2fa/passkeys/{}/remove"): "a passkey id, looked up with the signed-in user's id; covered by test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey",
+    ("POST", "/auth/2fa/passkeys/{}/rename"): "a passkey id, looked up with the signed-in user's id; covered by test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey",
 }
 
 

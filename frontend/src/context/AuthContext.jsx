@@ -3,6 +3,7 @@ import { api, refreshSession, sessionRefused, setAccessToken } from "@/lib/api";
 import { clearCaches } from "@/lib/swrCache";
 import { setCacheUser } from "@/lib/query";
 import { announceSignedOut, onSignedOutElsewhere } from "@/lib/authChannel";
+import { getPasskey } from "@/lib/webauthn";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -95,7 +96,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     // The password was right but the account asks for a second step: nothing is signed in yet, only a challenge to finish with a code.
-    if (data.requires_totp) return { requiresTotp: true, challenge: data.challenge };
+    if (data.requires_totp) return { requiresTotp: true, challenge: data.challenge, methods: data.methods || ["totp"], smsHint: data.sms_hint || null };
     if (data.requires_verification) {
       // Keep the pre-verification token (in memory) so the verify modal can resend/verify
       if (data.token) setAccessToken(data.token);
@@ -105,8 +106,23 @@ export function AuthProvider({ children }) {
     return setTokenAndUser(data);
   };
 
+  // The second half of signing in, whichever way the account offers: an authenticator or recovery code, a passkey, a texted code.
   const loginWithCode = async (challenge, code) => {
     const { data } = await api.post("/auth/login/totp", { challenge, code });
+    return setTokenAndUser(data);
+  };
+
+  const loginWithPasskey = async (challenge) => {
+    const { data: ask } = await api.post("/auth/login/passkey/options", { challenge });
+    const credential = await getPasskey(ask.options);
+    const { data } = await api.post("/auth/login/passkey", { challenge, challenge_id: ask.challenge_id, credential });
+    return setTokenAndUser(data);
+  };
+
+  const sendLoginText = async (challenge) => (await api.post("/auth/login/sms/send", { challenge })).data;
+
+  const loginWithText = async (challenge, code) => {
+    const { data } = await api.post("/auth/login/sms", { challenge, code });
     return setTokenAndUser(data);
   };
 
@@ -151,6 +167,9 @@ export function AuthProvider({ children }) {
         unreachable,
         login,
         loginWithCode,
+        loginWithPasskey,
+        sendLoginText,
+        loginWithText,
         signup,
         verifyCode,
         resendVerification,

@@ -64,7 +64,7 @@ async def disable_second_step(email: str) -> str:
         user = (await db.execute(select(User).where(User.email == email.strip().lower()))).scalar_one_or_none()
         if user is None:
             return "none"
-        was_on = await two_factor_api.credential(db, user.id) is not None
+        was_on = await two_factor_api.enabled(db, user.id)
         await two_factor_api.remove_second_step(db, user.id)
         return "ok" if was_on else "unchanged"
 

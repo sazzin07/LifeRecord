@@ -22,7 +22,8 @@ from models import Base, User
 # Tables with no user_id of their own: (column pointing at the parent, parent table). Owned through the parent.
 OWNED_THROUGH_PARENT = {"splits": ("transaction_id", "transactions")}
 # Short-lived internal state (a confirmation waiting a few minutes), not something a person created.
-NOT_EXPORTED = {"ai_pending_confirmations", "auth_sessions", "auth_session_info", "account_deactivations", "totp_credentials", "totp_recovery_codes"}
+NOT_EXPORTED = {"ai_pending_confirmations", "auth_sessions", "auth_session_info", "account_deactivations", "totp_credentials", "totp_recovery_codes",
+                "webauthn_credentials", "webauthn_challenges", "sms_factors", "sms_codes"}
 # Columns that are secrets or only meaningful to the server, kept out of an export.
 SECRET_COLUMNS = {"report_recipients": {"code_hash"}}
 CONFIRM_PHRASE = "DELETE MY ACCOUNT"

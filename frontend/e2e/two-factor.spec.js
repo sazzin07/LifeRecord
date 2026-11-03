@@ -7,6 +7,7 @@ import { audit, prepare } from "./support/a11y";
 // secret the page shows, exactly as the app would), sign in with password and code, use a recovery code, turn it off. Brand-new
 // throw-away accounts (reserved example.com address, never mailed), removed afterwards.
 const PASSWORD = "TestPass123";
+const settle = (page) => page.waitForTimeout(500);   // dialogs and screens fade in; an audit mid-fade sees washed-out colours
 
 function base32(text) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -40,9 +41,10 @@ async function signUp(page, email) {
 
 async function turnOn(page) {
   await page.goto("/settings");
-  await page.getByTestId("two-factor-open").click();
-  await page.getByTestId("two-factor-password").fill(PASSWORD);
-  await page.getByTestId("two-factor-start").click();
+  await page.getByTestId("two-factor-open").click();                // "Set up" on the authenticator app (nothing is on yet, so no proof is asked)
+  await page.getByTestId("stepup-password").fill(PASSWORD);
+  await page.getByTestId("stepup-submit").click();
+  await page.getByTestId("two-factor-manual").locator("summary").click();
   const secret = (await page.getByTestId("two-factor-secret").innerText()).replace(/\s/g, "");
   expect(secret).toMatch(/^[A-Z2-7]{32}$/);
   await expect(page.getByTestId("two-factor-link")).toHaveAttribute("href", /^otpauth:\/\/totp\//);
@@ -51,12 +53,13 @@ async function turnOn(page) {
   await expect(qr).toBeVisible();
   await expect(qr).toHaveAttribute("role", "img");
   await expect(qr).toHaveAttribute("aria-label", /QR code/i);
+  await settle(page);
   await audit(page, "two-step setup");
-  await page.getByTestId("two-factor-code").fill(codeFor(secret));
-  await page.getByTestId("two-factor-confirm").click();
+  await page.getByTestId("two-factor-code").fill(codeFor(secret));  // the last digit sends it
   const shown = await page.getByTestId("two-factor-recovery-codes").innerText();
   const codes = shown.split(/\s+/).filter((c) => /^[a-z0-9]{5}-[a-z0-9]{5}$/.test(c));
   expect(codes).toHaveLength(8);
+  await settle(page);
   await audit(page, "recovery codes");
   await page.getByTestId("two-factor-saved").click();
   await expect(page.getByTestId("two-factor-status")).toContainText("On");
@@ -85,15 +88,14 @@ test.describe("two-step sign-in", () => {
     await signUp(page, email);
     const { secret } = await turnOn(page);
     await signOutAndStartSigningIn(page, email);
+    await settle(page);
     await audit(page, "second step at sign-in");
 
-    await page.getByTestId("login-totp-code").fill("000000");
-    await page.getByTestId("login-totp-submit").click();
-    await expect(page.getByText(/not right/i).first()).toBeVisible();
+    await page.getByTestId("login-totp-code").fill("000000");            // the last digit sends it
+    await expect(page.getByTestId("login-second-error")).toContainText(/not right/i);
     await expect(page).toHaveURL(/\/login$/);
 
     await page.getByTestId("login-totp-code").fill(codeFor(secret, 1));  // the step after the one that turned it on
-    await page.getByTestId("login-totp-submit").click();
     await page.waitForURL("/");
   });
 
@@ -101,16 +103,18 @@ test.describe("two-step sign-in", () => {
     await signUp(page, email);
     const { secret, codes } = await turnOn(page);
     await signOutAndStartSigningIn(page, email);
-    await page.getByTestId("login-totp-code").fill(codes[0]);
-    await page.getByTestId("login-totp-submit").click();
+    await page.getByTestId("login-use-recovery").click();
+    await page.getByTestId("login-recovery").fill(codes[0]);
+    await page.getByTestId("login-recovery-submit").click();
     await page.waitForURL("/");
 
     await page.goto("/settings");
     await expect(page.getByTestId("two-factor-status")).toContainText("7 recovery codes left");
-    await page.getByTestId("two-factor-manage-open").click();
-    await page.getByTestId("two-factor-manage-password").fill(PASSWORD);
-    await page.getByTestId("two-factor-manage-code").fill(codeFor(secret, 1));
-    await page.getByTestId("two-factor-turn-off").click();
+    await page.getByTestId("two-factor-turn-off-open").click();
+    await page.getByTestId("stepup-password").fill(PASSWORD);
+    await page.getByTestId("stepup-code").fill(codeFor(secret, 1));
+    await page.getByTestId("stepup-submit").click();
+    await expect(page.getByTestId("two-factor-status")).toContainText("Off");
     await expect(page.getByTestId("two-factor-open")).toBeVisible();
 
     // plain sign-in again
@@ -126,6 +130,7 @@ test.describe("two-step sign-in", () => {
     await prepare(page, "dark", { width: 390, height: 844 });
     await turnOn(page);                                    // audits the setup and the recovery codes on the way
     await signOutAndStartSigningIn(page, email);
+    await settle(page);
     await audit(page, "second step at sign-in, dark phone");
   });
 });

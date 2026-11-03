@@ -45,6 +45,12 @@ def _sql(query, args=()):
         conn.close()
 
 
+def _flags(token):
+    """The two long-standing fields of the status answer (it now also lists methods, passkeys and text messages)."""
+    body = _get("/auth/2fa", token).json()
+    return {"enabled": body["enabled"], "recovery_codes_left": body["recovery_codes_left"]}
+
+
 def _step(offset=0):
     return int(time.time() // 30) + offset
 
@@ -78,7 +84,7 @@ def _finish(challenge, code, ip=None):
 
 def test_it_is_off_until_the_person_turns_it_on():
     user = create_verified_user("authtest")
-    assert _get("/auth/2fa", user["token"]).json() == {"enabled": False, "recovery_codes_left": 0}
+    assert _flags(user["token"]) == {"enabled": False, "recovery_codes_left": 0}
     assert _post("/auth/login", {"email": user["email"], "password": PASSWORD}).json().get("requires_totp") is None
 
 
@@ -102,7 +108,7 @@ def test_it_comes_on_only_with_a_correct_current_code_and_the_recovery_codes_are
     assert done.status_code == 200
     codes = done.json()["recovery_codes"]
     assert len(codes) == 8 and len(set(codes)) == 8 and all(len(c) == 11 for c in codes)
-    assert _get("/auth/2fa", user["token"]).json() == {"enabled": True, "recovery_codes_left": 8}
+    assert _flags(user["token"]) == {"enabled": True, "recovery_codes_left": 8}
     assert _post("/auth/2fa/setup", {"password": PASSWORD}, token=user["token"]).status_code == 400, "already on"
     assert _post("/auth/2fa/enable", {"code": totp.code_at(secret, _step())}, token=user["token"]).status_code == 400
 
@@ -155,7 +161,7 @@ def test_a_wrong_code_is_refused_in_the_same_words_whatever_is_wrong():
         "another account's code": _finish(_challenge(user), totp.code_at(other_secret, _step(1))),
         "junk challenge": _finish("not-a-token", totp.code_at(secret, _step(1))),
     }
-    assert {(r.status_code, r.json()["detail"]) for r in answers.values()} == {(401, "That code is not right. Check the app and try again.")}, \
+    assert {(r.status_code, r.json()["detail"]) for r in answers.values()} == {(401, "That code is not right. Check it and try again.")}, \
         {k: (r.status_code, r.text) for k, r in answers.items()}
 
 
@@ -228,7 +234,7 @@ def test_turning_it_off_needs_the_password_and_a_code_and_then_sign_in_is_plain_
     assert _get("/auth/2fa", user["token"]).json()["enabled"] is True
     challenge = _challenge(user)  # a challenge issued before it was turned off
     assert _post("/auth/2fa/disable", {"password": PASSWORD, "code": code}, token=user["token"]).status_code == 200
-    assert _get("/auth/2fa", user["token"]).json() == {"enabled": False, "recovery_codes_left": 0}
+    assert _flags(user["token"]) == {"enabled": False, "recovery_codes_left": 0}
     assert "token" in _post("/auth/login", {"email": user["email"], "password": PASSWORD}).json()
     assert _finish(challenge, totp.code_at(secret, _step(1))).status_code == 401, "an old challenge opens nothing once it is off"
 
@@ -252,7 +258,7 @@ def test_the_server_owner_can_switch_it_off_for_someone_who_lost_both():
 def test_every_endpoint_needs_a_signed_in_user_and_keeps_to_its_own_account():
     a, b = create_verified_user("authtest"), create_verified_user("authtest")
     _turn_on(a)
-    assert _get("/auth/2fa", b["token"]).json() == {"enabled": False, "recovery_codes_left": 0}, "A's setting is not B's"
+    assert _flags(b["token"]) == {"enabled": False, "recovery_codes_left": 0}, "A's setting is not B's"
     for path, body in (("/auth/2fa/setup", {"password": PASSWORD}), ("/auth/2fa/enable", {"code": "123456"}),
                        ("/auth/2fa/disable", {"password": PASSWORD, "code": "123456"}), ("/auth/2fa/recovery-codes", {"password": PASSWORD, "code": "123456"})):
         assert _post(path, body).status_code == 401, path

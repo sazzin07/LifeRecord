@@ -42,7 +42,7 @@ export default function ResetPassword() {
     try {
       const result = await resetPassword(token, password);
       if (result?.requiresTotp) {
-        toast.success(result.message || "Password updated. Sign in with your password and the code from your app.");
+        toast.success(result.message || "Password updated. Sign in with your password and your second step.");
         nav("/login");
         return;
       }

@@ -39,7 +39,8 @@ SCHEMA_RE = re.compile(r"^liferecord_test_(\d+)(?:_(\d+))?$")
 _counter = itertools.count(1)
 
 # Everything a real deployment configures that the scratch server must not have.
-BLANKED = ("GEMINI_API_KEY", "SENDGRID_API_KEY", "SENDGRID_FROM_EMAIL", "SMTP_PASSWORD")
+BLANKED = ("GEMINI_API_KEY", "SENDGRID_API_KEY", "SENDGRID_FROM_EMAIL", "SMTP_PASSWORD", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN",
+           "TWILIO_FROM", "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_API_BASE")
 # Mail is "configured" (so reserved test domains are skipped exactly as in a real setup) but the relay is a dead end:
 # loopback port 1 has no listener, so even a non-reserved recipient could only produce a connection error.
 # The assistant counts as "configured" (so validation and error paths behave as in production) but its provider address is
@@ -147,7 +148,7 @@ def baseline_environ() -> dict:
 
 
 def build_environment(db_name: str, storage_dir: str, admin_user: str, admin_password: str, port: int,
-                      cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000") -> dict:
+                      cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000", sms_base: str = "") -> dict:
     from cryptography.fernet import Fernet
     assert_scratch_name(db_name)
     env = {
@@ -159,8 +160,14 @@ def build_environment(db_name: str, storage_dir: str, admin_user: str, admin_pas
         "STORAGE_DIR": storage_dir, "SCHEDULER_ENABLED": "false",
         "CORS_ORIGINS": cors_origins, "FRONTEND_URL": f"http://127.0.0.1:{port}",
         "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8",
+        # never a call to the breach service from a test, whatever backend/.env says
+        "PASSWORD_BREACH_CHECK": "0",
     }
     env.update({name: "" for name in BLANKED})
+    if sms_base:  # text messages go to the local stand-in for Twilio (tests/fake_twilio.py), never to a real provider
+        import fake_twilio
+        env.update({"SMS_PROVIDER": "twilio", "TWILIO_ACCOUNT_SID": fake_twilio.SID, "TWILIO_AUTH_TOKEN": fake_twilio.TOKEN,
+                    "TWILIO_FROM": "+15005550006", "TWILIO_API_BASE": sms_base, "SMS_MAX_PER_HOUR": "1000"})
     env.update(DEAD_END_MAIL)
     env.update(DEAD_END_AI)
     return env
@@ -184,11 +191,14 @@ class IsolatedEnv:
     _proc: Optional[subprocess.Popen] = field(default=None, repr=False)
     _log: str = ""
     _stopped: bool = False
+    _fake_sms: object = field(default=None, repr=False)
 
     def stop(self) -> None:
         if self._stopped:
             return
         self._stopped = True
+        if self._fake_sms is not None:
+            self._fake_sms.shutdown()
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             try:
@@ -283,12 +293,14 @@ def start(*, user_email: str = "john.test@example.com", user_name: str = "John",
     storage = tempfile.mkdtemp(prefix="lr-scratch-storage-")
     port = port or _free_port()
     admin_user, admin_password = admin_credentials()
-    settings = build_environment(db_name, storage, admin_user, admin_password, port,
+    import fake_twilio
+    fake_sms, sms_base = fake_twilio.start()
+    settings = build_environment(db_name, storage, admin_user, admin_password, port, sms_base=sms_base,
                                  **({"cors_origins": cors_origins} if cors_origins else {}))
     log_path = os.path.join(tempfile.gettempdir(), f"{db_name}.log")
     env = IsolatedEnv(db_name=db_name, base_url=f"http://127.0.0.1:{port}", user_email=user_email,
                       user_password="Aa1-" + secrets.token_urlsafe(14), admin_email=settings["ADMIN_EMAIL"],
-                      settings=settings, storage_dir=storage, _log=log_path)
+                      settings=settings, storage_dir=storage, _log=log_path, _fake_sms=fake_sms)
     atexit.register(env.stop)
     try:
         with open(log_path, "wb") as log:
@@ -362,11 +374,14 @@ def serve(frontend_port: int = 3100, with_frontend: bool = True) -> None:
     stop_file.unlink(missing_ok=True)
     origins = f"http://127.0.0.1:{frontend_port},http://localhost:{frontend_port}"
     env = start(foods=True, sample_data=True, cors_origins=origins)
+    # The browser reaches everything by the name "localhost", not by an IP address: browsers refuse passkeys (WebAuthn) on an IP
+    # address, and the page and the API then share one host name, so the sign-in cookie behaves exactly as it does in production.
+    browser_api = env.base_url.replace("127.0.0.1", "localhost")
     front = None
     try:
         if with_frontend:
             front_env = {**baseline_environ(), "PORT": str(frontend_port), "HOST": "127.0.0.1", "BROWSER": "none",
-                         "REACT_APP_BACKEND_URL": env.base_url, "CI": "false"}
+                         "REACT_APP_BACKEND_URL": browser_api, "CI": "false"}
             log = open(Path(tempfile.gettempdir()) / "liferecord-scratch-frontend.log", "wb")
             front = subprocess.Popen(["cmd", "/c", "yarn", "start"] if os.name == "nt" else ["yarn", "start"],
                                      cwd=str(BACKEND.parent / "frontend"), env=front_env, stdout=log, stderr=subprocess.STDOUT)
@@ -381,7 +396,7 @@ def serve(frontend_port: int = 3100, with_frontend: bool = True) -> None:
             else:
                 raise RuntimeError("the React dev server did not start within 5 minutes")
         STATE_FILE.write_text(json.dumps({
-            "api_url": env.base_url, "base_url": f"http://127.0.0.1:{frontend_port}" if front else None,
+            "api_url": browser_api, "base_url": f"http://localhost:{frontend_port}" if front else None,
             "test_email": env.user_email, "test_password": env.user_password, "db_name": env.db_name,
             "settings": {k: v for k, v in env.settings.items() if k not in ("DATABASE_PASSWORD", "ADMIN_DATABASE_PASSWORD")},
         }), encoding="utf-8")

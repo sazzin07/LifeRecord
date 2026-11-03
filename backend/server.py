@@ -170,6 +170,12 @@ async def throttle_account(kind: str, email: str, maximum: int, window: int, wha
                             headers={"Retry-After": str(wait)})
 
 
+async def claim_global_slot(kind: str, window: int, maximum: int) -> Optional[int]:
+    """One slot in a limit shared by everyone on the server (a cap on what a flood could cost, e.g. text messages). None when
+    there was room, else the seconds to wait."""
+    return await _claim_slot(hashlib.sha256(f"global-{kind}".encode()).hexdigest(), window, maximum)
+
+
 async def forgive_account(kind: str, email: str) -> None:
     """A correct sign-in (or a confirmed address) wipes the count, so only runs of failures ever add up."""
     async with AsyncSessionLocal() as db:
@@ -1621,8 +1627,9 @@ async def login(body: LoginBody, request: Request, response: Response, backgroun
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.email_verified and await two_factor_api.enabled(db, user.id):
         # The password is right, but this account asks for a second step. Nothing is opened yet: only a challenge that is good
-        # for finishing sign-in with a code (/auth/login/totp), which also clears the run of failed attempts.
-        return {"requires_totp": True, "challenge": create_totp_challenge_token(user.id)}
+        # for finishing sign-in with one of the account's methods (/auth/login/totp, /passkey, /sms), which also clears the run
+        # of failed attempts.
+        return await two_factor_api.challenge_for(db, user)
     await forgive_logins(email)  # a correct password: the run of failed attempts is over
 
     if not user.email_verified:
@@ -1706,8 +1713,7 @@ async def reset_password(body: ResetPasswordBody, request: Request, response: Re
 
     if await two_factor_api.enabled(db, user.id):
         # The emailed link proves the mailbox, not the phone: the second step is still asked for.
-        return {"requires_totp": True, "challenge": create_totp_challenge_token(user.id),
-                "message": "Password updated. Enter the code from your authenticator app to sign in."}
+        return await two_factor_api.challenge_for(db, user, "Password updated. Complete the second step to sign in.")
     return await _issue_session(request, response, db, user,
                                 {"user": {"id": user.id, "email": user.email, "name": user.name, "email_verified": user.email_verified}})
 

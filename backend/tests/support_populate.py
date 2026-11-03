@@ -262,6 +262,14 @@ def _extras(a):
     # A second step still being set up (never confirmed, so it does not change how this user signs in) and one recovery code.
     _db("INSERT INTO totp_credentials (user_id,secret_enc,confirmed_ms,last_step,created_ms) VALUES (%s,'populate',NULL,0,%s)", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
     _db("INSERT INTO totp_recovery_codes (id,user_id,code_hash,used_ms) VALUES (%s,%s,%s,NULL)", (str(uuid.uuid4()), a["id"], "0" * 64))
+    # The other second-step methods: a passkey, a pending passkey ceremony, a text-message number still being set up and its code.
+    now_ms = int(dt.datetime.now().timestamp() * 1000)
+    _db("INSERT INTO webauthn_credentials (id,user_id,credential_id,public_key,sign_count,name,created_ms) VALUES (%s,%s,%s,'populate',0,'populate',%s)",
+        (str(uuid.uuid4()), a["id"], uuid.uuid4().hex, now_ms))
+    _db("INSERT INTO webauthn_challenges (id,user_id,purpose,challenge,rp_id,origin,expires_ms) VALUES (%s,%s,'login','populate','localhost','http://localhost',%s)",
+        (str(uuid.uuid4()), a["id"], now_ms + 300000))
+    _db("INSERT INTO sms_factors (user_id,phone_enc,phone_hint,confirmed_ms,created_ms) VALUES (%s,'populate','+•• ••• ••• 000',NULL,%s)", (a["id"], now_ms))
+    _db("INSERT INTO sms_codes (user_id,code_hash,expires_ms,attempts,sent_ms) VALUES (%s,%s,%s,0,%s)", (a["id"], "0" * 64, now_ms + 300000, now_ms))
     # Written straight to the table, so the sessions the test already holds keep working; it only stops NEW sign-ins.
     _db("INSERT INTO account_deactivations (user_id,deactivated_ms,deactivated_by) VALUES (%s,%s,'self')", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
 

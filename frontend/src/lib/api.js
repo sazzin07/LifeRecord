@@ -105,7 +105,8 @@ api.interceptors.response.use(
       window.dispatchEvent(new CustomEvent("lm:offline"));
       return Promise.reject(err);
     }
-    if (err.response.status !== 401 || originalRequest._retry || originalRequest.url === "/auth/refresh") {
+    // A wrong password or code at sign-in is the answer, not an expired session: there is nothing to refresh.
+    if (err.response.status !== 401 || originalRequest._retry || originalRequest.url === "/auth/refresh" || String(originalRequest.url || "").startsWith("/auth/login")) {
       if (err.response.status === 401 && accessToken) {
         setAccessToken(null);
         if (!window.location.pathname.includes("/login")) window.location.href = "/login";

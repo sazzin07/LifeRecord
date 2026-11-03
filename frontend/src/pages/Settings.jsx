@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { YourData } from "@/components/YourData";
 import { Sessions } from "@/components/Sessions";
-import { TwoFactor } from "@/components/TwoFactor";
+import { TwoFactor } from "@/components/twofactor/TwoFactor";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 

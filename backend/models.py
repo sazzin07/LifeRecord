@@ -506,6 +506,55 @@ class TotpRecoveryCode(Base):
     used_ms = Column(BigInteger, nullable=True)
 
 
+class WebauthnCredential(Base):
+    """A passkey or security key registered as a second step. Only the PUBLIC key is kept: nothing here can sign anyone in.
+    `credential_id` is what the authenticator calls the key (base64url); `sign_count` guards against a cloned authenticator
+    (synced passkeys report 0 forever, which is allowed)."""
+    __tablename__ = "webauthn_credentials"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_id = Column(String(512), nullable=False, unique=True)
+    public_key = Column(Text, nullable=False)            # COSE key, base64url
+    sign_count = Column(BigInteger, nullable=False, default=0, server_default="0")
+    name = Column(String(60), nullable=False)
+    transports = Column(String(120), nullable=True)      # "internal,hybrid": lets the browser offer the right prompt
+    created_ms = Column(BigInteger, nullable=False)
+    last_used_ms = Column(BigInteger, nullable=True)
+
+
+class WebauthnChallenge(Base):
+    """One pending passkey ceremony. Single use: claiming it deletes it. `purpose` is register | login | proof."""
+    __tablename__ = "webauthn_challenges"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    purpose = Column(String(12), nullable=False)
+    challenge = Column(String(120), nullable=False)      # base64url
+    rp_id = Column(String(255), nullable=False)
+    origin = Column(String(255), nullable=False)
+    expires_ms = Column(BigInteger, nullable=False)
+
+
+class SmsFactor(Base):
+    """Text-message codes as a second step. One row per user; the number is ENCRYPTED (totp.encrypt_secret). `confirmed_ms` stays
+    NULL until the person has typed in a code that arrived on that phone."""
+    __tablename__ = "sms_factors"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    phone_enc = Column(String(255), nullable=False)
+    phone_hint = Column(String(24), nullable=False)      # "+351 ••• ••• 678": all the screen ever shows
+    confirmed_ms = Column(BigInteger, nullable=True)
+    created_ms = Column(BigInteger, nullable=False)
+
+
+class SmsCode(Base):
+    """The text-message code currently waiting for a user: a keyed hash, not the code. A new send replaces it."""
+    __tablename__ = "sms_codes"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    code_hash = Column(String(64), nullable=False)
+    expires_ms = Column(BigInteger, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    sent_ms = Column(BigInteger, nullable=False)
+
+
 class AccountDeactivation(Base):
     """A row here means the account is switched off: nobody can start a session for it, its data stays exactly as it is, and
     deleting the row switches it back on. Its own table rather than a column on `users`, so the live database needs no

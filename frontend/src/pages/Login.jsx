@@ -5,17 +5,17 @@ import { Sparkles, ArrowRight, Loader2, Mail, Lock, ShieldCheck } from "lucide-r
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SecondStep } from "@/components/twofactor/SecondStep";
 import { toast } from "sonner";
 
 export default function Login() {
-  const { login, loginWithCode, verifyCode, resendVerification, forgotPassword } = useAuth();
+  const { login, verifyCode, resendVerification, forgotPassword } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingUser, setPendingUser] = useState(null);
-  const [challenge, setChallenge] = useState(null);   // set once the password is right and the account asks for a code
-  const [totpCode, setTotpCode] = useState("");
+  const [challenge, setChallenge] = useState(null);   // set once the password is right and the account asks for a second step
   const [locked, setLocked] = useState(false);       // too many sign-in attempts on this account: new devices are asked to wait
   const [emailing, setEmailing] = useState(false);
   const [code, setCode] = useState("");
@@ -44,7 +44,7 @@ export default function Login() {
     try {
       const result = await login(email.trim(), password);
       if (result?.requiresTotp) {
-        setChallenge(result.challenge);
+        setChallenge({ challenge: result.challenge, methods: result.methods, smsHint: result.smsHint });
       } else if (result?.requiresVerification) {
         setPendingUser(result.user);
         startResendTimer();
@@ -70,19 +70,6 @@ export default function Login() {
       toast.error(err?.response?.data?.detail || "Could not send the link. Try again in a moment.");
     } finally {
       setEmailing(false);
-    }
-  };
-
-  const finishWithCode = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await loginWithCode(challenge, totpCode.trim());
-      nav("/");
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not sign in. Try again.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -131,29 +118,8 @@ export default function Login() {
 
       <div className="flex items-center justify-center p-8">
         {challenge ? (
-        <motion.form initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-          onSubmit={finishWithCode} className="w-full max-w-sm" data-testid="login-totp-form">
-          <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="h-9 w-9 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-5 w-5" /></div>
-            <span className="font-bold text-lg">Life Record</span>
-          </div>
-          <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 grid place-items-center">
-            <ShieldCheck className="h-6 w-6 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
-          </div>
-          <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Enter your code</h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Open your authenticator app and type the 6-digit code for Life Record. Lost your phone? Type one of your recovery codes instead.
-          </p>
-          <label htmlFor="login-totp-code" className="mt-6 block text-sm font-medium text-slate-700 dark:text-slate-300">Code from your app, or a recovery code</label>
-          <Input id="login-totp-code" data-testid="login-totp-code" autoFocus autoComplete="one-time-code" maxLength={20} value={totpCode}
-            onChange={(e) => setTotpCode(e.target.value)} className="mt-1.5 h-12 text-center text-xl tracking-widest" />
-          <Button data-testid="login-totp-submit" type="submit" disabled={loading || totpCode.trim().length < 6} className="w-full h-11 mt-6 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
-          </Button>
-          <button type="button" onClick={() => { setChallenge(null); setTotpCode(""); }} className="mt-4 w-full text-center text-sm font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-300">
-            Back to the password
-          </button>
-        </motion.form>
+        <SecondStep challenge={challenge.challenge} methods={challenge.methods} smsHint={challenge.smsHint}
+          onSignedIn={() => nav("/")} onBack={() => setChallenge(null)} />
         ) : (
         <motion.form initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           onSubmit={submit} className="w-full max-w-sm" data-testid="login-form">

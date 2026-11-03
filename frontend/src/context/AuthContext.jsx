@@ -54,8 +54,7 @@ export function AuthProvider({ children }) {
     return onSignedOutElsewhere(() => {
       setAccessToken(null);
       clearCaches();
-      setUser(false);
-      window.location.href = "/login";
+      window.location.replace("/login"); // one load, no intermediate login screen (see logout)
     });
   }, [user]);
 
@@ -151,8 +150,9 @@ export function AuthProvider({ children }) {
       announceSignedOut();
       clearTokens();
       clearCaches(); // cached page data belongs to the signed-in user only
-      setUser(false);
-      window.location.href = "/login";
+      // No setUser(false) here: it would route to the login page at once and the reload below would then blank it and draw
+      // it a second time (the flash). The reload alone starts clean, with no user in memory.
+      window.location.replace("/login");
     };
     // The server deletes this browser's session, which ends the access token and the refresh cookie everywhere, not just
     // here; sign out locally whatever the answer.

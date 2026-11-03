@@ -40,9 +40,23 @@ export function Card({ className, children, ...props }) {
   );
 }
 
-export function StatCard({ label, value, hint, icon: Icon, accent = "text-slate-900 dark:text-slate-50", testid, className }) {
+export function StatCard({ label, value, hint, icon: Icon, accent = "text-slate-900 dark:text-slate-50", testid, className, loading = false }) {
   // An amount or a percentage is set large; a word (a category name) is set as text, or "Entertainment" outgrows its card.
   const wordy = typeof value === "string" && /[A-Za-z]{4,}/.test(value);
+  if (loading) {
+    // The same card, the same label, the figure and its hint as placeholders of their own size: nothing moves when the number arrives.
+    return (
+      <Card className={cn("p-4 sm:p-5", className)} data-testid={testid} aria-busy="true">
+        <div className="flex items-center justify-between">
+          <Label>{label}</Label>
+          {Icon && <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />}
+        </div>
+        <span aria-hidden="true" className="skeleton mt-2 block h-7 w-28 sm:h-9" />
+        {hint !== undefined && <span aria-hidden="true" className="skeleton mt-1.5 block h-3 w-24" />}
+        <span className="sr-only">Loading {label}</span>
+      </Card>
+    );
+  }
   return (
     <Card className={cn("p-4 sm:p-5 lm-in", className)} data-testid={testid}>
       <div className="flex items-center justify-between">
@@ -68,7 +82,7 @@ export function EmptyState({ icon: Icon, title, sub, action }) {
 
 export function SkeletonCard({ className }) {
   return (
-    <Card className={cn("p-5", className)}>
+    <Card className={cn("p-5", className)} aria-hidden="true">
       <div className="skeleton h-3 w-24" />
       <div className="skeleton h-8 w-32 mt-3" />
       <div className="skeleton h-3 w-20 mt-3" />
@@ -87,13 +101,3 @@ export function Avatar({ name, photo, size = "h-9 w-9" }) {
   );
 }
 
-/** Shown while a page's code is still downloading. Matches the usual page shape so the swap is calm. */
-export function PageSkeleton() {
-  return (
-    <div className="space-y-6" aria-busy="true" aria-label="Loading page">
-      <div className="space-y-2"><div className="skeleton h-8 w-48" /><div className="skeleton h-4 w-72" /></div>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 rounded-2xl" />)}</div>
-      <div className="skeleton h-64 rounded-2xl" />
-    </div>
-  );
-}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Busy, Sk, SkForm } from "@/components/skeletons";
 import { BellRing, Droplets, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -58,7 +59,7 @@ export function RemindersSettings({ timezone }) {
   const [f, setF] = useState(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (data) setF({ enabled: data.enabled, meals: { ...data.meals }, water_by: data.water_by || "" }); }, [data]);
-  if (!f) return <div className="skeleton h-40 rounded-2xl" aria-busy="true" />;
+  if (!f) return <Card className="p-5"><Busy label="Loading your reminders"><Sk className="mb-4 h-5 w-36" /><SkForm n={3} cols={1} /></Busy></Card>;
   const setMeal = (m, v) => setF((x) => ({ ...x, meals: v ? { ...x.meals, [m]: v } : Object.fromEntries(Object.entries(x.meals).filter(([k]) => k !== m)) }));
   const save = async () => {
     setSaving(true);

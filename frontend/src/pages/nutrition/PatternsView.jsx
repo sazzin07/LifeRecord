@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
+import { Busy, Sk, SkChart } from "@/components/skeletons";
 import { Card } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useFetch } from "@/lib/useFetch";
@@ -131,7 +132,7 @@ function Density({ rows, foods }) {
 /** Meal patterns, variety and nutrient density for the period chosen on the Trends tab. */
 export function PatternsView({ view, days, date }) {
   const { data, loading, reload } = useFetch(`/nutrition/patterns?days=${days}&end=${date}`);
-  if (loading) return <div className="space-y-4" aria-busy="true"><div className="skeleton h-24 rounded-2xl" /><div className="skeleton h-48 rounded-2xl" /></div>;
+  if (loading) return <Busy label="Loading your patterns" className="space-y-4"><Card className="p-5"><Sk className="h-5 w-40" /><div className="mt-3 grid grid-cols-3 gap-3">{[0, 1, 2].map((i) => <Sk key={i} className="h-12" />)}</div></Card><Card className="p-5"><SkChart height={160} /></Card></Busy>;
   if (!data) {
     return (
       <Card className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm text-slate-600" role="alert">

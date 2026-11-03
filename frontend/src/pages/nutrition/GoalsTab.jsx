@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Busy, Sk, SkForm } from "@/components/skeletons";
 import { AlertTriangle, ExternalLink, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -29,7 +30,7 @@ function ProfileForm({ profile }) {
     setF({ birth_year: profile.birth_year ?? "", sex: profile.sex ?? NONE, height_cm: profile.height_cm ?? "", weight_kg: profile.weight_kg ?? "", activity: profile.activity ?? NONE,
       pregnancy: profile.pregnancy ?? NONE, diet_tags: profile.diet_tags || [], allergies: (profile.allergies || []).join(", "), timezone: profile.timezone || "" });
   }, [profile]);
-  if (!f) return <div className="skeleton h-64 rounded-2xl" aria-busy="true" />;
+  if (!f) return <Card className="p-5"><Busy label="Loading your profile"><Sk className="mb-4 h-5 w-40" /><SkForm n={6} /></Busy></Card>;
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
   const nullable = (v) => (v === NONE || v === "" ? null : v);
   const save = async (e) => {
@@ -151,7 +152,7 @@ export function GoalsTab() {
         </div>
         {t && t.supported === false ? (
           <div className="flex gap-3 p-5 text-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" /><p>{t.notes[0]}</p></div>
-        ) : !t ? <div className="skeleton m-5 h-48 rounded-2xl" aria-busy="true" /> : (
+        ) : !t ? <Busy label="Loading your targets" className="space-y-3 p-5">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="flex items-center justify-between gap-3"><Sk className="h-3.5 w-32" /><Sk className="h-8 w-24" /></div>)}</Busy> : (
           <>
             {t.notes.length > 0 && <ul className="space-y-1 border-b border-border bg-amber-50/60 px-5 py-3 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{t.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
             <div className="divide-y divide-border">

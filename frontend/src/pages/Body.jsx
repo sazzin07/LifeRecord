@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Busy, ErrorBlock, Sk, SkChart } from "@/components/skeletons";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { Plus, Trash2, Scale, Camera, GitCompare, X, Pencil } from "lucide-react";
 import { api, API, errorMessage, getAccessToken } from "@/lib/api";
@@ -83,8 +84,8 @@ function EditEntryDialog({ entry, kind, onClose }) {
 }
 
 export default function Body() {
-  const { data: weight, loading } = useFetch("/weight");
-  const { data: photos } = useFetch("/photos");
+  const { data: weight, loading, error: weightError, reload: reloadWeight } = useFetch("/weight");
+  const { data: photos, error: photosError, reload: reloadPhotos } = useFetch("/photos");
   const [w, setW] = useState("");
   const [compare, setCompare] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -133,7 +134,9 @@ export default function Body() {
         </div>
       </Card>
 
-      {loading ? <div className="skeleton h-56 rounded-2xl" /> : arr.length === 0 ? (
+      {weightError ? <ErrorBlock what="your weight log" onRetry={reloadWeight} /> : loading ? (
+        <Card className="p-5"><Busy label="Loading weight trend"><Sk className="h-3 w-24" /><SkChart className="mt-3" height={200} /></Busy></Card>
+      ) : arr.length === 0 ? (
         <Card><EmptyState icon={Scale} title="Your body log starts here" sub="Record your weight to see your trend over time." /></Card>
       ) : (
         <Card className="p-5">
@@ -171,8 +174,12 @@ export default function Body() {
           </div>
         )}
 
-        {photos === null ? (
-          <div className="skeleton h-40 rounded-2xl" aria-busy="true" />
+        {photosError && photos === null ? (
+          <ErrorBlock what="your photos" onRetry={reloadPhotos} />
+        ) : photos === null ? (
+          <Busy label="Loading photos" className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            {Array.from({ length: 6 }, (_, i) => <Sk key={i} className="aspect-[3/4] w-full !rounded-lg" />)}
+          </Busy>
         ) : pics.length === 0 ? (
           <EmptyState icon={Camera} title="No progress photos yet" sub="Add a photo to start tracking your progress visually. Tap two photos to compare them." />
         ) : (

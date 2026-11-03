@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { Busy, SkRows } from "@/components/skeletons";
 import { Dumbbell, Trash2, Trophy, Sparkles, Play, Pencil } from "lucide-react";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api } from "@/lib/api";
@@ -80,7 +81,7 @@ export default function Fitness() {
       <Card>
         <div className="p-5 pb-3"><h3 className="font-semibold">Session history</h3></div>
         {!loaded ? (
-          <div className="skeleton m-5 mt-0 h-40 rounded-2xl" aria-busy="true" />
+          <Busy label="Loading your sessions" className="px-5 pb-4"><SkRows n={3} lead="square" figure={false} /></Busy>
         ) : history.length === 0 ? (
           <EmptyState icon={Dumbbell} title="Your training history starts here" sub="Log your first session to build up your personal-best records."
             action={<Button onClick={() => setLogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Play className="h-4 w-4 mr-1" />Log session</Button>} />

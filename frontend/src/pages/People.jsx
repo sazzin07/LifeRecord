@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Busy, ErrorBlock, Sk } from "@/components/skeletons";
 import { Amount } from "@/pages/people/Amount";
 import { DebtDialog } from "@/pages/people/DebtDialog";
 import { PersonProfile } from "@/pages/people/PersonProfile";
@@ -103,7 +104,7 @@ export default function People() {
   const reduce = useReducedMotion();
   const { id: profileId } = useParams();
   const location = useLocation();
-  const { data: people, loading } = useFetch("/people");
+  const { data: people, loading, error: peopleError, reload: reloadPeople } = useFetch("/people");
   const { data: overview } = useFetch("/debts/overview");
   const [view, setView] = useState("active");
   const { data: archived } = useFetch(view === "archived" ? "/debts/archived" : null);
@@ -196,13 +197,13 @@ export default function People() {
             <div key={key} className="min-w-0 p-4 sm:p-5" data-testid={testid}>
               <p className="ppl-muted flex items-center gap-1.5 text-sm"><Icon className={cn("h-4 w-4", tone)} aria-hidden="true" />{label}</p>
               <p className={cn("mt-2 whitespace-nowrap text-2xl sm:text-3xl font-semibold tracking-tight", tone)}>
-                {loading && !overview ? <span className="skeleton inline-block h-8 w-28 align-middle" aria-hidden="true" /> : <Amount value={value || 0} className="stat-num" compact />}
+                {!overview ? <Sk className="inline-block h-8 w-28 align-middle" /> : <Amount value={value || 0} className="stat-num" compact />}
               </p>
               <p className="ppl-muted mt-1 text-xs">Added up across everyone</p>
             </div>
           ))}
           <p className="ppl-muted col-span-2 border-t border-[var(--ppl-line)] px-4 py-2.5 text-xs sm:px-5" data-testid="people-with-balance">
-            {withBalance} of {overview?.people ?? 0} {(overview?.people ?? 0) === 1 ? "person has" : "people have"} a balance
+            {overview ? <>{withBalance} of {overview.people ?? 0} {(overview.people ?? 0) === 1 ? "person has" : "people have"} a balance</> : <Sk className="h-3.5 w-44" />}
           </p>
         </div>
         <div className="min-w-0 p-1" data-testid="people-recent">
@@ -249,8 +250,20 @@ export default function People() {
           </div>
         )}
 
-        {loading && !people ? (
-          <div className="ppl-solid divide-y divide-[var(--ppl-line)]" aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="flex items-center gap-3 p-4"><div className="skeleton h-10 w-10 rounded-full" /><div className="skeleton h-4 w-40" /></div>)}</div>
+        {peopleError && !people ? (
+          <ErrorBlock what="the people" onRetry={reloadPeople} className="ppl-solid" />
+        ) : loading && !people ? (
+          // The list's own shape: a checkbox cell, the avatar and a name, the two balance columns, the two action buttons.
+          <Busy label="Loading people" className="ppl-solid divide-y divide-[var(--ppl-line)]">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} aria-hidden="true" className={cn("grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-3 sm:px-4", COLUMNS)}>
+                <Sk className="h-4 w-4 justify-self-center" />
+                <div className="flex min-w-0 items-center gap-3"><Sk className="h-10 w-10 shrink-0 !rounded-full" /><Sk className={i % 2 ? "h-4 w-32" : "h-4 w-40"} /></div>
+                <div className="col-start-2 grid grid-cols-2 gap-3 sm:contents"><Sk className="h-8 w-24" /><Sk className="h-8 w-24" /></div>
+                <div className="col-start-2 flex gap-1.5 sm:col-start-auto sm:justify-end"><Sk className="h-8 w-16 !rounded-lg" /><Sk className="h-8 w-24 !rounded-lg" /></div>
+              </div>
+            ))}
+          </Busy>
         ) : rows.length === 0 ? (
           <div className="ppl-solid flex flex-col items-center px-6 py-14 text-center">
             <span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl" style={{ background: "var(--ppl-teal-tint)" }}><Users className="ppl-teal h-6 w-6" aria-hidden="true" /></span>

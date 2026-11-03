@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Busy, Sk, SkRows } from "@/components/skeletons";
 import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CalendarCheck, CalendarPlus, Check, ChevronLeft, ChevronRight, Copy, Loader2, MoreHorizontal, Pencil, Plus, ShoppingCart, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -197,7 +198,9 @@ export function PlanTab({ anchor, today, onAdd, onEdit }) {
       <p className="flex items-start gap-2 text-sm text-slate-500 dark:text-slate-400"><CalendarCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />Planned food is separate from your diary: it only counts once you tap "I ate this". Totals use the nutrients saved when you planned it.</p>
 
       {!plan ? (
-        <div className="grid gap-4 lg:grid-cols-2" aria-busy="true">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-36 rounded-2xl" />)}</div>
+        <Busy label="Loading your plan" className="grid gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => <Card key={i} className="p-4" aria-hidden="true"><div className="flex items-center justify-between"><Sk className="h-4 w-28" /><Sk className="h-3 w-14" /></div><SkRows n={2} lead="square" figure={false} className="mt-2" /></Card>)}
+        </Busy>
       ) : (
         <>
           {total === 0 && (

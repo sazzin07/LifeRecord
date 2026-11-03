@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Busy } from "@/components/skeletons";
 import { Check, Fingerprint, LifeBuoy, MessageSquareText, Pencil, Plus, ShieldCheck, ShieldOff, Smartphone, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -195,7 +196,7 @@ export function TwoFactor() {
       </p>
 
       {status === null ? (
-        <div className="mt-4 space-y-2" aria-hidden="true">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-[68px] rounded-xl" />)}</div>
+        <Busy label="Loading sign-in methods" className="mt-4 space-y-2">{[0, 1, 2].map((i) => <div key={i} aria-hidden="true" className="skeleton h-[68px] rounded-xl" />)}</Busy>
       ) : (
         <ul className="mt-4 space-y-2.5">
           <Method icon={Fingerprint} title="Passkeys and security keys" testId="method-passkey" state={has("passkey") ? `${status.passkeys.length} added` : ""}

@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { useFetch } from "@/lib/useFetch";
 import { eur } from "@/lib/api";
-import { Card, StatCard, SkeletonCard, Label } from "@/components/common";
+import { Card, StatCard, Label } from "@/components/common";
+import { Resolve, Sk, SkRows } from "@/components/skeletons";
 import { openAI } from "@/components/AppShell";
 import { ReminderBanner } from "@/pages/nutrition/Reminders";
 import { cn } from "@/lib/utils";
@@ -33,16 +34,40 @@ function Ring({ value, max, color = "#10B981", label, unit }) {
   );
 }
 
+/** A figure in the dark hero that is still on its way: a pale block of the figure's own size (it would not show on the dark card as a grey one). */
+function HeroFigure({ className, label }) {
+  if (label) return <span>{label}</span>;
+  return <span aria-hidden="true" className={`skeleton block !bg-white/15 ${className}`} />;
+}
+
+/** The four rings of "Nutrition today", empty: same size, same labels' place. */
+function RingsSkeleton() {
+  return (
+    <div>
+      <div className="grid grid-cols-4 gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex flex-col items-center">
+            <span aria-hidden="true" className="skeleton block h-[76px] w-[76px] !rounded-full" />
+            <Sk className="mt-1.5 h-3 w-10" />
+          </div>
+        ))}
+      </div>
+      <Sk className="mt-3 h-3 w-48" />
+    </div>
+  );
+}
+
 export default function Home() {
   const nav = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
-  const { data: sum, loading } = useFetch("/analytics/summary");
-  const { data: tasks } = useFetch("/tasks");
-  const { data: people } = useFetch("/people");
+  // Seven requests, seven independent sections: each one draws as soon as ITS data is here, and none waits for the slowest.
+  const { data: sum, error: sumError, reload: reloadSum } = useFetch("/analytics/summary");
+  const { data: tasks, error: tasksError, reload: reloadTasks } = useFetch("/tasks");
+  const { data: people, error: peopleError, reload: reloadPeople } = useFetch("/people");
   const { data: weight } = useFetch("/weight");
-  const { data: day } = useFetch("/nutrition/day"); // the same day, targets and time zone the Nutrition page uses
-  const { data: groceries } = useFetch("/groceries");
-  const { data: transactions } = useFetch(`/transactions?start=${today}&end=${today}`);
+  const { data: day, error: dayError, reload: reloadDay } = useFetch("/nutrition/day"); // the same day, targets and time zone the Nutrition page uses
+  const { data: groceries, error: groceriesError, reload: reloadGroceries } = useFetch("/groceries");
+  const { data: transactions, error: txnsError, reload: reloadTxns } = useFetch(`/transactions?start=${today}&end=${today}`);
 
   const nutri = useMemo(() => {
     const t = day?.totals || {};
@@ -55,6 +80,8 @@ export default function Home() {
     };
   }, [day]);
 
+  const sumWait = !sum && !sumError, dayWait = !day && !dayError, peopleWait = !people && !peopleError;
+  const tasksWait = !tasks && !tasksError, groceriesWait = !groceries && !groceriesError, txnsWait = !transactions && !txnsError;
   const lowStock = (groceries || []).filter((g) => g.low_threshold && g.quantity <= g.low_threshold);
   const openTasks = (tasks || []).filter((t) => !t.done);
   const todaysTxns = useMemo(() => {
@@ -87,23 +114,20 @@ export default function Home() {
     return out.slice(0, 4);
   }, [sum, people, nutri, weight]);
 
-  if (loading || !tasks || !people || !weight || !day || !groceries || !transactions) return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}</div>
-  );
-
   return (
     <div className="space-y-6">
       {/* Hero */}
+      {sumError && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300" data-testid="home-summary-error">The balances could not be loaded. <button type="button" onClick={reloadSum} className="font-medium underline underline-offset-2">Try again</button></p>}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
         className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950 text-white p-6 md:p-8 relative overflow-hidden">
         <div className="absolute -top-20 -right-16 h-72 w-72 rounded-full bg-emerald-500/20 blur-3xl" />
         <div className="relative">
           <p className="text-slate-300 text-sm">Total available</p>
-          <div className="stat-num text-4xl md:text-5xl font-extrabold tracking-tight mt-1">{eur(sum?.total_available)}</div>
+          <div className="stat-num text-4xl md:text-5xl font-extrabold tracking-tight mt-1">{sum ? eur(sum.total_available) : <HeroFigure className="h-10 w-56 md:h-12" label={sumError ? "—" : null} />}</div>
           <div className="flex flex-wrap gap-6 mt-5">
-            <div><Label><span className="text-slate-400">Cash</span></Label><div className="stat-num font-bold text-lg">{eur(sum?.cash_available)}</div></div>
-            <div><Label><span className="text-slate-400">Revolut</span></Label><div className="stat-num font-bold text-lg">{eur(sum?.revolut)}</div></div>
-            <div><Label><span className="text-slate-400">Owed to you</span></Label><div className="stat-num font-bold text-lg text-emerald-400">{eur(sum?.owed_to_me)}</div></div>
+            <div><Label><span className="text-slate-400">Cash</span></Label><div className="stat-num font-bold text-lg">{sum ? eur(sum.cash_available) : <HeroFigure className="h-6 w-20" label={sumError ? "—" : null} />}</div></div>
+            <div><Label><span className="text-slate-400">Revolut</span></Label><div className="stat-num font-bold text-lg">{sum ? eur(sum.revolut) : <HeroFigure className="h-6 w-20" label={sumError ? "—" : null} />}</div></div>
+            <div><Label><span className="text-slate-400">Owed to you</span></Label><div className="stat-num font-bold text-lg text-emerald-400">{sum ? eur(sum.owed_to_me) : <HeroFigure className="h-6 w-20" label={sumError ? "—" : null} />}</div></div>
           </div>
           <button data-testid="hero-ask-ai" onClick={() => openAI()}
             className="mt-6 inline-flex items-center gap-2 rounded-full glass border border-white/20 px-4 py-2 text-sm font-medium hover:bg-white/10 transition-colors">
@@ -113,7 +137,10 @@ export default function Home() {
       </motion.div>
 
       {/* Insights */}
-      {insights.length > 0 && (
+      {(sumWait || peopleWait || dayWait || !weight) && !sumError && (
+        <Card className="p-5" aria-hidden="true"><Sk className="mb-3 h-4 w-44" /><div className="grid gap-2 sm:grid-cols-2"><Sk className="h-10 rounded-xl" /><Sk className="h-10 rounded-xl" /></div></Card>
+      )}
+      {!sumWait && !peopleWait && !dayWait && weight && insights.length > 0 && (
         <Card className="p-5 lm-in">
           <div className="flex items-center gap-2 mb-3">
             <Lightbulb className="h-4 w-4 text-amber-500" />
@@ -146,10 +173,10 @@ export default function Home() {
 
       {/* Stat grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard testid="stat-spent" label="Spent (all)" value={eur(sum?.gross)} hint={`Your share ${eur(sum?.personal)}`} icon={TrendingDown} />
-        <StatCard testid="stat-owed" label="You are owed" value={eur(sum?.owed_to_me)} hint={`You owe ${eur(sum?.i_owe)}`} icon={Users} accent="text-emerald-600 dark:text-emerald-400" />
-        <StatCard testid="stat-weight" label="Current weight" value={lastW ? `${lastW.weight} kg` : "—"} hint={wDelta ? `${wDelta > 0 ? "+" : ""}${wDelta} kg vs last` : "No data"} icon={Scale} />
-        <StatCard testid="stat-tasks" label="Open tasks" value={openTasks.length} hint={`${(tasks || []).length} total today`} icon={CheckSquare} />
+        <StatCard testid="stat-spent" label="Spent (all)" loading={sumWait} value={sum ? eur(sum.gross) : "—"} hint={sum ? `Your share ${eur(sum.personal)}` : ""} icon={TrendingDown} />
+        <StatCard testid="stat-owed" label="You are owed" loading={sumWait} value={sum ? eur(sum.owed_to_me) : "—"} hint={sum ? `You owe ${eur(sum.i_owe)}` : ""} icon={Users} accent="text-emerald-600 dark:text-emerald-400" />
+        <StatCard testid="stat-weight" label="Current weight" loading={!weight} value={lastW ? `${lastW.weight} kg` : "—"} hint={wDelta ? `${wDelta > 0 ? "+" : ""}${wDelta} kg vs last` : "No data"} icon={Scale} />
+        <StatCard testid="stat-tasks" label="Open tasks" loading={tasksWait} value={openTasks.length} hint={`${(tasks || []).length} total today`} icon={CheckSquare} />
       </div>
 
       {/* Widgets */}
@@ -159,13 +186,15 @@ export default function Home() {
             <div className="flex items-center gap-2"><Utensils className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Nutrition today</h3></div>
             <button onClick={() => nav("/nutrition")} aria-label="Open Nutrition" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
-          <div className="grid grid-cols-4 gap-1">
-            <Ring value={nutri.cal} max={nutri.calMax} color="#10B981" label="kcal" />
-            <Ring value={nutri.p} max={nutri.pMax} color="#6366F1" label="Protein" />
-            <Ring value={nutri.c} max={nutri.cMax} color="#F59E0B" label="Carbs" />
-            <Ring value={nutri.f} max={nutri.fMax} color="#EF4444" label="Fat" />
-          </div>
-          <p className="mt-3 text-xs text-slate-500">{day.energy_target ? `Reference ${Math.round(day.energy_target)} kcal` : "No energy reference yet"} · grams for the macros</p>
+          <Resolve loading={dayWait} error={dayError} onRetry={reloadDay} label="Loading nutrition" what="today's nutrition" skeleton={<RingsSkeleton />}>
+            <div className="grid grid-cols-4 gap-1">
+              <Ring value={nutri.cal} max={nutri.calMax} color="#10B981" label="kcal" />
+              <Ring value={nutri.p} max={nutri.pMax} color="#6366F1" label="Protein" />
+              <Ring value={nutri.c} max={nutri.cMax} color="#F59E0B" label="Carbs" />
+              <Ring value={nutri.f} max={nutri.fMax} color="#EF4444" label="Fat" />
+            </div>
+            <p className="mt-3 text-xs text-slate-500">{day?.energy_target ? `Reference ${Math.round(day.energy_target)} kcal` : "No energy reference yet"} · grams for the macros</p>
+          </Resolve>
         </Card>
 
         <Card className="p-5 lm-in">
@@ -173,6 +202,7 @@ export default function Home() {
             <div className="flex items-center gap-2"><Users className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">People</h3></div>
             <button onClick={() => nav("/people")} aria-label="Open People" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
+          <Resolve loading={peopleWait} error={peopleError} onRetry={reloadPeople} label="Loading people" what="people" skeleton={<SkRows n={3} lead={null} rowClass="py-2" />}>
           <div className="space-y-2">
             {(people || []).filter((p) => p.owes_me > 0 || p.i_owe > 0).slice(0, 4).map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
@@ -185,6 +215,7 @@ export default function Home() {
             ))}
             {(people || []).filter((p) => p.owes_me > 0 || p.i_owe > 0).length === 0 && <p className="text-sm text-slate-500">No outstanding balances.</p>}
           </div>
+          </Resolve>
         </Card>
 
         <Card className="p-5 lm-in">
@@ -192,6 +223,7 @@ export default function Home() {
             <div className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Groceries</h3></div>
             <button onClick={() => nav("/groceries")} aria-label="Open Groceries" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
+          <Resolve loading={groceriesWait} error={groceriesError} onRetry={reloadGroceries} label="Loading groceries" what="groceries" skeleton={<div className="flex gap-6">{[0, 1, 2].map((i) => <div key={i} className="space-y-1.5"><Sk className="h-7 w-10" /><Sk className="h-3 w-16" /></div>)}</div>}>
           <div className="flex gap-6">
             <div><div className="stat-num text-2xl font-extrabold">{(groceries || []).length}</div><Label>In inventory</Label></div>
             <div><div className="stat-num text-2xl font-extrabold text-amber-500">{lowStock.length}</div><Label>Low stock</Label></div>
@@ -208,6 +240,7 @@ export default function Home() {
               ))}
             </div>
           )}
+          </Resolve>
         </Card>
       </div>
 
@@ -217,6 +250,7 @@ export default function Home() {
           <div className="flex items-center gap-2"><CheckSquare className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Today's tasks</h3></div>
           <button onClick={() => nav("/tasks")} className="text-sm text-emerald-600 font-medium inline-flex items-center gap-1">Open <ArrowUpRight className="h-3.5 w-3.5" /></button>
         </div>
+        <Resolve loading={tasksWait} error={tasksError} onRetry={reloadTasks} label="Loading tasks" what="tasks" skeleton={<div className="space-y-2.5">{[0, 1, 2].map((i) => <div key={i} className="flex items-center gap-3"><Sk className="h-2 w-2 rounded-full" /><Sk className={i === 1 ? "h-3.5 w-2/5" : "h-3.5 w-3/5"} /></div>)}</div>}>
         <div className="space-y-1.5">
           {openTasks.slice(0, 5).map((t) => (
             <div key={t.id} className="flex items-center gap-3 text-sm">
@@ -226,6 +260,7 @@ export default function Home() {
           ))}
           {openTasks.length === 0 && <p className="text-sm text-slate-500">All done for today. Nice.</p>}
         </div>
+        </Resolve>
       </Card>
 
       {/* Today's transactions */}
@@ -234,6 +269,7 @@ export default function Home() {
           <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Today's transactions</h3></div>
           <button onClick={() => nav("/money")} className="text-sm text-emerald-600 font-medium inline-flex items-center gap-1">Money <ArrowUpRight className="h-3.5 w-3.5" /></button>
         </div>
+        <Resolve loading={txnsWait} error={txnsError} onRetry={reloadTxns} label="Loading today's transactions" what="today's transactions" skeleton={<SkRows n={3} lead="square" rowClass="py-1.5" />}>
         {todaysTxns.length === 0 ? (
           <p className="text-sm text-slate-500">No transactions yet today.</p>
         ) : (
@@ -271,6 +307,7 @@ export default function Home() {
             </div>
           </>
         )}
+        </Resolve>
       </Card>
     </div>
   );

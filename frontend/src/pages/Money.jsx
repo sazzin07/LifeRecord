@@ -20,6 +20,7 @@ import { EditExpenseDialog } from "@/components/EditExpenseDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { FirstAccounts } from "@/components/FirstAccounts";
+import { ErrorBlock, Resolve, Sk, SkChart } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -100,13 +101,14 @@ export default function Money() {
   const seed = useMemo(() => {
     const m = moneyPaths(moneyPeriod);
     const s0 = peekQuery(m.summary);
-    return s0 ? { sum: s0, txns: peekQuery(m.transactions) || [], categories: peekQuery(m.categories) || [] } : null;
+    return s0 ? { sum: s0, txns: peekQuery(m.transactions) ?? null, categories: peekQuery(m.categories) || [] } : null;
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps -- only the first paint reads it
   const [sum, setSum] = useState(seed?.sum ?? null);
-  const [txns, setTxns] = useState(seed?.txns ?? []);
+  const [txns, setTxns] = useState(seed?.txns ?? null);          // null = not here yet (a skeleton), [] = here and empty (an empty state)
   const [categories, setCategories] = useState(seed?.categories ?? []);
   const [accounts, setAccounts] = useState(seed?.sum?.accounts ?? []);
-  const [loading, setLoading] = useState(!seed);
+  const [sumError, setSumError] = useState(false);
+  const [txnsError, setTxnsError] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editTxn, setEditTxn] = useState(null);
   const [deleteTxnId, setDeleteTxnId] = useState(null);
@@ -122,23 +124,26 @@ export default function Money() {
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const scrollRef = useRef(null);
 
-  const load = useCallback(async ({ force = true } = {}) => {
+  // Three requests, three independent parts of the page: the summary (every card and chart), the transactions (the list) and the categories (the
+  // filter). Each lands when it lands. A view that was seen before shows at once from the cache; one that was not shows skeletons, only where
+  // its own data is missing, and a request that fails says so with a way to retry (never a skeleton that waits for ever).
+  const viewKey = useRef(null);
+  const reqId = useRef(0);
+  const load = useCallback(({ force = true } = {}) => {
     const m = moneyPaths(period, pm);
-    // Switching filter: show that filter's last-seen data right away if we have it.
-    const cs = peekQuery(m.summary);
-    if (cs) { setSum(cs); setAccounts(cs.accounts || []); const ct = peekQuery(m.transactions); if (ct) setTxns(ct); }
-    else setLoading(true);
-    try {
-      const [s, t, c] = await Promise.all([
-        fetchQuery(m.summary, { force }),
-        fetchQuery(m.transactions, { force }),
-        fetchQuery(m.categories, { force }),
-      ]);
-      setSum(s);
-      setTxns(t);
-      setCategories(c);
-      setAccounts(s.accounts || []);
-    } finally { setLoading(false); }
+    const key = `${m.summary}|${m.transactions}`;
+    const id = ++reqId.current;
+    if (viewKey.current !== key) {            // another view: its last-seen copy, or nothing yet (never the previous view's numbers)
+      viewKey.current = key;
+      const cs = peekQuery(m.summary);
+      setSum(cs || null); setAccounts(cs?.accounts || []);
+      setTxns(peekQuery(m.transactions) ?? null);
+      setSumError(false); setTxnsError(false);
+    }
+    const mine = (apply) => (value) => { if (id === reqId.current) apply(value); };
+    fetchQuery(m.summary, { force }).then(mine((s) => { setSum(s); setAccounts(s.accounts || []); setSumError(false); })).catch(mine(() => setSumError(true)));
+    fetchQuery(m.transactions, { force }).then(mine((t) => { setTxns(t); setTxnsError(false); })).catch(mine(() => setTxnsError(true)));
+    fetchQuery(m.categories, { force }).then(mine(setCategories)).catch(() => {});   // only fills the category filter: nothing to announce
   }, [period, pm]);
 
   useEffect(() => {
@@ -155,7 +160,7 @@ export default function Money() {
     toast.success("Deleted");
     refreshAll();
   };
-  const txnToDelete = txns.find((t) => t.id === deleteTxnId);
+  const txnToDelete = (txns || []).find((t) => t.id === deleteTxnId);
   const deletingPlace = accounts.find((a) => a.id === deleteAccountId);
 
   const { roots: accountRoots, byId: accountById } = useMemo(() => buildAccountTree(accounts), [accounts]);
@@ -177,7 +182,8 @@ export default function Money() {
   }, [sum, curYM]);
 
   const filteredExpenses = useMemo(() => {
-    let rows = typeFilter === "all" ? [...txns] : txns.filter((t) => t.type === typeFilter);
+    const all = txns || [];
+    let rows = typeFilter === "all" ? [...all] : all.filter((t) => t.type === typeFilter);
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter((t) =>
@@ -388,12 +394,12 @@ export default function Money() {
     );
   };
 
+  const sumWait = !sum && !sumError;
   const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
   const openBudgets = () => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); };
   const lockedTotal = (sum?.cash_locked || 0) + (sum?.revolut_locked || 0);
   const catTotal = (sum?.by_category || []).reduce((a, c) => a + c.value, 0);
-  const rise = (i) => ({ "--i": i });
 
   return (
     <div className="mny-theme mny-stage space-y-4 sm:space-y-5">
@@ -435,21 +441,19 @@ export default function Money() {
         })}
       </div>
 
-      {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12" aria-busy="true" aria-label="Loading money">
-          <div className="mny-card p-5 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-12 w-48" /><div className="skeleton mt-4 h-3 w-32" /></div>
-          <div className="mny-card p-5 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-20 w-full" /><div className="skeleton mt-3 h-20 w-full" /></div>
-          <div className="mny-card p-5 md:col-span-2 lg:col-span-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-4 h-28 w-full" /></div>
-          <div className="mny-card p-5 md:col-span-2 lg:col-span-12"><div className="skeleton h-3 w-32" /><div className="skeleton mt-4 h-48 w-full" /></div>
-        </div>
-      ) : (
+      {(
         <>
-          {accounts.length === 0 && <FirstAccounts />}
+          {sum && accounts.length === 0 && <FirstAccounts />}
 
+          {sumError && !sum ? (
+            <ErrorBlock what="the figures" onRetry={() => load({ force: true })} className="min-h-[16rem]" />
+          ) : (
+          <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
             {/* The total, and where money left the bank */}
-            <div className="flex flex-col gap-4 lg:col-span-4">
-              <section className="mny-card mny-hero mny-in p-5 sm:p-6" style={rise(0)} aria-labelledby="mny-total-h">
+            <Resolve loading={sumWait} label="Loading balances" what="the balances" className="flex flex-col gap-4 lg:col-span-4"
+              skeleton={<><HeroSk /><FlowSk /></>}>
+              <section className="mny-card mny-hero p-5 sm:p-6" aria-labelledby="mny-total-h">
                 <h3 id="mny-total-h" className="mny-muted text-sm font-medium">Total available now</h3>
                 <p data-testid="money-total" className="mny-num mny-title mt-2 break-words text-4xl font-medium sm:text-5xl">{eur(sum?.total_available)}</p>
                 {lockedTotal > 0 && <p className="mny-amber mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
@@ -463,7 +467,7 @@ export default function Money() {
                 </div>
               </section>
 
-              <section className="mny-card mny-in flex-1 p-5" style={rise(1)} aria-labelledby="mny-flow-h">
+              <section className="mny-card flex-1 p-5" aria-labelledby="mny-flow-h">
                 <h3 id="mny-flow-h" className="mny-title text-base font-semibold">Where it went</h3>
                 <div className="mt-3 space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
@@ -482,10 +486,11 @@ export default function Money() {
                   </div>
                 </div>
               </section>
-            </div>
+            </Resolve>
 
             {/* The three accounts */}
-            <section className="mny-card mny-in p-5 lg:col-span-4" style={rise(2)} aria-labelledby="mny-accounts-h">
+            <Resolve loading={sumWait} label="Loading accounts" what="the accounts" className="lg:col-span-4" skeleton={<AccountsSk />}>
+            <section className="mny-card p-5" aria-labelledby="mny-accounts-h">
               <h3 id="mny-accounts-h" className="mny-title mb-3 text-base font-semibold">Accounts</h3>
               <div className="space-y-3">
                 <AccountRow
@@ -514,9 +519,11 @@ export default function Money() {
                 </AccountRow>
               </div>
             </section>
+            </Resolve>
 
             {/* The period in four tiles, then the pace */}
-            <section className="mny-card mny-in p-5 md:col-span-2 lg:col-span-4" style={rise(3)} aria-labelledby="mny-period-h">
+            <Resolve loading={sumWait} label="Loading this period" what="this period" className="md:col-span-2 lg:col-span-4" skeleton={<PeriodSk />}>
+            <section className="mny-card p-5" aria-labelledby="mny-period-h">
               <h3 id="mny-period-h" className="mny-title text-base font-semibold">This period</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 {[
@@ -542,11 +549,13 @@ export default function Money() {
                 ))}
               </div>
             </section>
+            </Resolve>
           </div>
 
           {/* Spending over time, and where it went by category */}
           <div className="grid gap-4 lg:grid-cols-12">
-            <section className="mny-card mny-in p-5 lg:col-span-8" style={rise(4)} aria-labelledby="mny-time-h">
+            <Resolve loading={sumWait} label="Loading the spending chart" what="the chart" className="lg:col-span-8" skeleton={<ChartCardSk />}>
+            <section className="mny-card p-5" aria-labelledby="mny-time-h">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 id="mny-time-h" className="mny-title text-base font-semibold">Spending over time</h3>
                 <div className="flex items-center gap-2">
@@ -572,8 +581,10 @@ export default function Money() {
                 </ResponsiveContainer>
               ) : <p className="mny-muted mt-12 text-center text-sm">No spending in this period.</p>}
             </section>
+            </Resolve>
 
-            <section className="mny-card mny-in p-5 lg:col-span-4" style={rise(5)} aria-labelledby="mny-cat-h">
+            <Resolve loading={sumWait} label="Loading categories" what="the categories" className="lg:col-span-4" skeleton={<CategoryCardSk />}>
+            <section className="mny-card p-5" aria-labelledby="mny-cat-h">
               <h3 id="mny-cat-h" className="mny-title text-base font-semibold">By category</h3>
               {sum?.by_category?.length ? (
                 <>
@@ -596,10 +607,12 @@ export default function Money() {
                 </>
               ) : <p className="mny-muted mt-10 text-center text-sm">No data.</p>}
             </section>
+            </Resolve>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <section className="mny-card mny-in p-5" style={rise(6)} aria-labelledby="mny-merch-h">
+            <Resolve loading={sumWait} label="Loading top merchants" what="the merchants" skeleton={<ListCardSk n={4} />}>
+            <section className="mny-card p-5" aria-labelledby="mny-merch-h">
               <h3 id="mny-merch-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Store className="h-4 w-4" aria-hidden="true" /> Top merchants</h3>
               {sum?.top_merchants?.length ? (
                 <ul className="mt-3 space-y-2.5">
@@ -612,8 +625,10 @@ export default function Money() {
                 </ul>
               ) : <p className="mny-muted mt-6 text-center text-sm">No data.</p>}
             </section>
+            </Resolve>
 
-            <section className="mny-card mny-in p-5" style={rise(7)} aria-labelledby="mny-inex-h">
+            <Resolve loading={sumWait} label="Loading income and expense" what="income and expense" skeleton={<InexSk />}>
+            <section className="mny-card p-5" aria-labelledby="mny-inex-h">
               <h3 id="mny-inex-h" className="mny-title text-base font-semibold">Income vs expense</h3>
               <div className="mt-3 grid grid-cols-3 gap-3 text-center">
                 <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Income</p><p className="mny-num mny-green truncate text-base font-semibold">{eur(sum?.income)}</p></div>
@@ -630,11 +645,12 @@ export default function Money() {
                 </BarChart>
               </ResponsiveContainer>
             </section>
+            </Resolve>
           </div>
 
           {/* Budget progress */}
           {sum?.by_category?.some((c) => c.budget) && (
-            <section className="mny-card mny-in p-5" style={rise(8)} aria-labelledby="mny-budget-h">
+            <section className="mny-card sk-reveal p-5" aria-labelledby="mny-budget-h">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <h3 id="mny-budget-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Target className="h-4 w-4" aria-hidden="true" /> Category budgets</h3>
                 <button type="button" className="mny-pill sm" onClick={openBudgets}>Edit</button>
@@ -660,8 +676,11 @@ export default function Money() {
             </section>
           )}
 
+          </>
+          )}
+
           {/* Transactions */}
-          <section className="mny-card mny-in overflow-hidden" style={rise(9)} aria-labelledby="mny-txn-h">
+          <section className="mny-card overflow-hidden" aria-labelledby="mny-txn-h">
             <div className="flex flex-col justify-between gap-3 p-5 pb-3 xl:flex-row xl:items-center">
               <h3 id="mny-txn-h" className="mny-title text-base font-semibold">Transactions</h3>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -697,6 +716,8 @@ export default function Money() {
               </div>
             </div>
 
+            <Resolve loading={txns === null && !txnsError} error={txnsError && txns === null} onRetry={() => load({ force: true })} label="Loading transactions" what="the transactions"
+              skeleton={<TxnListSk />} errorClassName="m-5">
             {groupedExpenses.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
                 <span className="mny-badge !h-14 !w-14"><Wallet className="h-6 w-6" aria-hidden="true" /></span>
@@ -758,6 +779,7 @@ export default function Money() {
                 ))}
               </div>
             )}
+            </Resolve>
           </section>
         </>
       )}
@@ -891,6 +913,111 @@ function ChartTip({ active, payload }) {
     <div className="mny-tip">
       <p className="mny-muted text-xs">{day}</p>
       <p className="mny-num mt-0.5 text-base font-semibold">{eur(p.value)}</p>
+    </div>
+  );
+}
+
+/* Each skeleton is the card it stands for, empty: the same padding and the same row heights, so nothing moves when the figures arrive. */
+const SkCardBox = ({ children, className = "" }) => <div className={`mny-card p-5 ${className}`} aria-hidden="true">{children}</div>;
+
+function HeroSk() {
+  return (
+    <div className="mny-card mny-hero p-5 sm:p-6" aria-hidden="true">
+      <Sk className="h-4 w-36" />
+      <Sk className="mt-3 h-10 w-52 sm:h-12" />
+      <div className="mt-5 grid grid-cols-3 gap-2">{[0, 1, 2].map((i) => <div key={i} className="mny-tile px-1.5 py-2"><Sk className="mx-auto h-3 w-8" /><Sk className="mx-auto mt-1.5 h-4 w-14" /></div>)}</div>
+    </div>
+  );
+}
+function FlowSk() {
+  return (
+    <SkCardBox className="flex-1">
+      <Sk className="h-5 w-28" />
+      <div className="mt-3 space-y-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1.5"><Sk className="h-3.5 w-24" /><Sk className="h-3 w-44 max-w-full" /></div>
+            <Sk className="h-6 w-20 shrink-0" />
+          </div>
+        ))}
+      </div>
+    </SkCardBox>
+  );
+}
+function AccountsSk() {
+  return (
+    <SkCardBox>
+      <Sk className="mb-3 h-5 w-24" />
+      <div className="space-y-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="mny-tile flex flex-col gap-2.5 p-3.5">
+            <div className="flex items-center gap-3"><Sk className="h-10 w-10 shrink-0 !rounded-full" /><Sk className="h-4 w-32 flex-1" /><Sk className="h-6 w-20 shrink-0" /></div>
+            <div className="flex items-center justify-between"><Sk className="h-3 w-40" /><div className="flex gap-1"><Sk className="h-8 w-8 !rounded-full" /><Sk className="h-8 w-8 !rounded-full" /></div></div>
+          </div>
+        ))}
+      </div>
+    </SkCardBox>
+  );
+}
+function PeriodSk() {
+  return (
+    <SkCardBox>
+      <Sk className="h-5 w-28" />
+      <div className="mt-3 grid grid-cols-2 gap-3">{[0, 1, 2, 3].map((i) => <div key={i} className="mny-tile p-3"><Sk className="h-3 w-16" /><Sk className="mt-2 h-6 w-20" /><Sk className="mt-1.5 h-3 w-24" /></div>)}</div>
+      <div className="mny-hair mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-4">{[0, 1, 2, 3].map((i) => <div key={i}><Sk className="h-3 w-24" /><Sk className="mt-1.5 h-5 w-16" /><Sk className="mt-1 h-3 w-20" /></div>)}</div>
+    </SkCardBox>
+  );
+}
+function ChartCardSk() {
+  return (
+    <SkCardBox>
+      <div className="flex items-center justify-between"><Sk className="h-5 w-40" /><Sk className="h-5 w-36 !rounded-full" /></div>
+      <SkChart className="mt-4" height={260} />
+    </SkCardBox>
+  );
+}
+function CategoryCardSk() {
+  return (
+    <SkCardBox>
+      <Sk className="h-5 w-28" />
+      <div className="mt-2 grid place-items-center" style={{ height: 170 }}><Sk className="h-[152px] w-[152px] !rounded-full" /></div>
+      <div className="mt-2 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="flex items-center justify-between gap-2"><Sk className="h-3.5 w-28" /><Sk className="h-3.5 w-20" /></div>)}</div>
+    </SkCardBox>
+  );
+}
+function ListCardSk({ n = 4 }) {
+  return (
+    <SkCardBox>
+      <Sk className="h-5 w-32" />
+      <div className="mt-3 space-y-2.5">{Array.from({ length: n }, (_, i) => <div key={i} className="flex items-center justify-between gap-3"><Sk className={i % 2 ? "h-3.5 w-1/3" : "h-3.5 w-2/5"} /><Sk className="h-3.5 w-14 shrink-0" /></div>)}</div>
+    </SkCardBox>
+  );
+}
+function InexSk() {
+  return (
+    <SkCardBox>
+      <Sk className="h-5 w-36" />
+      <div className="mt-3 grid grid-cols-3 gap-3">{[0, 1, 2].map((i) => <div key={i} className="mny-tile p-2.5"><Sk className="mx-auto h-3 w-10" /><Sk className="mx-auto mt-1.5 h-5 w-14" /></div>)}</div>
+      <Sk className="mt-6 h-3.5 w-full !rounded-full" /><Sk className="mt-3 h-3.5 w-4/5 !rounded-full" />
+    </SkCardBox>
+  );
+}
+/** The transaction list: two day groups with their header bars and rows (round lead, title and category, figure). */
+function TxnListSk() {
+  return (
+    <div aria-hidden="true">
+      {[3, 2].map((rows, g) => (
+        <div key={g}>
+          <div className="mny-hair flex items-center justify-between border-y bg-[var(--mny-surface-2)] px-5 py-2"><Sk className="h-3 w-24" /><Sk className="h-3 w-12" /></div>
+          {Array.from({ length: rows }, (_, i) => (
+            <div key={i} className="flex items-center gap-3 px-5 py-3">
+              <Sk className="h-10 w-10 shrink-0 !rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1.5"><Sk className={i % 2 ? "h-3.5 w-1/4" : "h-3.5 w-1/3"} /><Sk className="h-3 w-1/5" /></div>
+              <Sk className="h-4 w-16 shrink-0" />
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

@@ -437,6 +437,21 @@ A food diary backed by real reference data (details, limits and test results in 
 
 Setup: `alembic upgrade head`, then once `python import_usda.py` (downloads the USDA data to `%LOCALAPPDATA%\LifeRecord\datasets\usda`). The camera needs a secure page (https or localhost) and the browser's permission; typing the barcode always works. Not medical advice: a low recorded intake is not a diagnosis of deficiency.
 
+### Loading: skeletons, progressively
+Every page draws its structure at once and fills in as data arrives (`components/skeletons.jsx`, `components/RouteSkeleton.jsx`; tests `e2e/skeletons.spec.js`,
+`e2e/pages-smooth.spec.js`).
+- **One system.** `Sk` (a placeholder block that takes the size of what it stands for), `SkLines`, `SkRows`, `SkChart`, `SkForm`, `SkCard`, a `Busy` group (one polite
+  "Loading ..." announcement; the blocks themselves are hidden from assistive technology), `ErrorBlock` and `Resolve` (one section's life: skeleton, error with
+  Try again, or the content, faded in only if a skeleton was shown). Each page keeps its own purpose-built skeletons beside it (Money's cards, the transaction list, the
+  calendar's month grid, the people list's rows, the weight chart, the photo tiles, the two-step methods, the devices).
+- **Progressive.** Home has seven sections on seven requests and Money three; each section draws from its own data, so the slowest never holds the rest.
+  A returning visitor sees the app's outline (side strip, top bar, the page's outline) while the first sign-in check runs.
+- **Only when there is nothing to show.** `useFetch` keeps the last-seen copy on screen while it refreshes (no skeleton over content), shows a skeleton only when it has
+  nothing, and now reports `error` when a request failed with nothing to show: the section says "Could not load ..." with **Try again**, never a skeleton that waits for ever.
+  Empty data is an empty state, not a skeleton.
+- **No jumping.** Placeholders have the real layout's padding and heights; content replaces them with an opacity fade only (measured layout shift: Home 0.015, Money
+  0.035). The shimmer is a transform that stops for reduced motion and for the Animations switch.
+
 ### Profile and Settings
 Two pages, switched from the top of either (`pages/Profile.jsx`, `pages/Settings.jsx`; backend `profile_api.py`, `ai_tools_settings.py`; tests
 `test_profile_settings.py`, `e2e/settings-page.spec.js`, `e2e/profile-page.spec.js`).

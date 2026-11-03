@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Busy, SkRows } from "@/components/skeletons";
 import { ArrowLeftRight, CalendarPlus, ChefHat, Flame, Loader2, Pencil, Plus, Search, ShoppingCart, Star, Trash2, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -234,7 +235,7 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
           <div className="flex items-center gap-2"><ChefHat className="h-4 w-4 text-emerald-700" aria-hidden="true" /><h3 className="font-semibold">Recipes</h3></div>
           <Button size="sm" onClick={() => { setEditingRecipe(null); setRecipeOpen(true); }} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="new-recipe"><Plus className="mr-1 h-4 w-4" />New recipe</Button>
         </div>
-        {recipes === null ? <div className="skeleton mt-4 h-28 rounded-2xl" aria-busy="true" /> : !recipes?.length ? (
+        {recipes === null ? <Busy label="Loading your recipes" className="mt-4"><SkRows n={3} lead="square" figure={false} /></Busy> : !recipes?.length ? (
           <EmptyState icon={ChefHat} title="No recipes yet" sub="Save the meals you cook often, then log a serving in one tap." compact />
         ) : (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Busy, ErrorBlock, Sk } from "@/components/skeletons";
 import { Link } from "react-router-dom";
 import { addMonths, addWeeks, eachDayOfInterval, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, CheckSquare, Apple, ShoppingCart, Dumbbell, Scale, Utensils, Repeat } from "lucide-react";
@@ -76,7 +77,7 @@ export default function CalendarPage() {
   const WEEKDAYS = weekStart === "sunday" ? ["Sun", ...WEEKDAYS_FROM_MONDAY.slice(0, 6)] : WEEKDAYS_FROM_MONDAY;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the week's first day is a module setting that changes with weekStart
   const range = useMemo(() => (view === "month" ? monthGridRange(anchor) : weekRange(anchor)), [view, anchor, weekStart]);
-  const { data, loading } = useFetch(calendarPath(range));
+  const { data, loading, error: calendarError, reload: reloadCalendar } = useFetch(calendarPath(range));
   const today = iso(new Date());
   const days = useMemo(() => eachDayOfInterval(range), [range]);
 
@@ -143,8 +144,25 @@ export default function CalendarPage() {
         </div>
       </Card>
 
-      {loading ? (
-        <div className="skeleton h-96 rounded-2xl" aria-busy="true" />
+      {calendarError ? (
+        <ErrorBlock what="the calendar" onRetry={reloadCalendar} />
+      ) : loading ? (
+        <>
+          <Card className="overflow-hidden" data-testid={`calendar-${view}-loading`}>
+            <Busy label="Loading the calendar">
+              <div className="grid grid-cols-7 border-b border-border" aria-hidden="true">{WEEKDAYS.map((d) => <div key={d} className="px-1 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">{d}</div>)}</div>
+              <div className="grid grid-cols-7" aria-hidden="true">
+                {Array.from({ length: view === "month" ? 35 : 7 }, (_, i) => (
+                  <div key={i} className={cn("border-b border-r border-border p-1 sm:p-1.5", view === "month" ? "min-h-[3.5rem] sm:min-h-[6.5rem]" : "min-h-[8rem] sm:min-h-[14rem]")}>
+                    <Sk className="h-4 w-5" />
+                    {view === "month" && i % 3 !== 1 && <Sk className="mt-2 hidden h-3 w-4/5 sm:block" />}
+                  </div>
+                ))}
+              </div>
+            </Busy>
+          </Card>
+          <Card className="p-5" aria-hidden="true"><Sk className="h-5 w-40" /><div className="mt-4 space-y-2.5"><Sk className="h-4 w-3/5" /><Sk className="h-4 w-2/5" /></div></Card>
+        </>
       ) : (
         <Card className="overflow-hidden" data-testid={`calendar-${view}`}>
           <div className="grid grid-cols-7 border-b border-border bg-slate-50/60 dark:bg-slate-800/40">

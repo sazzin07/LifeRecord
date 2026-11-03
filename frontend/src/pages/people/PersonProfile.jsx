@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Busy, Sk, SkLines } from "@/components/skeletons";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowDownLeft, ArrowUpRight, Bot, Eraser, HandCoins, Minus, Pencil, Plus, Receipt, RotateCcw, Trash2, Undo2, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -119,7 +120,7 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
           <div className="flex items-start gap-3">
             <Avatar name={person?.name} photo={person?.photo} size="h-12 w-12" />
             <div className="min-w-0 flex-1">
-              <SheetTitle className="truncate text-xl font-semibold tracking-[-0.01em]" data-testid="profile-name">{person?.name || "Loading…"}</SheetTitle>
+              <SheetTitle className="truncate text-xl font-semibold tracking-[-0.01em]" data-testid="profile-name">{person?.name || <Sk className="inline-block h-5 w-32 align-middle" />}</SheetTitle>
               <SheetDescription className="ppl-muted mt-0.5 text-sm">{[person?.payment_preference && `Pays by ${person.payment_preference}`, person?.notes].filter(Boolean).join(" · ") || "Money between you and this person."}</SheetDescription>
             </div>
           </div>
@@ -134,7 +135,12 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-          {loading && !data ? <div className="space-y-3" aria-busy="true"><div className="skeleton h-32 rounded-2xl" /><div className="skeleton h-32 rounded-2xl" /></div> : person && (
+          {loading && !data ? (
+            <Busy label="Loading this person" className="space-y-3">
+              <div className="ppl-solid grid grid-cols-2 divide-x divide-[var(--ppl-line)]" aria-hidden="true">{[0, 1].map((i) => <div key={i} className="p-4"><Sk className="h-3.5 w-20" /><Sk className="mt-2 h-8 w-24" /></div>)}</div>
+              <div className="ppl-solid p-4" aria-hidden="true"><Sk className="mb-3 h-4 w-32" /><SkLines n={3} /></div>
+            </Busy>
+          ) : person && (
             <>
               <div className="grid gap-3">
                 <Balance direction={THEY} amount={balances.they_owe} person={person} onAction={both} />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Busy, SkRows } from "@/components/skeletons";
 import { Loader2, Monitor, Smartphone } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { Card, Label } from "@/components/common";
@@ -36,7 +37,7 @@ export function Sessions() {
         Every browser or app that is signed in to your account. If you do not recognise one, sign it out here and change your password.
       </p>
       {rows === null ? (
-        <p className="mt-3 text-sm text-slate-500" role="status"><Loader2 className="inline h-4 w-4 mr-1 animate-spin" aria-hidden="true" />Loading…</p>
+        <Busy label="Loading your devices" className="mt-3"><SkRows n={2} lead="square" figure={false} /></Busy>
       ) : (
         <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800" data-testid="sessions-list">
           {rows.map((row) => (

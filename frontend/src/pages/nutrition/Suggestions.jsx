@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { Busy, SkRows } from "@/components/skeletons";
 import { ChefHat, ChevronDown, Loader2, Plus, RefreshCw, Sparkles, Star, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -106,7 +107,7 @@ export function Suggestions({ date }) {
       </div>
 
       {loading ? (
-        <div className="space-y-3 p-5" aria-busy="true"><div className="skeleton h-12 rounded-xl" /><div className="skeleton h-12 rounded-xl" /></div>
+        <Busy label="Loading suggestions" className="p-5"><SkRows n={2} lead="square" figure={false} /></Busy>
       ) : !data ? (
         <div className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm text-slate-600" role="alert">
           <span>Suggestions could not be loaded just now.</span>

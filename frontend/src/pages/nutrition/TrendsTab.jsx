@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Busy, Sk, SkChart } from "@/components/skeletons";
 import { Download, FileText } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "@/components/common";
@@ -43,7 +44,7 @@ export function TrendsTab({ date, today, energyTarget }) {
     a.href = URL.createObjectURL(blob); a.download = `nutrition-${t.start}-to-${t.end}.csv`; a.click(); URL.revokeObjectURL(a.href);
   };
 
-  if (!t) return <div className="skeleton h-72 rounded-2xl" aria-busy="true" />;
+  if (!t) return <Card className="p-5"><Busy label="Loading your trends"><Sk className="mb-4 h-5 w-44" /><SkChart height={240} /></Busy></Card>;
   const avg = t.daily_average;
   const empty = t.days_logged === 0;
   return (

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Busy, ErrorBlock, Sk } from "@/components/skeletons";
 import { Plus, Trash2, CheckSquare, Pencil, Repeat } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch, refreshAll } from "@/lib/useFetch";
@@ -80,7 +81,7 @@ function TaskDialog({ task, onClose }) {
 }
 
 export default function Tasks() {
-  const { data: tasks, loading } = useFetch("/tasks");
+  const { data: tasks, loading, error: tasksError, reload: reloadTasks } = useFetch("/tasks");
   const [title, setTitle] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -107,7 +108,17 @@ export default function Tasks() {
           <Button onClick={add} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="task-add" aria-label="Add task"><Plus className="h-4 w-4" /></Button>
         </div>
       </Card>
-      {loading ? <div className="skeleton h-40 rounded-2xl" /> : (
+      {tasksError ? <ErrorBlock what="your tasks" onRetry={reloadTasks} /> : loading ? (
+        <Card>
+          <Busy label="Loading tasks" className="divide-y divide-border">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} aria-hidden="true" className="flex items-center gap-3 px-5 py-3">
+                <Sk className="h-4 w-4 !rounded" /><Sk className="h-2 w-2 !rounded-full" /><Sk className={i % 2 ? "h-3.5 w-2/5" : "h-3.5 w-3/5"} /><Sk className="ml-auto h-3 w-16" />
+              </div>
+            ))}
+          </Busy>
+        </Card>
+      ) : (
         <Card>
           {open.length === 0 && done.length === 0 ? <EmptyState icon={CheckSquare} title="No tasks yet" sub="Add your first task above." /> : (
             <div className="divide-y divide-border">

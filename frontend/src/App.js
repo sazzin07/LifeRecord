@@ -11,7 +11,7 @@ import Signup from "@/pages/Signup";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 
-import { PageSkeleton } from "@/components/common";
+import { BootSkeleton, RouteSkeleton, hasSessionHint } from "@/components/RouteSkeleton";
 import { pageLoaders } from "@/lib/routes";
 
 // Each page is its own chunk, so the first paint downloads far less. Chunks are also preloaded on hover/idle.
@@ -29,8 +29,11 @@ const Settings = lazy(pageLoaders["/settings"]);
 const Profile = lazy(pageLoaders["/profile"]);
 
 /** Shown while the first sign-in check is under way. If the server cannot be reached it says so, and keeps trying. */
-function Waiting() {
+function Waiting({ shell = false }) {
   const { unreachable } = useAuth();
+  if (shell && hasSessionHint()) {
+    return <BootSkeleton note={unreachable && <p role="status" data-testid="server-unreachable" className="px-6 pt-4 text-sm text-slate-700 dark:text-slate-300">Can't reach the server right now. Trying again…</p>} />;
+  }
   return (
     <div className="min-h-screen bg-background grid place-items-center p-6 text-center">
       {unreachable && (
@@ -44,9 +47,9 @@ function Waiting() {
 
 function Protected() {
   const { user, ready } = useAuth();
-  if (!ready) return <Waiting />;
+  if (!ready) return <Waiting shell />;
   if (!user) return <Navigate to="/login" replace />;
-  return <AppShell><Suspense fallback={<PageSkeleton />}><Outlet /></Suspense></AppShell>;
+  return <AppShell><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></AppShell>;
 }
 
 function PublicOnly() {

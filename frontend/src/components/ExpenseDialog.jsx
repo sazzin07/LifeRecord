@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { swr } from "@/lib/query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ export function ExpenseDialog({ open, setOpen }) {
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("Groceries");
   const [account, setAccount] = useState("");
+  const pickedAccount = useRef(false);   // the person chose an account themselves: the favourite no longer decides
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [participants, setParticipants] = useState(["Me"]);
@@ -36,13 +37,14 @@ export function ExpenseDialog({ open, setOpen }) {
 
   useEffect(() => {
     if (!open) return;
+    pickedAccount.current = false;
     swr("/categories", (d) => setCats(d));
     swr("/people", (d) => setPeople(d));
     swr("/accounts", (d) => {
       const r = { data: d };
       setAccounts(r.data);
       setAccountsLoaded(true);
-      if (!account) setAccount(defaultSpendAccount(r.data.filter(isMoneyAccount))?.id || "");
+      if (!pickedAccount.current) setAccount(defaultSpendAccount(r.data.filter(isMoneyAccount))?.id || "");
     });
     // Only run when dialog opens; account state should not reset on edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,7 +142,7 @@ export function ExpenseDialog({ open, setOpen }) {
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Paid with</label>
-              <Select value={account} onValueChange={setAccount}>
+              <Select value={account} onValueChange={(v) => { pickedAccount.current = true; setAccount(v); }}>
                 <SelectTrigger data-testid="expense-account" aria-label="Paid with" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {orderAccounts(usableAccounts).map((a) => (

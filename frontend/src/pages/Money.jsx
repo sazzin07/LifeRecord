@@ -6,7 +6,7 @@ import {
 import {
   Plus, Trash2, Wallet, CreditCard, Pencil, Search, Download, ArrowUpRight,
   ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
-  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock,
+  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock, Star, AlertTriangle,
 } from "lucide-react";
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
@@ -73,6 +73,19 @@ function signedAmount(t) {
   if (t.type === "income") return t.gross_amount;
   if (t.type === "expense") return -t.gross_amount;
   return 0;
+}
+
+/** The star of a favourite place or favourite main account. Filled: it is the favourite (hover says "Favorite"); outlined: a button that makes it so. */
+function FavoriteStar({ on, name, onSet }) {
+  return (
+    <Hint label={on ? "Favorite" : "Make favorite"}>
+      <button type="button" onClick={on ? undefined : onSet} aria-pressed={on} aria-disabled={on || undefined}
+        aria-label={on ? `${name} is your favorite` : `Make ${name} your favorite`} data-testid={on ? "favorite-on" : "favorite-set"}
+        className={cn("inline-flex h-5 w-5 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", on ? "cursor-default" : "hover:bg-slate-100 dark:hover:bg-slate-800")}>
+        <Star className={cn("h-3.5 w-3.5", on ? "fill-amber-400 text-amber-500" : "text-slate-400")} aria-hidden="true" />
+      </button>
+    </Hint>
+  );
 }
 
 export default function Money() {
@@ -251,6 +264,21 @@ export default function Money() {
 
   const openNewSubAccount = (parent) => setAccountDialog({ open: true, account: null, parent });
   const openEditAccount = (acc) => setAccountDialog({ open: true, account: acc, parent: null });
+  const [openPlaces, setOpenPlaces] = useState({});
+  const setFavorite = async (acc) => {
+    try {
+      await api.post(`/accounts/${acc.id}/favorite`);
+      toast.success(`${acc.name} is now your favorite${acc.parent_id ? "" : " account"}`);
+      refreshAll();
+    } catch (err) { toast.error(errorMessage(err, "Could not change the favorite")); }
+  };
+  const placeUnplaced = async (acc) => {
+    try {
+      await api.post(`/accounts/${acc.id}/place-unplaced`);
+      toast.success(`Moved into ${acc.favorite_place_name || "Default"}`);
+      refreshAll();
+    } catch (err) { toast.error(errorMessage(err, "Could not move the money")); }
+  };
 
   const openTransferTo = (toId) => {
     setTransferDefaults({ to: toId });
@@ -268,7 +296,7 @@ export default function Money() {
     ];
   }, [sum, trendPct]);
 
-  const BalanceSection = ({ icon: Icon, label, amount, color, children, onEdit, onAddSub, onTransferIn, testid }) => (
+  const BalanceSection = ({ icon: Icon, label, amount, color, children, onEdit, onAddSub, onTransferIn, testid, account }) => (
     <Card className={cn("p-4 flex flex-col gap-3 h-full", color && "border-l-4")} style={color ? { borderLeftColor: color } : {}} data-testid={testid}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-3">
@@ -276,7 +304,7 @@ export default function Money() {
             <Icon className="h-5 w-5 text-slate-600 dark:text-slate-300" />
           </div>
           <div>
-            <p className="text-xs text-slate-500">{label}</p>
+            <p className="flex items-center gap-1 text-xs text-slate-500">{label}{account && <FavoriteStar on={!!account.is_favorite} name={account.name} onSet={() => setFavorite(account)} />}</p>
             <p className="text-xl font-bold">{eur(amount || 0)}</p>
           </div>
         </div>
@@ -306,22 +334,19 @@ export default function Money() {
   const AllocationSummary = ({ account }) => {
     if (!account || !(account.place_count > 0)) return null;
     const total = account.total_balance || 0;
-    const held = account.allocated_balance || 0;
-    const width = total > 0 ? Math.max(0, Math.min(100, (held / total) * 100)) : 0;
     return (
       <div className="space-y-1.5" data-testid={`allocation-${account.type}`}>
-        <div className="flex h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" aria-hidden="true">
-          <div className="bg-emerald-600 dark:bg-emerald-500" style={{ width: `${width}%` }} />
-        </div>
         <p className="text-xs text-slate-600 dark:text-slate-400">
-          Total {eur(total)} · {eur(account.unallocated_balance || 0)} not in a place · {eur(held)} in {account.place_count} {account.place_count === 1 ? "place" : "places"}
+          Total {eur(total)} · {account.place_count} {account.place_count === 1 ? "place" : "places"}{account.favorite_place_name ? ` · favorite ${account.favorite_place_name}` : ""}
         </p>
       </div>
     );
   };
 
   const SubPlaces = ({ account }) => {
-    const [open, setOpen] = useState(false);
+    // The open state lives in the page: this component is re-created on every refresh, which would close the list after each click.
+    const open = !!openPlaces[account?.id];
+    const setOpen = (value) => setOpenPlaces((m) => ({ ...m, [account.id]: value }));
     if (!account || account.children.length === 0) return null;
     return (
       <Collapsible open={open} onOpenChange={setOpen}>
@@ -333,13 +358,18 @@ export default function Money() {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-2 space-y-1.5">
-            <div className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg border border-dashed border-border text-slate-600 dark:text-slate-300" data-testid={`unassigned-${account.type}`}>
-              <span>Not in a place yet</span>
-              <span className="font-medium">{eur(account.unallocated_balance || 0)}</span>
-            </div>
+            {Math.abs(account.unplaced_balance || 0) > 0.005 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm py-1.5 px-2 rounded-lg border border-dashed border-amber-400 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100" data-testid={`unplaced-${account.type}`}>
+                <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{eur(account.unplaced_balance)} is outside every place</span>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => placeUnplaced(account)} data-testid={`place-unplaced-${account.type}`}>
+                  Move to {account.favorite_place_name || "Default"}
+                </Button>
+              </div>
+            )}
             {account.children.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)).map((child) => (
-              <div key={child.id} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
+              <div key={child.id} data-testid={`place-${child.name.toLowerCase().replace(/\s+/g, "-")}`} className={cn("flex items-center justify-between text-sm py-1.5 px-2 rounded-lg", child.is_locked ? "bg-amber-50 dark:bg-amber-900/20" : "bg-slate-50 dark:bg-slate-800/50")}>
                 <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                  <FavoriteStar on={!!child.is_favorite} name={child.name} onSet={() => setFavorite(child)} />
                   {child.name}
                   {child.is_locked && <Hint label="Locked / not available"><span className="inline-flex"><Lock className="h-3 w-3 text-amber-600 dark:text-amber-400" aria-label="Locked" /></span></Hint>}
                 </span>
@@ -348,9 +378,11 @@ export default function Money() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditAccount(child)} aria-label={`Edit ${child.name}`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)} aria-label={`Delete ${child.name}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {account.children.length > 1 && (   /* a main account always keeps one place */
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => setDeleteAccountId(child.id)} aria-label={`Delete ${child.name}`}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -423,6 +455,7 @@ export default function Money() {
               amount={mainAccounts.bank?.balance}
               color="#3B82F6"
               testid="money-bank"
+              account={mainAccounts.bank}
               onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
               onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
             >
@@ -438,6 +471,7 @@ export default function Money() {
               amount={sum?.cash_available}
               color="#10B981"
               testid="money-cash"
+              account={mainAccounts.cash}
               onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
               onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
               onTransferIn={() => mainAccounts.cash && openTransferTo(mainAccounts.cash.id)}
@@ -456,6 +490,7 @@ export default function Money() {
               amount={sum?.revolut}
               color="#1964FF"
               testid="money-revolut"
+              account={mainAccounts.revolut}
               onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
               onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
               onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}

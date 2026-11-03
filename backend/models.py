@@ -506,6 +506,16 @@ class TotpRecoveryCode(Base):
     used_ms = Column(BigInteger, nullable=True)
 
 
+class AccountFavorite(Base):
+    """Which money place is the favourite. scope is a main account's id (its favourite sub-account, the place new money and
+    day-to-day entries go to) or the word "overall" (the main account used when no account is named). Its own table, so the
+    live database needs no ALTER on `accounts`."""
+    __tablename__ = "account_favorites"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    scope = Column(String(36), primary_key=True)
+    account_id = Column(String(36), nullable=False)
+
+
 class WebauthnCredential(Base):
     """A passkey or security key registered as a second step. Only the PUBLIC key is kept: nothing here can sign anyone in.
     `credential_id` is what the authenticator calls the key (base64url); `sign_count` guards against a cloned authenticator

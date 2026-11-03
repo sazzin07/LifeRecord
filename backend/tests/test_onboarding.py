@@ -91,7 +91,7 @@ def test_the_first_account_and_first_expense_work_for_a_new_user():
         "account": cash.json()["id"], "date": "2026-11-01"}, timeout=20)
     assert spend.status_code == 200, spend.text
     balances = {a["name"]: a["balance"] for a in s.get(api(user, "/accounts"), timeout=20).json()}
-    assert balances == {"Money in hand": 37.5}
+    assert balances == {"Money in hand": 37.5, "Default": 37.5}, "a main account is its total, and its money sits in its Default place"
 
 
 def test_money_is_never_booked_to_an_account_that_does_not_exist():
@@ -113,7 +113,7 @@ def test_money_is_never_booked_to_an_account_that_does_not_exist():
     for ref in (acct["id"], "Money in hand", "cash"):
         assert s.post(api(user, "/transactions/expense"), json={**expense, "amount": 1, "account": ref}, timeout=20).status_code == 200, ref
     balances = {a["name"]: a["balance"] for a in s.get(api(user, "/accounts"), timeout=20).json()}
-    assert balances == {"Money in hand": 17.0}
+    assert balances == {"Money in hand": 17.0, "Default": 17.0}
 
 
 def test_the_assistant_cannot_book_money_for_a_user_without_accounts():
@@ -131,8 +131,16 @@ def test_the_assistant_cannot_book_money_for_a_user_without_accounts():
                 await server.dispatch_tool(db, name, args, [], me, session_id="onboard-test")
             return caught.value
 
-    for name, args in (("create_expense", {"amount": 5, "merchant": "Shop", "category": "Groceries"}),
-                       ("record_income", {"amount": 5, "description": "Gift"})):
+    for name, args in (("create_expense", {"amount": 5, "merchant": "Shop", "category": "Groceries", "account": "cash"}),
+                       ("record_income", {"amount": 5, "description": "Gift", "account": "revolut"})):
         exc = asyncio.run(attempt(name, args))
         assert exc.status_code == 400 and "account" in str(exc.detail).lower() and "Money" in str(exc.detail), (name, exc.detail)
+
+    async def without_account(name, args):
+        async with server.AsyncSessionLocal() as db:
+            return await server.dispatch_tool(db, name, args, [], me, session_id="onboard-test")
+
+    for name, args in (("create_expense", {"amount": 5, "merchant": "Shop", "category": "Groceries"}), ("record_income", {"amount": 5, "description": "Gift"})):
+        answer = asyncio.run(without_account(name, args))   # no account named and none exist: nothing is recorded, the assistant is told to say so
+        assert answer["recorded"] is False and "create one under Money" in answer["message"], (name, answer)
     assert user["session"].get(api(user, "/transactions"), timeout=20).json() == []

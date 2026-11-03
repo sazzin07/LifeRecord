@@ -8,86 +8,107 @@ export const NEW_MONEY_LABEL = "Add this amount as new money to the main account
  * What saving the place dialog would do to the money, said in plain words before it happens. The server decides (and refuses
  * what does not add up); this only lets the person see it first.
  *
+ * Every main account has a favourite place (starred, "Default" to begin with). Money set aside for a new place comes out of it,
+ * and a new total for the main account lands in it.
+ *
  *  - `account`: the place being edited, or null when creating one.
- *  - `parent`: the main account a new place goes under (an edited place's main account is `host`).
+ *  - `host`: the main account the place belongs to (for a new place, the one it goes under).
  *  - `amount`: what the person typed; `newMoney`: the checkbox.
  * Returns { text, error, showNewMoney }: the sentence to show, whether it is a refusal, and whether the checkbox applies.
  */
 export function planAllocation({ account, host, amount, newMoney }) {
   const typed = cents(amount);
+  const nothing = { text: "", error: false, showNewMoney: false };
 
-  // A main account: the figure is its total, sub-accounts included.
+  // A main account: the figure is its total, places included; the difference goes into (or out of) its favourite place.
   if (account && !account.parent_id) {
-    const allocated = cents(account.allocated_balance);
     const total = cents(account.total_balance ?? account.balance);
-    if (allocated === 0 && cents(account.unallocated_balance ?? account.balance) === total) {
-      return { text: "", error: false, showNewMoney: false };
+    const favourite = account.favorite_place_name;
+    if (!favourite || typed === total) return nothing;
+    const delta = typed - total;
+    if (delta > 0) {
+      return { text: `${eur(delta / 100)} is added to ${favourite}, your favorite place. The total goes from ${eur(total / 100)} to ${eur(typed / 100)}.`, error: false, showNewMoney: false };
     }
-    if (typed < allocated) {
-      return { text: `The total can't be below ${eur(allocated / 100)}: that much is already assigned to sub-accounts.`, error: true, showNewMoney: false };
+    const held = cents(account.favorite_place_balance);
+    if (-delta > held) {
+      return { text: `This amount (${eur(-delta / 100)}) exceeds the available balance of ${eur(Math.max(held, 0) / 100)} in ${favourite}.`, error: true, showNewMoney: false };
     }
-    if (typed === total) return { text: `${eur(allocated / 100)} of it is in sub-accounts; the rest is not assigned.`, error: false, showNewMoney: false };
+    return { text: `${eur(-delta / 100)} is taken out of ${favourite}. The total goes from ${eur(total / 100)} to ${eur(typed / 100)}.`, error: false, showNewMoney: false };
+  }
+
+  if (!host) return nothing;
+  const total = cents(host.total_balance ?? host.balance);
+  const delta = typed - (account ? cents(account.balance) : 0);
+
+  // The favourite place is the day-to-day account: setting its balance is a deposit or a withdrawal.
+  if (account && account.is_favorite) {
+    if (delta === 0) return nothing;
     return {
-      text: `The total changes from ${eur(total / 100)} to ${eur(typed / 100)}. ${eur(allocated / 100)} stays in sub-accounts; the part that is not assigned becomes ${eur((typed - allocated) / 100)}.`,
+      text: delta > 0
+        ? `${eur(delta / 100)} is added to ${account.name}, your favorite place. ${host.name}'s total goes from ${eur(total / 100)} to ${eur((total + delta) / 100)}.`
+        : `${eur(-delta / 100)} is taken out of ${account.name}, your favorite place. ${host.name}'s total goes from ${eur(total / 100)} to ${eur((total + delta) / 100)}.`,
       error: false, showNewMoney: false,
     };
   }
 
-  if (!host) return { text: "", error: false, showNewMoney: false };
-  const total = cents(host.total_balance ?? host.balance);
-  const unallocated = cents(host.unallocated_balance ?? host.balance);
-  const delta = typed - (account ? cents(account.balance) : 0);
-
+  const favourite = host.favorite_place_name || "its favorite place";
+  const available = cents(host.favorite_place_balance ?? host.unallocated_balance ?? 0);
+  const source = `${host.name} › ${favourite}`;
   if (delta < 0) {
-    return {
-      text: `${eur(-delta / 100)} goes back to ${host.name}'s unassigned money. The total stays ${eur(total / 100)}.`,
-      error: false, showNewMoney: false,
-    };
+    return { text: `${eur(-delta / 100)} goes back to ${source}. The total stays ${eur(total / 100)}.`, error: false, showNewMoney: false };
   }
   if (delta === 0) return { text: "", error: false, showNewMoney: true };
 
   if (newMoney) {
     return {
-      text: `This is extra money. ${host.name}'s total goes from ${eur(total / 100)} to ${eur((total + delta) / 100)}.${unallocated > 0 ? ` The ${eur(unallocated / 100)} not assigned yet stays as it is.` : ""}`,
+      text: `This is extra money. ${host.name}'s total goes from ${eur(total / 100)} to ${eur((total + delta) / 100)}.`,
       error: false, showNewMoney: true,
     };
   }
-  if (delta > unallocated) {
+  if (delta > available) {
     return {
-      text: `This amount (${eur(delta / 100)}) exceeds the available balance of ${eur(Math.max(unallocated, 0) / 100)} in ${host.name}. Lower the amount, or tick "${NEW_MONEY_LABEL}" if it is extra money.`,
+      text: `This amount (${eur(delta / 100)}) exceeds the available balance of ${eur(Math.max(available, 0) / 100)} in ${source}. Lower the amount, or tick "${NEW_MONEY_LABEL}" if it is extra money.`,
       error: true, showNewMoney: true,
     };
   }
   return {
-    text: `This is money you already have: ${eur(delta / 100)} moves out of ${host.name}'s unassigned ${eur(unallocated / 100)}, leaving ${eur((unallocated - delta) / 100)}. The total stays ${eur(total / 100)}.`,
+    text: `This is money you already have: ${eur(delta / 100)} moves out of ${source}, leaving ${eur((available - delta) / 100)}. The total stays ${eur(total / 100)}.`,
     error: false, showNewMoney: true,
   };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Choosing an account to take money from. A place, and a main account that has places, cannot go below zero (the server
-// refuses it), so the pickers say what is really there to use instead of letting the first try fail.
+// Choosing an account to take money from. A place cannot go below zero (the server refuses it), so the pickers say what is
+// really there to use instead of letting the first try fail. A main account stands for its favourite place.
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** What can be taken out of an account right now: for a main account with places, only the part no place holds. */
-export const spendable = (a) => (a.parent_id ? a.balance : (a.unallocated_balance ?? a.balance)) || 0;
+/** What can be taken out of an account right now: a place its own balance; a main account with places its favourite place's. */
+export const spendable = (a) => (a.parent_id ? a.balance : ((a.place_count || 0) > 0 ? (a.favorite_place_balance ?? 0) : (a.unallocated_balance ?? a.balance))) || 0;
 
 /** Whether the server holds this account to its balance. */
 export const isLimited = (a) => !!a.parent_id || (a.place_count || 0) > 0;
 
-/** Accounts in the order a person thinks of them: each main account, then its places. Adds `label` and `available`. */
+/** Accounts in the order a person thinks of them: each main account's places, "Main › Place", starred first. A main account that
+ *  has places is not listed itself: money entered against it would go to its favourite place anyway, so the place is named. */
 export function orderAccounts(accounts) {
   const byId = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const mains = accounts.filter((a) => !a.parent_id || !byId[a.parent_id]);
   const placesOf = (id) => accounts.filter((a) => a.parent_id === id);
   const row = (a) => ({ ...a, label: a.parent_id && byId[a.parent_id] ? `${byId[a.parent_id].name} › ${a.name}` : a.name, available: spendable(a) });
-  return mains.flatMap((m) => [row(m), ...placesOf(m.id).map(row)]);
+  return mains.flatMap((m) => {
+    const places = placesOf(m.id).sort((x, y) => Number(!!y.is_favorite) - Number(!!x.is_favorite));
+    return (m.parent_id || (m.place_count || 0) === 0 ? [row(m)] : []).concat(places.map(row));
+  });
 }
 
-/** The account a new expense should start on: never a locked place, and not a main account with nothing of its own to spend. */
+/** The account a new expense should start on: the favourite account's favourite place, else a place with money to spend. */
 export function defaultSpendAccount(accounts) {
   if (!accounts.length) return null;
-  const open = accounts.filter((a) => !a.is_locked && spendable(a) > 0);
+  const byId = Object.fromEntries(accounts.map((a) => [a.id, a]));
+  const main = accounts.find((a) => !a.parent_id && a.is_favorite);
+  const favourite = main ? byId[main.favorite_place_id] : null;
+  if (favourite && !favourite.is_locked) return favourite;
+  const open = accounts.filter((a) => !a.is_locked && spendable(a) > 0 && ((a.place_count || 0) === 0));
   const cash = open.find((a) => a.type === "cash");
   if (cash) return cash;
   const richestPlace = open.filter((a) => a.type === "cash_place").sort((a, b) => spendable(b) - spendable(a))[0];
@@ -100,6 +121,6 @@ export function checkSpend(account, amount, { everyAccount = false } = {}) {
   if (!account || !(everyAccount || isLimited(account)) || !amount) return "";
   const have = spendable(account);
   if (cents(amount) <= cents(have)) return "";
-  const where = !account.parent_id ? `${account.name} that isn't in a place` : account.name;
+  const where = !account.parent_id && (account.place_count || 0) > 0 ? `${account.name} › ${account.favorite_place_name || "its favorite place"}` : account.name;
   return `${eur(amount)} is more than the ${eur(have)} available in ${where}.`;
 }

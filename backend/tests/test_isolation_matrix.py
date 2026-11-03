@@ -58,7 +58,8 @@ class Case:
 
 
 CASES: Dict[str, Case] = {
-    "accounts": Case(("accounts",), c_account, [("PUT", "/accounts/{id}", {"name": "hijacked"}), ("DELETE", "/accounts/{id}", None)], "/accounts"),
+    "accounts": Case(("accounts",), c_account, [("PUT", "/accounts/{id}", {"name": "hijacked"}), ("DELETE", "/accounts/{id}", None),
+                                          ("POST", "/accounts/{id}/favorite", {}), ("POST", "/accounts/{id}/place-unplaced", {})], "/accounts"),
     "categories": Case(("categories",), c_category, [("PUT", "/categories/{id}", {"name": "hijacked", "icon": "circle", "color": "#000000"}),
                                                     ("DELETE", "/categories/{id}", None)], "/categories"),
     "people": Case(("people",), c_person, [("GET", "/people/{id}", None), ("PUT", "/people/{id}", {"name": "hijacked"}),
@@ -122,6 +123,8 @@ CASES: Dict[str, Case] = {
 TABLE_EXEMPT = {
     "totp_credentials": "internal and secret: no route takes an id; every second-step route works on the signed-in user's own row (their id from the "
                         "token), and test_two_factor.py proves one account's code cannot open another's challenge and that B never sees A's setting",
+    "account_favorites": "internal: which place is the favourite; written only by POST /accounts/{id}/favorite, which looks the account up by id AND the signed-in user "
+                         "(test_account_favorites.py::test_nobody_can_star_or_move_someone_elses_account)",
     "webauthn_credentials": "internal and secret (public keys only): no route takes a credential id from outside except the owner-checked "
                             "rename/remove, which look it up by id AND the signed-in user (test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey), "
                             "and someone else's passkey signs nobody in (test_someone_elses_passkey_does_nothing_for_me)",

@@ -86,7 +86,8 @@ def test_locked_space_is_kept_out_of_available(client, space):
 
 
 def test_legacy_alias_is_stored_as_account_id(client):
-    revolut_id = next(a["id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut")
+    # "revolut" names the main account, whose entries go to its favourite place
+    revolut_id = next(a["favorite_place_id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut" and not a.get("parent_id"))
     r = client.post(f"{BASE_URL}/api/transactions/expense", json={
         "amount": 1.0, "merchant": "TEST_alias", "account": "revolut", "participants": ["Me"]})
     assert r.status_code == 200, r.text

@@ -352,18 +352,33 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 
 ### Money
 - Dynamic account hierarchy: bank, cash places, Revolut, locked funds, owed accounts.
-- **A main account and its places are one amount of money.** Money in hand and Revolut can be divided into places
-  (wallet, envelope, pot). The main account's balance is the total; each place holds part of it; what no place holds is
-  the main account's *unassigned* balance, so `total = unassigned + places` at all times.
-  - A new place's starting balance comes out of the unassigned balance and the total stays as it was. Ticking
-    **"Add this amount as new money to the main account"** (unticked by default) adds it as extra money instead.
-  - Asking for more than is unassigned is refused with the amount that is available. Spending, transfers, edits and
-    deletions are held to the same rule: no place, and no main account's unassigned part, can go below zero.
-  - Moving money between places, or between a place and its main account, never changes the total. Income raises it and
-    spending lowers it. Deleting (or hiding) a place gives what it holds back to the main account; its history stays.
+- **A main account and its places are one amount of money.** Money in hand, Revolut and the bank account are divided into
+  places (wallet, envelope, pot, a space). The main account's balance is the total and each place holds part of it.
+  - **Every main account has a starred Default place** (`backend/account_favorites.py`), created with the account and
+    holding its opening balance. One place of each main account is its **favourite** (a star, hover: "Favorite"), Default to
+    begin with; click another place's star to move it. One main account is the **overall favourite** (its star is next to
+    the account's name). Anything entered against a main account, or by the legacy words `cash` and `revolut`, goes to its
+    favourite place, and a new expense starts on the favourite account's favourite place. `Revolut › Default` names a place
+    under its main account. Stored in `account_favorites` (its own table: no ALTER on `accounts`).
+  - **"Not in a place" money no longer exists in normal use.** Money outside every place (`unplaced_balance`, something unusual
+    such as an old transaction edited) shows on the Money page only when it is not zero, in an amber row with a one-click
+    "Move to Default". At start-up every main account that has no favourite place gets its Default, and whatever it held
+    unassigned moves in by one recorded transfer ("Moved into Default"), so totals never change.
+  - A new place's starting balance comes out of the favourite place and the total stays as it was. Ticking
+    **"Add this amount as new money to the main account"** (unticked by default) adds it as extra money instead. Setting
+    the favourite place's own balance, or the main account's total, is a deposit or a withdrawal on the favourite place.
+  - Asking for more than a place holds is refused with the amount that is available. Spending, transfers, edits and
+    deletions are held to the same rule: no place can go below zero.
+  - Deleting (or hiding) a place gives what it holds to the favourite place (to the next place, which takes the star, when
+    it is the favourite itself); a main account always keeps at least one place, and can be deleted only when it holds
+    nothing and has no history of its own. Moving money between places never changes the total. Income raises it and
+    spending lowers it.
+  - **The assistant never guesses an account.** An expense or income with no account named is not recorded: the assistant is
+    told to ask "is this from your favorite account (Revolut › Default)?" and to offer the others; after the answer it calls
+    the tool with the account named in full.
   - The server enforces all of this (`lock_money` / `money_check` in `server.py`); two requests at once cannot spend the
-    same euro. Tests: `backend/tests/test_account_allocation.py`, `frontend/src/lib/allocation.test.js`,
-    `frontend/e2e/money-allocation.spec.js`.
+    same euro. Tests: `backend/tests/test_account_allocation.py`, `test_account_favorites.py`,
+    `frontend/src/lib/allocation.test.js`, `frontend/e2e/money-allocation.spec.js`.
 - Transfers between accounts, actual-spending calculation, and locked-funds support.
 - Expenses, income, and transfers all update account balances automatically.
 

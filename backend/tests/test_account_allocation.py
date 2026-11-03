@@ -42,17 +42,20 @@ class Person:
         return self.account(type_, name, amount, parent, add_as_new_money=new_money)
 
     def state(self, main):
-        """The main account's three figures and its sub-accounts' balances, after checking they add up."""
+        """The main account's figures, after checking they add up. Every main account has a favourite place called Default (the part
+        of its money that is in no named place), so "unallocated" here is Default's balance, "subs" are the other places, and
+        nothing may ever be left on the main account itself."""
         accounts = self.ok("get", "/accounts")
         root = next(a for a in accounts if a["id"] == main["id"])
-        subs = {a["name"]: a["balance"] for a in accounts if a["parent_id"] == main["id"]}
-        out = {"total": root["total_balance"], "unallocated": root["unallocated_balance"],
-               "allocated": root["allocated_balance"], "subs": subs}
+        places = {a["name"]: a["balance"] for a in accounts if a["parent_id"] == main["id"]}
+        default = places.pop("Default")
+        out = {"total": root["total_balance"], "unallocated": default,
+               "allocated": round(sum(places.values()), 2), "subs": places}
         assert root["balance"] == out["total"], "a main account's balance is its total"
-        assert out["unallocated"] >= 0, f"unallocated went negative: {out}"
-        assert all(v >= 0 for v in subs.values()), f"a sub-account went negative: {out}"
-        assert round(out["unallocated"] + sum(subs.values()), 2) == out["total"], f"does not add up: {out}"
-        assert round(sum(subs.values()), 2) == out["allocated"], f"allocated is wrong: {out}"
+        assert root["unplaced_balance"] == 0 and root["unallocated_balance"] == 0, f"money was left outside every place: {root}"
+        assert out["unallocated"] >= 0, f"Default went negative: {out}"
+        assert all(v >= 0 for v in places.values()), f"a sub-account went negative: {out}"
+        assert round(out["unallocated"] + sum(places.values()), 2) == out["total"], f"does not add up: {out}"
         return out
 
     def expense(self, account, amount):
@@ -225,7 +228,7 @@ def test_setting_the_main_total_changes_the_unallocated_part_only(me):
     me.ok("put", f"/accounts/{cash['id']}", json={"balance": 300})
     assert me.state(cash) == {"total": 300, "unallocated": 250, "allocated": 50, "subs": {"A": 50}}
     detail = me.refused("put", f"/accounts/{cash['id']}", json={"balance": 40})
-    assert "€50.00" in detail and "sub-accounts" in detail
+    assert "€250.00" in detail and "Default" in detail, "the difference is taken from (or added to) the favourite place"
     assert me.state(cash)["total"] == 300
 
 
@@ -261,10 +264,17 @@ def test_deactivating_a_sub_account_also_returns_its_money(me):
     assert me.state(cash) == {"total": 200, "unallocated": 200, "allocated": 0, "subs": {}}
 
 
-def test_a_main_account_with_sub_accounts_cannot_be_deleted(me):
-    cash = me.main(balance=0)
-    me.sub(cash, "A", 0)
-    assert "sub-account" in me.refused("delete", f"/accounts/{cash['id']}").lower()
+def test_a_main_account_can_be_deleted_only_when_it_holds_nothing_and_has_no_history(me):
+    holding = me.main(balance=50)
+    me.sub(holding, "A", 10)
+    assert "move the money" in me.refused("delete", f"/accounts/{holding['id']}").lower()
+    spent = me.main("bank", "Bank", 20)
+    assert me.expense(spent, 20).status_code == 200
+    assert "transactions" in me.refused("delete", f"/accounts/{spent['id']}").lower()
+    empty = me.main("revolut", "Empty one", 0)
+    me.sub(empty, "A", 0)
+    me.ok("delete", f"/accounts/{empty['id']}")
+    assert all(a["id"] != empty["id"] for a in me.ok("get", "/accounts"))
 
 
 def test_main_accounts_are_independent_of_each_other(me):
@@ -379,7 +389,7 @@ def test_history_keeps_the_names_of_places_that_were_deleted(me):
     spent = next(t for t in history if t["type"] == "expense")
     assert spent["account_name"] == "Trip fund"
     moves = [t for t in history if t["type"] == "transfer"]
-    assert {(t["from_account_name"], t["to_account_name"]) for t in moves} == {("Money in hand", "Trip fund"), ("Trip fund", "Money in hand")}
+    assert {(t["from_account_name"], t["to_account_name"]) for t in moves} == {("Default", "Trip fund"), ("Trip fund", "Default")}
 
 
 def test_a_main_account_says_how_many_places_it_has(me):
@@ -387,17 +397,17 @@ def test_a_main_account_says_how_many_places_it_has(me):
     me.sub(cash, "Empty", 0)
     me.sub(cash, "Wallet", 30)
     by_name = {a["name"]: a for a in me.ok("get", "/accounts")}
-    assert by_name["Money in hand"]["place_count"] == 2
-    assert by_name["Bank"]["place_count"] == 0
+    assert by_name["Money in hand"]["place_count"] == 3, "Default, Empty and Wallet"
+    assert by_name["Bank"]["place_count"] == 1, "a main account always has its Default place"
     wallet = by_name["Wallet"]
     me.ok("delete", f"/accounts/{wallet['id']}")
-    assert {a["name"]: a for a in me.ok("get", "/accounts")}["Money in hand"]["place_count"] == 1
+    assert {a["name"]: a for a in me.ok("get", "/accounts")}["Money in hand"]["place_count"] == 2
 
 
 def test_editing_a_main_account_answers_with_its_total_not_just_the_unassigned_part(me):
     cash = me.main(balance=200)
     me.sub(cash, "Wallet", 50)
     answer = me.ok("put", f"/accounts/{cash['id']}", json={"name": "Cash box"})
-    assert (answer["balance"], answer["total_balance"], answer["unallocated_balance"], answer["allocated_balance"], answer["place_count"]) == (200, 200, 150, 50, 1)
+    assert (answer["balance"], answer["total_balance"], answer["unallocated_balance"], answer["allocated_balance"], answer["place_count"]) == (200, 200, 0, 200, 2)
     answer = me.ok("put", f"/accounts/{cash['id']}", json={"balance": 260})
-    assert (answer["balance"], answer["unallocated_balance"]) == (260, 210)
+    assert (answer["balance"], answer["unallocated_balance"], answer["unplaced_balance"]) == (260, 0, 0), "a new total lands in the favourite place"

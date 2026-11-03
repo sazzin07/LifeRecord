@@ -103,7 +103,8 @@ def seed_money(api: Api) -> dict:
     # The places hold money of their own that is not in the main account: new money, so the totals are the sum.
     cash = acct(name="Money in hand", type="cash", opening_balance=0)
     acct(name="Wallet", type="cash_place", parent_id=cash, opening_balance=85, add_as_new_money=True)
-    acct(name="Kitchen jar", type="cash_place", parent_id=cash, opening_balance=140, add_as_new_money=True)
+    jar = acct(name="Kitchen jar", type="cash_place", parent_id=cash, opening_balance=140, add_as_new_money=True)
+    api.post(f"/accounts/{jar}/favorite")   # his day-to-day cash: expenses "from cash" go here, not to the empty Default place
     acct(name="Travel envelope", type="cash_place", parent_id=cash, opening_balance=250, is_locked=True, add_as_new_money=True)
     rev = acct(name="Revolut", type="revolut", opening_balance=320)
     acct(name="Holiday pot", type="revolut_space", parent_id=rev, opening_balance=400, is_locked=True, add_as_new_money=True)

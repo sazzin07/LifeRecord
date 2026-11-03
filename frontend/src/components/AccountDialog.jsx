@@ -123,7 +123,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
           )}
           <p id="account-allocation" role={plan.error ? "alert" : undefined} aria-live={plan.error ? undefined : "polite"} data-testid="account-allocation"
             className={plan.error ? "text-xs text-red-700 dark:text-red-400" : "text-xs text-slate-600 dark:text-slate-400"}>
-            {plan.text || (host && !account ? `Unchecked: the money comes out of ${host.name}'s unassigned balance (${eur(host.unallocated_balance ?? 0)}), so its total does not change.` : "")}
+            {plan.text || (host && !account ? `Unchecked: the money comes out of ${host.name} › ${host.favorite_place_name || "its favorite place"} (${eur(host.favorite_place_balance ?? host.unallocated_balance ?? 0)}), so its total does not change.` : "")}
           </p>
           {account?.type === "bank" && (
             <div>

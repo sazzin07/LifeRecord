@@ -87,7 +87,7 @@ class TestEditExpense:
         # Update payment_method. Revolut only holds what it holds, so go back to a share it can cover first.
         client.put(f"{BASE_URL}/api/transactions/{t['id']}", json={"amount": 30.0})
         r3 = client.put(f"{BASE_URL}/api/transactions/{t['id']}", json={"payment_method": "card"})
-        revolut_id = next(a["id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut")
+        revolut_id = next(a["favorite_place_id"] for a in client.get(f"{BASE_URL}/api/accounts").json() if a["type"] == "revolut" and not a.get("parent_id"))  # "revolut" names the main account: entries go to its favourite place
         assert r3.json()["account"] == revolut_id
         assert r3.json()["payment_method"] == "card"
         # cleanup

@@ -47,8 +47,10 @@ test.describe("places are part of the main account's money", () => {
 
     const card = page.getByTestId("money-cash");
     await expect(card).toContainText("200.00"); // the total did not grow to €250
-    await card.getByRole("button", { name: /^Show 1 place$/ }).click();
-    await expect(page.getByTestId("unassigned-cash")).toContainText("150.00");
+    await card.getByRole("button", { name: /^Show 2 places$/ }).click();     // Default (the favourite) and Wallet
+    await expect(page.getByTestId("place-default")).toContainText("150.00");
+    await expect(page.getByTestId("place-wallet")).toContainText("50.00");
+    await expect(page.getByTestId("unplaced-cash")).toHaveCount(0);            // nothing is ever "not in a place" in normal use
   });
 
   test("asking for more than is available is refused up front, and new money is the way to add more", async ({ page }) => {
@@ -69,8 +71,8 @@ test.describe("places are part of the main account's money", () => {
 
     const card = page.getByTestId("money-cash");
     await expect(card).toContainText("360.00");
-    await card.getByRole("button", { name: /Show 2 places/ }).click();
-    await expect(page.getByTestId("unassigned-cash")).toContainText("150.00"); // nothing was taken from it
+    await card.getByRole("button", { name: /Show 3 places/ }).click();
+    await expect(page.getByTestId("place-default")).toContainText("150.00"); // nothing was taken from it
   });
 
   test("deleting a place gives its money back", async ({ page }) => {
@@ -80,21 +82,25 @@ test.describe("places are part of the main account's money", () => {
     await expect(dialog).toBeHidden();
 
     const card = page.getByTestId("money-cash");
-    await card.getByRole("button", { name: /^Show 1 place$/ }).click();
+    await card.getByRole("button", { name: /^Show 2 places$/ }).click();
     await page.getByRole("button", { name: "Delete Wallet" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
     await expect(card).toContainText("200.00");
-    await expect(card.getByRole("button", { name: /places/ })).toHaveCount(0); // no places left
+    await expect(page.getByTestId("place-default")).toContainText("200.00");     // only Default is left, holding it all
+    await expect(page.getByRole("button", { name: "Delete Default" })).toHaveCount(0);   // ... and it stays: a main account keeps one place
   });
   test("the expense and transfer forms say what is available instead of failing on the first try", async ({ page }) => {
     await setUp(page);
-    // Everything in hand goes into one place: Money in hand itself has nothing left of its own.
+    // Everything in hand goes into one place; the person makes it their favourite, so expenses start there.
     const dialog = await openNewPlace(page, "Wallet", "200");
     await dialog.getByTestId("account-save").click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByTestId("allocation-cash")).toContainText("€0.00 not in a place");
+    await expect(page.getByTestId("allocation-cash")).toContainText("2 places");
+    await page.getByTestId("money-cash").getByRole("button", { name: /^Show 2 places$/ }).click();
+    await page.getByRole("button", { name: "Make Wallet your favorite" }).click();
+    await expect(page.getByRole("button", { name: "Wallet is your favorite" })).toBeVisible();
 
-    // A new expense starts on the place that has the money, not on the empty main account.
+    // A new expense starts on the favourite place.
     await page.getByTestId("add-expense-btn").click();
     const expense = page.getByTestId("expense-dialog");
     await expect(expense.getByTestId("expense-account")).toContainText("Wallet");
@@ -118,5 +124,31 @@ test.describe("places are part of the main account's money", () => {
     await transfer.getByRole("button", { name: "All of it" }).click();
     await expect(transfer.getByTestId("transfer-amount")).toHaveValue("180");
     await expect(transfer.getByTestId("transfer-note")).not.toContainText("more than");
+  });
+
+  test("the star marks the favourite place: Default to begin with, 'Favorite' on hover, and it moves when another is chosen", async ({ page }) => {
+    await setUp(page);
+    const dialog = await openNewPlace(page, "Wallet", "50");
+    await dialog.getByTestId("account-save").click();
+    await expect(dialog).toBeHidden();
+    const card = page.getByTestId("money-cash");
+    await expect(card).toContainText("favorite Default");
+    await card.getByRole("button", { name: /^Show 2 places$/ }).click();
+    await expect(page.getByTestId("place-default").getByTestId("favorite-on")).toBeVisible();
+    await expect(page.getByTestId("place-wallet").getByTestId("favorite-set")).toBeVisible();
+    await page.getByTestId("place-default").getByTestId("favorite-on").hover();
+    await expect(page.getByRole("tooltip").filter({ hasText: "Favorite" }).first()).toBeVisible();
+
+    // an expense with no account chosen starts on the favourite place
+    await page.getByTestId("add-expense-btn").click();
+    await expect(page.getByTestId("expense-dialog").getByTestId("expense-account")).toContainText("Default");
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Make Wallet your favorite" }).click();
+    await expect(page.getByTestId("place-wallet").getByTestId("favorite-on")).toBeVisible();
+    await expect(page.getByTestId("place-default").getByTestId("favorite-set")).toBeVisible();
+    await expect(card).toContainText("favorite Wallet");
+    await page.getByTestId("add-expense-btn").click();
+    await expect(page.getByTestId("expense-dialog").getByTestId("expense-account")).toContainText("Wallet");
   });
 });

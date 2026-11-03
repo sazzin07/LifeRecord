@@ -33,7 +33,7 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from database import engine, AsyncSessionLocal, get_db
 from models import (
-    Base, User, Account, Category, Person, Transaction, Split, Settlement,
+    Base, User, Account, AccountFavorite, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
@@ -57,6 +57,7 @@ import scheduling
 import scheduling_api
 import calendar_api
 import account_api
+import account_favorites
 import two_factor_api
 import nutrition_api
 import nutrition_plan_api
@@ -886,13 +887,27 @@ async def normalize_account_ref(db: AsyncSession, ref: Optional[str], user_id: s
     return acc.id if acc else ref
 
 
-async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[Account]:
-    """Resolve an account by id, name, or legacy cash/revolut alias."""
+async def resolve_account(db: AsyncSession, ref: str, user_id: str, to_place: bool = True) -> Optional[Account]:
+    """Resolve an account by id, name, or legacy cash/revolut alias. A main account resolves to its favourite place (the place
+    entries go to when none is named, see account_favorites.py); `to_place=False` is for the few callers that mean the main
+    account itself (making a place, setting a total)."""
+    acc = await _resolve_account_ref(db, ref, user_id)
+    if acc is not None and to_place and not acc.parent_id:
+        place = await account_favorites.place_of(db, user_id, acc)
+        if place is not None:
+            return place
+    return acc
+
+
+async def _resolve_account_ref(db: AsyncSession, ref: str, user_id: str) -> Optional[Account]:
     if not ref:
         return None
     ref_lower = ref.strip().lower()
     if ref_lower == "cash":
-        return await default_cash_account(db, user_id)
+        main = (await db.execute(select(Account).where(
+            Account.user_id == user_id, Account.type == "cash", Account.parent_id == None, Account.is_active == True  # noqa: E711, E712
+        ).order_by(Account.sort_order, Account.name))).scalars().first()
+        return main if main is not None else await default_cash_account(db, user_id)
     if ref_lower in ("revolut", "card"):
         return (await db.execute(
             select(Account).where(Account.user_id == user_id, Account.type == "revolut", Account.is_active == True)
@@ -903,6 +918,15 @@ async def resolve_account(db: AsyncSession, ref: str, user_id: str) -> Optional[
     )).scalar_one_or_none()
     if acc:
         return acc
+    # "Revolut › Default": a place named under its main account (several mains each have a place called Default).
+    for sep in ("›", ">"):
+        if sep in ref:
+            main_name, _, place_name = (part.strip().lower() for part in ref.partition(sep))
+            main = await _resolve_account_ref(db, main_name, user_id)
+            if main is not None and not main.parent_id and place_name:
+                places = await account_favorites.active_places(db, user_id, main.id)
+                return next((p for p in places if p.name.strip().lower() == place_name), None) or next((p for p in places if place_name in p.name.lower()), None)
+            return None
     # Try by name: an exact match wins over a partial one.
     accs = (await db.execute(
         select(Account).where(Account.user_id == user_id, Account.is_active == True)
@@ -1124,10 +1148,17 @@ async def money_check(db: AsyncSession, user_id: str, before: Dict[str, dict]) -
 
 
 async def allocation_transfer_ids(db: AsyncSession, user_id: str, account_ids: list) -> set:
-    ids = [i for i in account_ids if i]
+    """Transfers that touch any of these accounts or any other account of the same family (a main account and its places)."""
+    ids = {i for i in account_ids if i}
+    if not ids:
+        return set()
+    mains = {m for (m,) in (await db.execute(select(func.coalesce(Account.parent_id, Account.id)).where(
+        Account.user_id == user_id, Account.id.in_(ids)))).all()}
+    family = ids | mains | {i for (i,) in (await db.execute(select(Account.id).where(
+        Account.user_id == user_id, Account.parent_id.in_(mains)))).all()}
     rows = await db.execute(select(Transaction.id).where(
         Transaction.user_id == user_id, Transaction.type == "transfer",
-        (Transaction.from_account.in_(ids)) | (Transaction.to_account.in_(ids))))
+        (Transaction.from_account.in_(family)) | (Transaction.to_account.in_(family))))
     return {i for (i,) in rows.all()}
 
 
@@ -1166,16 +1197,32 @@ async def account_views(db: AsyncSession, user_id: str, accounts: List[Account])
         if a.parent_id:
             allocated[a.parent_id] = allocated.get(a.parent_id, 0.0) + own[a.id]
             places[a.parent_id] = places.get(a.parent_id, 0) + 1
+    stored = await account_favorites.favourites(db, user_id)
+    favourite_main = await account_favorites.overall_main(db, user_id)
+    favourite_places: Dict[str, str] = {}
+    for main_id in {a.parent_id for a in list(accounts) + list(missing) if a.parent_id}:
+        main_row = next((m for m in accounts if m.id == main_id), None) or await _fetch_account(db, user_id, main_id)
+        place = await account_favorites.place_of(db, user_id, main_row, stored) if main_row else None
+        if place:
+            favourite_places[main_id] = place.id
     views = []
     for a in accounts:
         d = to_dict(a)
         if a.parent_id:
             d["balance"] = own[a.id]
+            d["is_favorite"] = favourite_places.get(a.parent_id) == a.id
         else:
             d["unallocated_balance"] = own[a.id]
             d["allocated_balance"] = round(allocated.get(a.id, 0.0), 2)
             d["place_count"] = places.get(a.id, 0)
             d["total_balance"] = d["balance"] = round(own[a.id] + d["allocated_balance"], 2)
+            d["is_favorite"] = favourite_main is not None and favourite_main.id == a.id
+            d["favorite_place_id"] = favourite_places.get(a.id)
+            fav = next((x for x in list(accounts) + list(missing) if x.id == favourite_places.get(a.id)), None)
+            d["favorite_place_name"] = fav.name if fav else None
+            d["favorite_place_balance"] = own[fav.id] if fav else 0.0
+            # Money on the main account itself, outside every place. Normal use never leaves any: the Money page shows this only when it is not zero.
+            d["unplaced_balance"] = own[a.id] if abs(own[a.id]) > 0.005 and places.get(a.id, 0) > 0 else 0.0
         views.append(d)
     return views
 
@@ -2126,10 +2173,12 @@ NEW_MONEY_HINT = " Lower the amount, or tick “Add this amount as new money to 
 
 @api_router.post("/accounts")
 async def create_account(body: AccountBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """A sub-account's starting balance is carved out of its main account's unallocated balance (the total stays as it was),
-    unless add_as_new_money says it is extra money, which raises the total."""
+    """A new main account opens with its "Default" place (starred, the favourite), which holds the opening balance. A place's
+    starting balance is carved out of its main account's favourite place (the total stays as it was), unless add_as_new_money
+    says it is extra money, which raises the total."""
     uid = user["_id"]
     await lock_money(db, uid)
+    me = sys.modules[__name__]
     parent = None
     if body.parent_id:
         parent = await _fetch_account(db, uid, body.parent_id)
@@ -2139,33 +2188,53 @@ async def create_account(body: AccountBody, user: dict = Depends(get_current_use
             raise HTTPException(400, "A sub-account cannot have sub-accounts of its own.")
     amount = round(body.opening_balance, 2)
     carved_out = parent is not None and amount > 0 and not body.add_as_new_money
+    source = None
     if carved_out:
-        available = await compute_account_balance(db, parent.id, uid)
+        source = await account_favorites.ensure_default_place(me, db, uid, parent)
+        available = await compute_account_balance(db, source.id, uid)
         if cents(amount) > cents(available):
-            raise _over_allocation("allocation", amount, available, parent.name, NEW_MONEY_HINT)
+            raise _over_allocation("allocation", amount, available, f"{parent.name} › {source.name}", NEW_MONEY_HINT)
+    elif parent is not None:
+        await account_favorites.ensure_default_place(me, db, uid, parent)  # a main account always has its favourite place
     acc = Account(
         id=new_id(), user_id=uid, name=body.name, type=body.type,
         parent_id=body.parent_id, currency=body.currency,
-        opening_balance=0 if carved_out else amount,
+        opening_balance=0 if (carved_out or parent is None) else amount,
         initial_balance=round(body.initial_balance, 2) if body.initial_balance is not None else None,
         is_locked=body.is_locked,
         sort_order=body.sort_order,
         is_active=body.is_active, created_at=now_iso(),
     )
     db.add(acc)
+    await db.flush()
     if carved_out:
-        await db.flush()
-        db.add(allocation_transfer(uid, parent, acc, amount, f"Set aside for {acc.name}"))
+        db.add(allocation_transfer(uid, source, acc, amount, f"Set aside for {acc.name}"))
+    if parent is None:
+        # The money of a new main account opens in its Default place, so nothing is ever "unassigned".
+        default = await account_favorites.ensure_default_place(me, db, uid, acc)
+        default.opening_balance = amount
     await db.commit()
     await db.refresh(acc)
     return {**to_dict(acc), "balance": amount}
 
 
+async def _freed_money_target(db: AsyncSession, uid: str, acc: Account, parent: Account) -> Optional[Account]:
+    """Where the money of a place that stops existing goes: the main account's favourite place or, when that is this place, the
+    next one (which then becomes the favourite). None when it is the only place."""
+    stored = await account_favorites.favourites(db, uid)
+    favourite = await account_favorites.place_of(db, uid, parent, stored)
+    if favourite is not None and favourite.id != acc.id:
+        return favourite
+    others = [p for p in await account_favorites.active_places(db, uid, parent.id) if p.id != acc.id]
+    return next((p for p in others if p.name == account_favorites.DEFAULT_NAME), others[0] if others else None)
+
+
 @api_router.put("/accounts/{aid}")
 async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """`balance` is the amount the account should now be worth. For a sub-account the difference moves between it and its
-    main account's unallocated balance (or is new money, with add_as_new_money, when raising it). For a main account it is
-    the total including its sub-accounts, and the difference lands in the unallocated part."""
+    """`balance` is the amount the account should now be worth. For a place other than the favourite the difference moves between
+    it and the favourite place (or is new money, with add_as_new_money, when raising it). For the favourite place it is a deposit
+    or a withdrawal: that place is the day-to-day account. For a main account it is the total including its places, and the
+    difference lands in the favourite place."""
     uid = user["_id"]
     before = await money_begin(db, uid)
     acc = await _fetch_account(db, uid, aid)
@@ -2175,7 +2244,9 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
     target_balance = updates.pop("balance", None)
     new_money = updates.pop("add_as_new_money", False)
     parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
-    extra = []  # transfers that carry the change between a sub-account and its main account
+    extra = []  # transfers that carry the change between two places
+    favourite = await account_favorites.place_of(db, uid, parent) if parent else None
+    is_favourite = favourite is not None and favourite.id == acc.id
 
     if "parent_id" in updates:
         if updates["parent_id"] == aid:
@@ -2193,35 +2264,46 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
                 raise HTTPException(400, "An account with sub-accounts cannot become a sub-account.")
             if cents(await compute_account_balance(db, aid, uid)) != 0:
                 raise HTTPException(400, "Move the money with a transfer first: changing the main account would move it from one main account to another.")
+            if is_favourite:
+                raise HTTPException(400, "This is the favourite place of its main account. Choose another favourite first.")
 
     own = await compute_account_balance(db, aid, uid)
     if target_balance is not None:
-        if parent:
+        if parent and is_favourite:
+            delta = cents(target_balance) - cents(own)
+            updates["opening_balance"] = round(float(acc.opening_balance) + delta / 100, 2)   # a deposit or a withdrawal
+        elif parent:
             delta = cents(target_balance) - cents(own)
             if delta > 0 and new_money:
                 updates["opening_balance"] = round(float(acc.opening_balance) + delta / 100, 2)
             elif delta > 0:
-                available = await compute_account_balance(db, parent.id, uid)
+                available = await compute_account_balance(db, favourite.id, uid)
                 if delta > cents(available):
-                    raise _over_allocation("allocation", delta / 100, available, parent.name, NEW_MONEY_HINT)
-                extra.append(allocation_transfer(uid, parent, acc, delta / 100, f"Set aside for {acc.name}"))
+                    raise _over_allocation("allocation", delta / 100, available, f"{parent.name} › {favourite.name}", NEW_MONEY_HINT)
+                extra.append(allocation_transfer(uid, favourite, acc, delta / 100, f"Set aside for {acc.name}"))
             elif delta < 0:
-                extra.append(allocation_transfer(uid, acc, parent, -delta / 100, f"Returned from {acc.name}"))
+                extra.append(allocation_transfer(uid, acc, favourite, -delta / 100, f"Returned from {acc.name}"))
         else:
-            allocated = await allocated_total(db, uid, aid)
-            if cents(target_balance) < cents(allocated):
-                raise HTTPException(400, f"The total cannot be {eur_text(target_balance)}: {eur_text(allocated)} of it is already "
-                                         f"assigned to sub-accounts. Lower those first, or choose a higher total.")
-            updates["opening_balance"] = round(float(acc.opening_balance) + float(target_balance) - allocated - own, 2)
+            place = await account_favorites.ensure_default_place(sys.modules[__name__], db, uid, acc)
+            total = own + await allocated_total(db, uid, aid)
+            delta = cents(target_balance) - cents(total)
+            place.opening_balance = round(float(place.opening_balance) + delta / 100, 2)
 
-    if updates.get("is_active") is False and acc.is_active and parent and cents(own) != 0:
-        # A sub-account that stops existing gives what it holds back, like deleting it.
-        extra.append(allocation_transfer(uid, acc, parent, own, f"Returned from {acc.name}") if own > 0
-                     else allocation_transfer(uid, parent, acc, -own, f"Covered for {acc.name}"))
+    if updates.get("is_active") is False and acc.is_active and parent:
+        # A place that stops existing gives what it holds to the favourite place, like deleting it.
+        heir = await _freed_money_target(db, uid, acc, parent)
+        if heir is None:
+            raise HTTPException(400, f"{parent.name} needs at least one place. Create another first.")
+        if is_favourite:
+            await account_favorites.set_favourite(db, uid, parent.id, heir.id)
+        if cents(own) != 0:
+            extra.append(allocation_transfer(uid, acc, heir, own, f"Returned from {acc.name}") if own > 0
+                         else allocation_transfer(uid, heir, acc, -own, f"Covered for {acc.name}"))
     for t in extra:
         db.add(t)
     if updates:
         await db.execute(update(Account).where(Account.id == aid, Account.user_id == uid).values(**updates))
+    await db.flush()
     await money_check(db, uid, before)
     await db.commit()
     acc = await _fetch_account(db, uid, aid)
@@ -2230,29 +2312,48 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
 
 @api_router.delete("/accounts/{aid}")
 async def delete_account(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Deleting a sub-account gives what it holds back to its main account's unallocated balance. A sub-account with a
-    history stays on file (hidden) so that history keeps its place."""
+    """Deleting a place gives what it holds to its main account's favourite place (the next place, which becomes the favourite,
+    when it is the favourite itself); a main account always keeps at least one place. A place with a history stays on file
+    (hidden) so that history keeps its place. A main account can be deleted once it holds nothing and has no history."""
     uid = user["_id"]
     before = await money_begin(db, uid)
     acc = await _fetch_account(db, uid, aid)
     if not acc:
         raise HTTPException(404, "Account not found")
-    has_subs = (await db.execute(select(Account.id).where(Account.parent_id == aid, Account.is_active == True))).first()  # noqa: E712
-    if has_subs:
-        raise HTTPException(400, "Delete its sub-accounts first")
     parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
-    if parent:
-        held = await compute_account_balance(db, aid, uid)
-        if cents(held) > 0:
-            db.add(allocation_transfer(uid, acc, parent, held, f"Returned from {acc.name}"))
-        elif cents(held) < 0:
-            db.add(allocation_transfer(uid, parent, acc, -held, f"Covered for {acc.name}"))
-        await db.flush()
+    if not parent:
+        places = await account_favorites.active_places(db, uid, aid)
+        family = [aid] + [p.id for p in places]
+        if cents(sum((await compute_balances(db, uid, family)).values())) != 0:
+            raise HTTPException(400, "Move the money out of this account first")
+        inside = (Transaction.type == "transfer") & Transaction.from_account.in_(family) & Transaction.to_account.in_(family)
+        outside = (await db.execute(select(Transaction.id).where(
+            Transaction.user_id == uid, ~inside,
+            (Transaction.account.in_(family)) | (Transaction.from_account.in_(family)) | (Transaction.to_account.in_(family))))).first()
+        if outside:
+            raise HTTPException(400, "Cannot delete account with transactions")
+        await db.execute(delete(Transaction).where(Transaction.user_id == uid, inside))
+        await db.execute(delete(AccountFavorite).where(AccountFavorite.user_id == uid, AccountFavorite.account_id.in_(family)))
+        await db.execute(delete(Account).where(Account.user_id == uid, Account.id.in_(family)))
+        await money_check(db, uid, before)
+        await db.commit()
+        return {"ok": True}
+    heir = await _freed_money_target(db, uid, acc, parent)
+    if heir is None:
+        raise HTTPException(400, f"{parent.name} needs at least one place. Create another first.")
+    stored = await account_favorites.favourites(db, uid)
+    favourite = await account_favorites.place_of(db, uid, parent, stored)
+    if favourite is not None and favourite.id == acc.id:
+        await account_favorites.set_favourite(db, uid, parent.id, heir.id)
+    held = await compute_account_balance(db, aid, uid)
+    if cents(held) > 0:
+        db.add(allocation_transfer(uid, acc, heir, held, f"Returned from {acc.name}"))
+    elif cents(held) < 0:
+        db.add(allocation_transfer(uid, heir, acc, -held, f"Covered for {acc.name}"))
+    await db.flush()
     history = (await db.execute(
         select(Transaction.id).where(Transaction.user_id == uid, (Transaction.account == aid) | (Transaction.from_account == aid) | (Transaction.to_account == aid))
     )).first()
-    if history and not parent:
-        raise HTTPException(400, "Cannot delete account with transactions")
     if history:
         await db.execute(update(Account).where(Account.id == aid, Account.user_id == uid).values(is_active=False))
     else:
@@ -2264,17 +2365,22 @@ async def delete_account(aid: str, user: dict = Depends(get_current_user), db: A
 
 @api_router.post("/accounts/transfer")
 async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if body.from_account_id == body.to_account_id:
-        raise HTTPException(400, "Source and destination must differ")
     uid = user["_id"]
     before = await money_begin(db, uid)
     from_acc = await _fetch_account(db, uid, body.from_account_id)
     to_acc = await _fetch_account(db, uid, body.to_account_id)
     if not from_acc or not to_acc:
         raise HTTPException(404, "Account not found")
+    # A main account stands for its favourite place: money is moved between places.
+    if not from_acc.parent_id:
+        from_acc = await account_favorites.place_of(db, uid, from_acc) or from_acc
+    if not to_acc.parent_id:
+        to_acc = await account_favorites.place_of(db, uid, to_acc) or to_acc
+    if from_acc.id == to_acc.id:
+        raise HTTPException(400, "Source and destination must differ")
     bal = await compute_account_balance(db, from_acc.id, uid)
     if cents(bal) < cents(body.amount):
-        where = f"{from_acc.name} (the part that is not in a sub-account)" if from_acc.id in before and before[from_acc.id]["main"] else from_acc.name
+        where = f"{from_acc.name} (the part that is not in a place)" if from_acc.id in before and before[from_acc.id]["main"] else from_acc.name
         raise _over_allocation("transfer", body.amount, bal, where)
     date = body.date or now_iso()[:10]
     txn = Transaction(
@@ -2288,6 +2394,49 @@ async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_cur
     await db.commit()
     await db.refresh(txn)
     return {"ok": True, "transaction": txn_to_dict(txn, {})}
+
+
+@api_router.get("/accounts/favorite")
+async def favourite_account(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Where an expense goes when no account is named: the favourite main account and its favourite place."""
+    found = await account_favorites.target(db, user["_id"])
+    if not found:
+        return {"main": None, "place": None, "label": None}
+    main, place = found
+    return {"main": {"id": main.id, "name": main.name}, "place": {"id": place.id, "name": place.name} if place else None,
+            "label": f"{main.name} › {place.name}" if place else main.name}
+
+
+@api_router.post("/accounts/{aid}/favorite")
+async def set_favourite_account(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Star a place as the favourite of its main account, or a main account as the overall favourite."""
+    uid = user["_id"]
+    await lock_money(db, uid)
+    acc = await _fetch_account(db, uid, aid)
+    if not acc or not acc.is_active:
+        raise HTTPException(404, "Account not found")
+    await account_favorites.set_favourite(db, uid, acc.parent_id or account_favorites.OVERALL, acc.id)
+    await db.commit()
+    return await favourite_account(user, db)
+
+
+@api_router.post("/accounts/{aid}/place-unplaced")
+async def place_unplaced(aid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Money left on a main account itself (outside every place) moves into its favourite place."""
+    uid = user["_id"]
+    before = await money_begin(db, uid)
+    main = await _fetch_account(db, uid, aid)
+    if not main or main.parent_id:
+        raise HTTPException(404, "Account not found")
+    place = await account_favorites.ensure_default_place(sys.modules[__name__], db, uid, main)
+    own = await compute_account_balance(db, main.id, uid)
+    if cents(own) > 0:
+        db.add(allocation_transfer(uid, main, place, own, f"Moved into {place.name}"))
+    elif cents(own) < 0:
+        db.add(allocation_transfer(uid, place, main, -own, f"Covered for {main.name}"))
+    await money_check(db, uid, before)
+    await db.commit()
+    return {"ok": True, "moved": round(own, 2), "place": {"id": place.id, "name": place.name}}
 
 
 # ---------------------------------------------------------------------------
@@ -4200,7 +4349,7 @@ AI_TOOLS = [
             "merchant": {"type": "string"},
             "description": {"type": "string"},
             "category": {"type": "string", "description": "One of the finance categories e.g. Groceries, Eating Out, Transport"},
-            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
+            "account": {"type": "string", "description": "Account or place the money was spent from: an id, a name, or 'Main › Place' such as 'Revolut › Default'. Leave it out ONLY when the user did not say; the tool then returns their favorite for you to ask about. Never guess."},
             "date": {"type": "string", "description": "yyyy-mm-dd, default today"},
             "participants": {"type": "array", "items": {"type": "string"}, "description": "All people sharing this expense including 'Me'"},
             "split_mode": {"type": "string", "enum": ["equal", "items", "exact"]},
@@ -4216,7 +4365,7 @@ AI_TOOLS = [
         "description": "Record income or money received (e.g. salary, refund, gift).",
         "parameters": {"type": "object", "properties": {
             "amount": {"type": "number"}, "description": {"type": "string"},
-            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
+            "account": {"type": "string", "description": "Account or place the money arrived in: an id, a name, or 'Main › Place'. Leave it out ONLY when the user did not say; the tool then returns their favorite for you to ask about."},
             "date": {"type": "string", "description": "yyyy-mm-dd, default today"},
         }, "required": ["amount"]},
     }},
@@ -4573,6 +4722,7 @@ You turn natural language into structured, connected data by calling tools. You 
 
 Rules:
 - When the user refers to themselves, use the participant name "Me".
+- Every main account has places (sub-accounts); one place of each is its FAVORITE (a star), the first being called Default, and one main account is the overall favorite. When the user records an expense or income without naming an account, do NOT guess and do NOT pick one yourself: call the tool without an account, and when it answers that nothing was recorded, ask the user in one short question whether it is from their favorite account (name it, e.g. Revolut › Default) or another one, then call the tool again with their answer. If they named an account, or a place such as wallet, pass it in. A main account's money lives in its places: the amount a place can spend is its own balance. Money outside every place (unplaced_balance) is unusual; mention it only if it is not zero.
 - Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut (which can have spaces such as savings or a vault). Locked spaces (is_locked) are not available money: when asked what the user has or can spend, use cash_available, revolut and total_available, and mention locked amounts (cash_locked, revolut_locked) separately. Each account has a `balance` field, which is the real current balance; `opening_balance` is only the starting amount, so never quote it as the balance. Any money received, spent or moved must be recorded with record_income / create_expense / transfer_money so it shows in the transaction history; only use update_account_balance to correct a balance to a known figure. Spaces can be created, renamed, locked and deleted with create_money_space / update_money_space / delete_money_space; setting a balance with update_account_balance works even if the account has no transactions. When the user mentions an account (including a space such as "savings" or "wallet"), pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record income/money received use record_income. To record a refund use mark_refunded (or record_payment for a general person payment).
@@ -5219,12 +5369,37 @@ async def kitchen_overview(db: AsyncSession, user_id: str) -> dict:
     }
 
 
+async def needs_account_answer(db: AsyncSession, user_id: str, tool: str) -> dict:
+    """An expense or income with no account named is not recorded: the model is told what to ask. The favourite account and place
+    are offered first, the other places as the alternatives, so the person answers in a word."""
+    found = await account_favorites.target(db, user_id)
+    accounts = (await db.execute(select(Account).where(Account.user_id == user_id, Account.is_active == True).order_by(Account.sort_order, Account.name))).scalars().all()  # noqa: E712
+    names = {a.id: a.name for a in accounts}
+    options = []
+    for a in accounts:
+        if a.parent_id:
+            options.append(f"{names.get(a.parent_id, '')} › {a.name}")
+        elif not any(x.parent_id == a.id for x in accounts):
+            options.append(a.name)
+    label = None
+    if found:
+        main, place = found
+        label = f"{main.name} › {place.name}" if place else main.name
+    what = "this expense" if tool == "create_expense" else "this income"
+    return {"needs_confirmation": True, "recorded": False, "favorite": label, "options": options,
+            "message": (f"No account was named, so nothing was recorded. Ask the user: \"Is {what} from your favorite account ({label})?\" "
+                        "and offer to use another one if they prefer. When they answer, call the tool again with the account named in full, e.g. 'Revolut › Default'."
+                        if label else "No account was named and the user has no account yet. Ask them to create one under Money first.")}
+
+
 async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
     try:
         if name in ai_tools_nutrition.NUTRITION_NAMES:
             return await ai_tools_nutrition.dispatch_nutrition(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name in ai_tools_extra.EXTRA_NAMES:
             return await ai_tools_extra.dispatch_extra(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
+        if name in ("create_expense", "record_income") and not str(args.get("account") or "").strip():
+            return await needs_account_answer(db, user["_id"], name)
         if name == "create_expense":
             acc_ref = args.get("account", "cash")
             acc = await resolve_account(db, acc_ref, user["_id"])
@@ -5473,7 +5648,7 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             created.append({"collection": "transactions", "id": res["transaction"]["id"]})
             return res
         if name == "update_account_balance":
-            acc = await resolve_account(db, args.get("account", ""), user["_id"])
+            acc = await resolve_account(db, args.get("account", ""), user["_id"], to_place=False)
             if not acc:
                 return {"error": "Account not found"}
             upd = AccountUpdate(balance=args.get("balance"), add_as_new_money=bool(args.get("add_as_new_money")))
@@ -5498,7 +5673,7 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                             Account.user_id == user["_id"], Account.type == parent_type, Account.is_active == True
                         ))).scalars().first()
                     else:
-                        parent = await resolve_account(db, args.get("parent", ""), user["_id"])
+                        parent = await resolve_account(db, args.get("parent", ""), user["_id"], to_place=False)
                     if not parent or parent.type not in ("cash", "revolut"):
                         return {"error": "Spaces can only be created inside Money in hand or Revolut"}
                     known = await allocation_transfer_ids(db, user["_id"], [parent.id])
@@ -5510,7 +5685,7 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
                     created.append({"collection": "accounts", "id": res["id"]})
                     await remember_new_transfers(db, user["_id"], created, [parent.id], known)
                     return res
-                acc = await resolve_account(db, args.get("account", ""), user["_id"])
+                acc = await resolve_account(db, args.get("account", ""), user["_id"], to_place=False)
                 if not acc:
                     return {"error": "Account not found"}
                 if name == "update_money_space":
@@ -5819,6 +5994,9 @@ async def lifespan(app: FastAPI):
         logger.exception("could not check the two-step secrets")
     await ensure_shared_catalog()
     await migrate_legacy_account_refs()
+    made = await account_favorites.ensure_all(sys.modules[__name__], AsyncSessionLocal)
+    if made:
+        logger.info("Gave %d main account(s) their Default place.", made)
     scheduler = scheduling.Scheduler(sys.modules[__name__], AsyncSessionLocal)
     if os.environ.get("SCHEDULER_ENABLED", "true").lower() not in ("0", "false", "no"):
         scheduler.start()

@@ -46,8 +46,10 @@ def state(me):
     accounts = me["session"].get(api(me, "/accounts")).json()
     cash = next(a for a in accounts if a["id"] == me["cash"]["id"])
     subs = {a["name"]: a["balance"] for a in accounts if a["parent_id"] == cash["id"]}
-    assert round(cash["unallocated_balance"] + sum(subs.values()), 2) == cash["total_balance"]
-    return {"total": cash["total_balance"], "unallocated": cash["unallocated_balance"], "subs": subs}
+    default = subs.pop("Default")   # the favourite place: the money that is in no named place
+    assert cash["unallocated_balance"] == 0 and cash["unplaced_balance"] == 0
+    assert round(default + sum(subs.values()), 2) == cash["total_balance"]
+    return {"total": cash["total_balance"], "unallocated": default, "subs": subs}
 
 
 def test_the_assistant_sets_money_aside_without_creating_any(me):

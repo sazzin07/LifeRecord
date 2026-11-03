@@ -1,5 +1,5 @@
-"""BUG-007 (decided 2026-10-28): deleting a person keeps money they already paid you. Their splits and payment
-records go, but the "Payment from <name>" income stays in the account, so the balance does not change."""
+"""BUG-007 (decided 2026-10-28): deleting a person keeps money they already paid you: the "Payment from <name>" income stays in the
+account, so the balance does not change. (Since 2026-11-03 deleting archives the person, so their records stay too.)"""
 import uuid
 
 import pytest
@@ -36,6 +36,6 @@ def test_deleting_a_person_keeps_received_payments(client):
         assert txn is not None and txn["description"] == f"Payment from {name}"
         assert revolut_balance(client) == round(before + 7.25, 2)
     finally:
-        client.delete(f"{BASE_URL}/api/transactions/{payment_txn}")
+        client.delete(f"{BASE_URL}/api/settlements/{s['id']}")   # the payment and its income entry go together; the person was only archived
         client.delete(f"{BASE_URL}/api/people/{person['id']}")
     assert revolut_balance(client) == before

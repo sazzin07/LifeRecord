@@ -33,7 +33,7 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from database import engine, AsyncSessionLocal, get_db
 from models import (
-    Base, User, Account, AccountFavorite, Category, Person, Transaction, Split, Settlement,
+    Base, User, Account, AccountFavorite, DebtEntry, Category, Person, Transaction, Split, Settlement,
     Task, WeightEntry, Workout, Photo, Grocery, Product, StorageLocation,
     Appliance, PriceRecord, ShoppingItem, ShoppingList, RecurringList,
     Meal, Recipe, AIAction, AIPendingConfirmation, AIMessage, RateLimitEvent,
@@ -58,6 +58,9 @@ import scheduling_api
 import calendar_api
 import account_api
 import account_favorites
+import ai_tools_people
+import debts
+import debts_api
 import two_factor_api
 import nutrition_api
 import nutrition_plan_api
@@ -814,6 +817,7 @@ class AIChatBody(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=36)
     image_base64: Optional[str] = Field(default=None, max_length=8_000_000)  # ~6 MB base64
     confirm_token: Optional[str] = Field(default=None, max_length=256)
+    client_request_id: Optional[str] = Field(default=None, max_length=64)  # the same for a retry of the same send
     page: Optional[str] = Field(default=None, max_length=40)  # which page the user is on, for context
 
 
@@ -858,6 +862,9 @@ async def resolve_person(db: AsyncSession, name: str, user_id: str) -> dict:
         db.add(p)
         await db.commit()
         await db.refresh(p)
+    elif p.archived:
+        p.archived = False   # naming an archived person in a new expense restores them (their history is still there)
+        await db.commit()
     return {"id": p.id, "name": p.name}
 
 
@@ -1227,45 +1234,23 @@ async def account_views(db: AsyncSession, user_id: str, accounts: List[Account])
     return views
 
 
-async def people_balances(db: AsyncSession, user_id: str) -> List[dict]:
+async def people_balances(db: AsyncSession, user_id: str, archived: bool = False) -> List[dict]:
+    """Every person with their two balances (debts.py): `owes_me` is what they owe the user, `i_owe` what the user owes them. The two
+    are never netted; `net` (owes_me - i_owe) is kept only for older callers. Archived people are listed only when asked for."""
     people = (await db.execute(
-        select(Person).where(Person.user_id == user_id, Person.archived == False).order_by(Person.name)
+        select(Person).where(Person.user_id == user_id, Person.archived == archived).order_by(Person.name)
     )).scalars().all()
+    raw = await debts.raw_balances(db, user_id, [p.id for p in people]) if people else {}
     result = []
     for p in people:
-        owed = 0.0
-        i_owe = 0.0
-
-        # expenses where this person has a split
-        splits = (await db.execute(
-            select(Split, Transaction).join(Transaction).where(
-                Split.person_id == p.id,
-                Transaction.user_id == user_id,
-            )
-        )).all()
-        for sp, txn in splits:
-            if txn.paid_by == "me":
-                owed += float(sp.amount)
-            if txn.paid_by == p.id and not sp.is_me:
-                pass
-            if txn.paid_by == p.id:
-                if sp.is_me:
-                    i_owe += float(sp.amount)
-
-        settlements = (await db.execute(
-            select(Settlement).where(Settlement.person_id == p.id, Settlement.user_id == user_id)
-        )).scalars().all()
-        for s in settlements:
-            if s.direction == "in":
-                owed -= float(s.amount)
-            else:
-                i_owe -= float(s.amount)
-
-        net = round(owed - i_owe, 2)
+        r = raw[p.id]
+        out = debts.outstanding(r)
         d = to_dict(p)
-        d["owes_me"] = round(owed, 2)
-        d["i_owe"] = round(i_owe, 2)
-        d["net"] = net
+        d["owes_me"] = out[debts.THEY_OWE] / 100
+        d["i_owe"] = out[debts.I_OWE] / 100
+        d["owes_me_cents"], d["i_owe_cents"] = out[debts.THEY_OWE], out[debts.I_OWE]
+        d["net"] = round(d["owes_me"] - d["i_owe"], 2)
+        d["overpaid"] = {k: max(-r[k], 0) / 100 for k in debts.DIRECTIONS if r[k] < 0}
         result.append(d)
     return result
 
@@ -1913,34 +1898,34 @@ async def update_person(pid: str, body: PersonBody, user: dict = Depends(get_cur
     return to_dict(p)
 
 
-async def _delete_people(db: AsyncSession, user_id: str, ids: List[str]) -> int:
-    # Remove associated financial records first to keep the ledger consistent.
-    txn_ids = select(Transaction.id).where(Transaction.user_id == user_id).scalar_subquery()
-    await db.execute(
-        delete(Split).where(Split.person_id.in_(ids), Split.transaction_id.in_(txn_ids))
-    )
-    await db.execute(
-        delete(Settlement).where(Settlement.person_id.in_(ids), Settlement.user_id == user_id)
-    )
-    result = await db.execute(
-        delete(Person).where(Person.id.in_(ids), Person.user_id == user_id)
-    )
+async def _archive_people(db: AsyncSession, user_id: str, ids: List[str], clear_balances: bool) -> int:
+    """Deleting a person archives them (debts.archive): their splits, settlements and ledger lines are kept, so nothing is lost and
+    no payment is implied. A person with a balance needs clear_balances=True, so a debt never disappears by accident."""
+    await lock_money(db, user_id)
+    people = (await db.execute(select(Person).where(Person.id.in_(ids), Person.user_id == user_id))).scalars().all()
+    if not clear_balances:
+        raw = await debts.raw_balances(db, user_id, [p.id for p in people]) if people else {}
+        owing = [p.name for p in people if any(v > 0 for v in debts.outstanding(raw[p.id]).values())]
+        if owing:
+            raise HTTPException(409, "Still has a balance: " + ", ".join(owing) + ". Confirm to clear it as part of deleting.")
+    for p in people:
+        await debts.archive(db, user_id, p, clear_balances=True)
     await db.commit()
-    return result.rowcount
+    return len(people)
 
 
 @api_router.delete("/people/{pid}")
-async def delete_person(pid: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    count = await _delete_people(db, user["_id"], [pid])
+async def delete_person(pid: str, clear_balances: bool = False, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    count = await _archive_people(db, user["_id"], [pid], clear_balances)
     if count == 0:
         raise HTTPException(404, "Person not found")
-    return {"deleted": count}
+    return {"deleted": count, "archived": True}
 
 
 @api_router.post("/people/bulk-delete")
-async def bulk_delete_people(body: BulkDeleteBody, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    count = await _delete_people(db, user["_id"], body.ids)
-    return {"deleted": count}
+async def bulk_delete_people(body: BulkDeleteBody, clear_balances: bool = False, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    count = await _archive_people(db, user["_id"], body.ids, clear_balances)
+    return {"deleted": count, "archived": True}
 
 
 
@@ -2052,25 +2037,19 @@ async def clear_person_balance(pid: str, body: SettlementBody, user: dict = Depe
 
 @api_router.post("/people/clear-debts")
 async def clear_all_debts(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Remove all debt records (splits and settlements) for the current user. Transactions remain."""
-    before = await money_begin(db, user["_id"])
-    # Delete settlements and any auto-created transactions they produced
-    settlements = (await db.execute(
-        select(Settlement).where(Settlement.user_id == user["_id"])
-    )).scalars().all()
-    txn_ids = {x for s in settlements for x in [s.transaction_id, s.balance_transaction_id] if x}
-    if txn_ids:
-        await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
-    await db.execute(delete(Settlement).where(Settlement.user_id == user["_id"]))
-
-    # Delete all splits
-    await db.execute(delete(Split).where(Split.person_id.in_(
-        select(Person.id).where(Person.user_id == user["_id"])
-    )))
-
-    await money_check(db, user["_id"], before)
+    """Clear every outstanding balance of every person (debts.adjust "clear"): the amounts leave the balances and the normal history,
+    and are kept in each person's audit list with Restore. No payment is recorded and no account changes. Nothing is erased."""
+    uid = user["_id"]
+    await lock_money(db, uid)
+    cleared = 0
+    for p in (await db.execute(select(Person).where(Person.user_id == uid, Person.archived == False))).scalars().all():  # noqa: E712
+        try:
+            res = await debts.adjust(db, uid, p, "both", "clear", description="Cleared everything", origin="manual")
+            cleared += len(res["entries"])
+        except debts.DebtError:
+            continue
     await db.commit()
-    return {"ok": True, "deleted_settlements": len(settlements), "deleted_splits": "all"}
+    return {"ok": True, "cleared_lines": cleared}
 
 
 @api_router.delete("/settlements/{sid}")
@@ -2081,6 +2060,9 @@ async def delete_settlement(sid: str, user: dict = Depends(get_current_user), db
     )).scalar_one_or_none()
     if not s:
         raise HTTPException(404, "Settlement not found")
+    owner = (await db.execute(select(Person).where(Person.id == s.person_id, Person.user_id == user["_id"]))).scalar_one_or_none()
+    if owner is not None:
+        await debts.undo_payment_lines(db, user["_id"], owner, s.id)   # the extra of an overpayment is cancelled with it
     txn_ids = {x for x in [s.transaction_id, s.balance_transaction_id] if x}
     if txn_ids:
         await db.execute(delete(Transaction).where(Transaction.id.in_(txn_ids), Transaction.user_id == user["_id"]))
@@ -2729,6 +2711,7 @@ async def add_settlement(body: SettlementBody, user: dict = Depends(get_current_
             date=date,
             month=date[:7],
             notes=f"Settlement via {body.method}",
+            paid_by="me" if body.direction == "out" else None,   # a payment I make leaves the account: balances count only expenses paid by me
             created_at=now_iso())
         db.add(txn)
         await db.flush()
@@ -2815,8 +2798,8 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
 
     people = await people_balances(db, user["_id"])
     # Same net-per-person totals the People tab shows.
-    owed_to_me = round(sum(max(p["net"], 0) for p in people), 2)
-    i_owe = round(sum(max(-p["net"], 0) for p in people), 2)
+    owed_to_me = round(sum(p["owes_me"] for p in people), 2)
+    i_owe = round(sum(p["i_owe"] for p in people), 2)
     outstanding = owed_to_me
     total_with_owed = round(total_available + owed_to_me, 2)
 
@@ -4328,6 +4311,20 @@ async def ai_undo(aid: str, user: dict = Depends(get_current_user), db: AsyncSes
                     await db.rollback()
                     raise HTTPException(409, "Can't undo this: that place has been used since. Move its money out and delete it yourself.")
             await db.execute(delete(model).where(model.id == ref["id"], model.user_id == user["_id"]))
+    for ref in reversed(action.created or []):
+        if ref.get("collection") != "debt_entries":
+            continue
+        entry = (await db.execute(select(DebtEntry).where(DebtEntry.id == ref["id"], DebtEntry.user_id == user["_id"]))).scalar_one_or_none()
+        owner = (await db.execute(select(Person).where(Person.id == entry.person_id, Person.user_id == user["_id"]))).scalar_one_or_none() if entry else None
+        if entry is None or owner is None or entry.kind == "reversal":
+            continue
+        try:
+            await debts.reverse(db, user["_id"], owner, entry.id, origin="ai")
+        except debts.DebtError as e:
+            if "already" in e.message:
+                continue
+            await db.rollback()
+            raise HTTPException(409, f"Can't undo this: {e.message}")
     action.undone = True
     try:
         await money_check(db, user["_id"], balances_before)
@@ -4368,21 +4365,6 @@ AI_TOOLS = [
             "account": {"type": "string", "description": "Account or place the money arrived in: an id, a name, or 'Main › Place'. Leave it out ONLY when the user did not say; the tool then returns their favorite for you to ask about."},
             "date": {"type": "string", "description": "yyyy-mm-dd, default today"},
         }, "required": ["amount"]},
-    }},
-    {"type": "function", "function": {
-        "name": "record_payment",
-        "description": "Record a reimbursement/settlement. direction 'in' = a person paid Sá back; 'out' = Sá paid someone.",
-        "parameters": {"type": "object", "properties": {
-            "person": {"type": "string"}, "amount": {"type": "number"},
-            "method": {"type": "string", "enum": ["MB WAY", "Revolut", "Cash"]},
-            "account": {"type": "string", "description": "Account id, name or 'cash'/'revolut'"},
-            "direction": {"type": "string", "enum": ["in", "out"]},
-        }, "required": ["person", "amount"]},
-    }},
-    {"type": "function", "function": {
-        "name": "create_person",
-        "description": "Add a new person/contact.",
-        "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     }},
     {"type": "function", "function": {
         "name": "get_groceries",
@@ -4716,6 +4698,7 @@ AI_TOOLS = [
 ]
 AI_TOOLS += ai_tools_extra.EXTRA_TOOLS
 AI_TOOLS += ai_tools_nutrition.NUTRITION_TOOLS
+AI_TOOLS += ai_tools_people.PEOPLE_TOOLS
 
 AI_SYSTEM ="""You are Life Record's personal assistant, a friendly multi-user life-management helper.
 You turn natural language into structured, connected data by calling tools. You handle money/expenses, shared expenses and reimbursements, groceries, meals/nutrition, workouts, weight and tasks for the current user.
@@ -4723,6 +4706,7 @@ You turn natural language into structured, connected data by calling tools. You 
 Rules:
 - When the user refers to themselves, use the participant name "Me".
 - Every main account has places (sub-accounts); one place of each is its FAVORITE (a star), the first being called Default, and one main account is the overall favorite. When the user records an expense or income without naming an account, do NOT guess and do NOT pick one yourself: call the tool without an account, and when it answers that nothing was recorded, ask the user in one short question whether it is from their favorite account (name it, e.g. Revolut › Default) or another one, then call the tool again with their answer. If they named an account, or a place such as wallet, pass it in. A main account's money lives in its places: the amount a place can spend is its own balance. Money outside every place (unplaced_balance) is unusual; mention it only if it is not zero.
+- PEOPLE AND DEBTS. Every person has two separate balances: they_owe (what they owe the user) and i_owe (what the user owes them); never net them. Four different things, never interchangeable: (1) adjust_debt adds to or reduces a debt with no payment ('Ferreira owes me 10', 'add another 15', 'I owe Maria 40', 'reduce John's debt by 10'); (2) record_payment is money that really changed hands ('Ferreira paid me 5', 'I paid Maria 20', 'she just paid half'); (3) clear_debt forgives or drops a debt with no payment ('clear everything he owes me', 'forget the rest, I won't collect it'): preview, then confirm; (4) correct_debt fixes a wrong balance. If it is unclear whether the user means a payment or clearing the debt, ask. Run clear instructions without asking when unambiguous (adding, reducing, paying), but ask when: several people match the name, the person cannot be identified, the direction is unclear, the amount is missing, or the person does not exist (offer to add them, call create_person only after a yes). A pronoun or 'add another 15' refers to the person from the conversation when that is unambiguous. Never say something was done before the tool returned ok; report the balances the tool returned. A payment is recorded in an account only if the user names one: say when it was not. If a payment is more than is owed, the tool asks what the extra is: ask the user whether it becomes a debt the other way or is a tip/gift.
 - Accounts are dynamic: bank account, money-in-hand (with sub-places like wallet, envelope, coin pouch), and Revolut (which can have spaces such as savings or a vault). Locked spaces (is_locked) are not available money: when asked what the user has or can spend, use cash_available, revolut and total_available, and mention locked amounts (cash_locked, revolut_locked) separately. Each account has a `balance` field, which is the real current balance; `opening_balance` is only the starting amount, so never quote it as the balance. Any money received, spent or moved must be recorded with record_income / create_expense / transfer_money so it shows in the transaction history; only use update_account_balance to correct a balance to a known figure. Spaces can be created, renamed, locked and deleted with create_money_space / update_money_space / delete_money_space; setting a balance with update_account_balance works even if the account has no transactions. When the user mentions an account (including a space such as "savings" or "wallet"), pass its name/ID directly; you do not need to map to "cash"/"revolut" unless they explicitly say so.
 - For shared expenses, figure out each person's share. If items are assigned to specific people, use split_mode "items" with the items array. If the split is equal, use split_mode "equal". Never fabricate amounts you weren't given.
 - To change an existing expense use update_expense; to remove one use delete_expense (preview first, then confirm). To record income/money received use record_income. To record a refund use mark_refunded (or record_payment for a general person payment).
@@ -5046,6 +5030,7 @@ async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
 
     created, tool_summary = [], []
     previewed_this_turn: set = set()
+    call_ctx = {"request_id": (body.client_request_id or new_id())[:64]}   # a repeated identical tool call in one request is applied once
     reply = ""
     nudged = False
     failure: Optional[str] = None
@@ -5082,7 +5067,7 @@ async def ai_chat_events(db: AsyncSession, user: dict, body: AIChatBody):
                 args = call["args"]
                 yield {"type": "tool", "name": call["name"], "status": "running"}
                 try:
-                    result = await dispatch_tool(db, call["name"], args, created, user, session_id, previewed_this_turn)
+                    result = await dispatch_tool(db, call["name"], args, created, user, session_id, previewed_this_turn, call_ctx)
                 except HTTPException as exc:
                     # A rejected tool call goes back to the model as an error so it can explain or retry
                     # instead of failing the whole chat or claiming success.
@@ -5392,8 +5377,11 @@ async def needs_account_answer(db: AsyncSession, user_id: str, tool: str) -> dic
                         if label else "No account was named and the user has no account yet. Ask them to create one under Money first.")}
 
 
-async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None) -> dict:
+async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, user: dict, session_id: Optional[str] = None, previewed_this_turn: Optional[set] = None,
+                        ctx: Optional[dict] = None) -> dict:
     try:
+        if name in ai_tools_people.PEOPLE_NAMES:
+            return await ai_tools_people.dispatch_people(sys.modules[__name__], db, user, name, args, created, ctx, session_id, previewed_this_turn)
         if name in ai_tools_nutrition.NUTRITION_NAMES:
             return await ai_tools_nutrition.dispatch_nutrition(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name in ai_tools_extra.EXTRA_NAMES:
@@ -5428,26 +5416,6 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             res = await add_income(body, user, db)
             created.append({"collection": "transactions", "id": res["id"]})
             return res
-        if name == "record_payment":
-            acc_ref = args.get("account", "revolut")
-            acc = await resolve_account(db, acc_ref, user["_id"])
-            account_id = acc.id if acc else acc_ref
-            body = SettlementBody(
-                person=args["person"], amount=args.get("amount"),
-                method=args.get("method", "Revolut"),
-                account=acc_ref, account_id=account_id,
-                direction=args.get("direction", "in"),
-                date=args.get("date"))
-            res = await add_settlement(body, user, db)
-            if res.get("id"):
-                created.append({"collection": "settlements", "id": res["id"]})
-                if res.get("transaction_id"):
-                    created.append({"collection": "transactions", "id": res["transaction_id"]})
-                if res.get("balance_transaction_id"):
-                    created.append({"collection": "transactions", "id": res["balance_transaction_id"]})
-            return res
-        if name == "create_person":
-            return await resolve_person(db, args["name"], user["_id"])
         if name == "add_grocery":
             fields = {k: v for k, v in args.items() if k in GroceryBody.model_fields}
             if fields.get("storage_location"):
@@ -6031,6 +5999,7 @@ nutrition_plan_gen = nutrition_plan_gen_api.register(api_router, sys.modules[__n
 nutrition_insights_ns = nutrition_insights_api.register(api_router, sys.modules[__name__], nutrition)
 account_api.register(api_router, sys.modules[__name__])
 two_factor_api.register(api_router, sys.modules[__name__])
+debts_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------
@@ -6077,7 +6046,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     expose_headers=["Date"],  # the page reads the server's clock from it, to correct a computer whose own clock is wrong
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode", "X-Refresh-Key", "X-Session-Key", "X-Session-Proof"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Auth-Mode", "X-Refresh-Key", "X-Session-Key", "X-Session-Proof", "Idempotency-Key"],
     max_age=600,
 )
 

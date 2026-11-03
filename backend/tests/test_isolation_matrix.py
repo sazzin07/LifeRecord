@@ -123,6 +123,9 @@ CASES: Dict[str, Case] = {
 TABLE_EXEMPT = {
     "totp_credentials": "internal and secret: no route takes an id; every second-step route works on the signed-in user's own row (their id from the "
                         "token), and test_two_factor.py proves one account's code cannot open another's challenge and that B never sees A's setting",
+    "debt_entries": "reached only through /debts routes that look the person up by id AND the signed-in user; "
+                    "test_debts.py::test_nobody_reaches_another_persons_records tries every one of them with another account's ids",
+    "idempotency_keys": "internal: keyed by (user, key); a key belongs to the person who sent it (test_debts.py::test_the_same_key_for_two_people_is_two_requests)",
     "account_favorites": "internal: which place is the favourite; written only by POST /accounts/{id}/favorite, which looks the account up by id AND the signed-in user "
                          "(test_account_favorites.py::test_nobody_can_star_or_move_someone_elses_account)",
     "webauthn_credentials": "internal and secret (public keys only): no route takes a credential id from outside except the owner-checked "
@@ -157,6 +160,12 @@ ROUTE_EXEMPT = {
     ("PUT", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",
     ("DELETE", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",
     ("GET", "/prices/{}"): "a product name; covered by test_price_history_is_per_user",
+    ("GET", "/debts/people/{}"): "a person id looked up with the signed-in user's id; test_debts.py::test_nobody_reaches_another_persons_records",
+    ("POST", "/debts/people/{}/payments"): "same; test_debts.py::test_nobody_reaches_another_persons_records",
+    ("POST", "/debts/people/{}/adjust/{}"): "same; test_debts.py::test_nobody_reaches_another_persons_records",
+    ("POST", "/debts/people/{}/archive"): "same; test_debts.py::test_nobody_reaches_another_persons_records",
+    ("POST", "/debts/people/{}/restore"): "same; test_debts.py::test_nobody_reaches_another_persons_records",
+    ("POST", "/debts/entries/{}/reverse"): "an entry id looked up with the signed-in user's id; test_debts.py::test_nobody_reaches_another_persons_records",
     ("POST", "/auth/2fa/passkeys/{}/remove"): "a passkey id, looked up with the signed-in user's id; covered by test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey",
     ("POST", "/auth/2fa/passkeys/{}/rename"): "a passkey id, looked up with the signed-in user's id; covered by test_passkeys.py::test_nobody_can_remove_or_rename_another_persons_passkey",
 }

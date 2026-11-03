@@ -31,3 +31,29 @@ describe("streamChat when the server refuses with a limit", () => {
     expect(events[0].message).toMatch(/could not answer/i);
   });
 });
+
+describe("one id per send", () => {
+  afterEach(() => { delete global.fetch; });
+
+  test("the streaming request carries a client_request_id, and the plain-endpoint retry carries the SAME one", async () => {
+    const { api } = require("@/lib/api");
+    global.fetch = jest.fn(() => Promise.reject(new TypeError("network down")));
+    api.post.mockResolvedValueOnce({ data: { reply: "ok", session_id: "s", actions: [], changed: false } });
+    await streamChat({ message: "Ferreira owes me 10", sessionId: "s", onEvent: () => {} });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("two sends get two different ids", async () => {
+    const ids = [];
+    global.fetch = jest.fn((url, init) => { ids.push(JSON.parse(init.body).client_request_id); return respond(500, null); });
+    const { api } = require("@/lib/api");
+    api.post.mockImplementation((path, body) => { ids.push(body.client_request_id); return Promise.resolve({ data: { reply: "x", session_id: "s", actions: [] } }); });
+    await streamChat({ message: "a", sessionId: "s", onEvent: () => {} });
+    await streamChat({ message: "b", sessionId: "s", onEvent: () => {} });
+    const [streamA, plainA, streamB, plainB] = ids;
+    expect(streamA).toBeTruthy();
+    expect(plainA).toBe(streamA);       // the retry through the plain endpoint is the same send
+    expect(plainB).toBe(streamB);
+    expect(streamA).not.toBe(streamB);  // a new message is a new request
+  });
+});

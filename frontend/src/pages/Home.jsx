@@ -80,8 +80,8 @@ export default function Home() {
       if (sum.grocery?.out_of_stock?.length) out.push(`Out of stock: ${sum.grocery.out_of_stock.slice(0, 3).join(", ")}.`);
       if (sum.grocery?.low_stock?.length) out.push(`${sum.grocery.low_stock.length} grocery item${sum.grocery.low_stock.length > 1 ? "s are" : " is"} running low.`);
     }
-    const topDebt = (people || []).filter((p) => p.net > 0).sort((a, b) => b.net - a.net)[0];
-    if (topDebt) out.push(`${topDebt.name} still owes you ${eur(topDebt.net)}.`);
+    const topDebt = (people || []).filter((p) => p.owes_me > 0).sort((a, b) => b.owes_me - a.owes_me)[0];
+    if (topDebt) out.push(`${topDebt.name} still owes you ${eur(topDebt.owes_me)}.`);
     if (nutri.p) out.push(`You've logged ${Math.round(nutri.p)}g protein today.`);
     if (!weight?.length) out.push("You haven't completed a weight check-in yet.");
     return out.slice(0, 4);
@@ -174,15 +174,16 @@ export default function Home() {
             <button onClick={() => nav("/people")} aria-label="Open People" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
           </div>
           <div className="space-y-2">
-            {(people || []).filter((p) => Math.abs(p.net) > 0.005).slice(0, 4).map((p) => (
-              <div key={p.id} className="flex items-center justify-between text-sm">
-                <span className="text-slate-700 dark:text-slate-300">{p.name}</span>
-                <span className={cn("stat-num font-semibold", p.net >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500")}>
-                  {p.net >= 0 ? "+" : ""}{eur(p.net)}
+            {(people || []).filter((p) => p.owes_me > 0 || p.i_owe > 0).slice(0, 4).map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate text-slate-700 dark:text-slate-300">{p.name}</span>
+                <span className="shrink-0 text-right">
+                  {p.owes_me > 0 && <span className="stat-num block font-semibold text-emerald-700 dark:text-emerald-400">owes you {eur(p.owes_me)}</span>}
+                  {p.i_owe > 0 && <span className="stat-num block font-semibold text-amber-700 dark:text-amber-400">you owe {eur(p.i_owe)}</span>}
                 </span>
               </div>
             ))}
-            {(people || []).filter((p) => Math.abs(p.net) > 0.005).length === 0 && <p className="text-sm text-slate-500">No outstanding balances.</p>}
+            {(people || []).filter((p) => p.owes_me > 0 || p.i_owe > 0).length === 0 && <p className="text-sm text-slate-500">No outstanding balances.</p>}
           </div>
         </Card>
 

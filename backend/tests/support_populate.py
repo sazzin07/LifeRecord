@@ -270,6 +270,10 @@ def _extras(a):
         (str(uuid.uuid4()), a["id"], now_ms + 300000))
     _db("INSERT INTO sms_factors (user_id,phone_enc,phone_hint,confirmed_ms,created_ms) VALUES (%s,'populate','+•• ••• ••• 000',NULL,%s)", (a["id"], now_ms))
     _db("INSERT INTO sms_codes (user_id,code_hash,expires_ms,attempts,sent_ms) VALUES (%s,%s,%s,0,%s)", (a["id"], "0" * 64, now_ms + 300000, now_ms))
+    # A line of the debt ledger, and a remembered request key (internal, never exported).
+    _db("INSERT INTO debt_entries (id,user_id,person_id,person_name,direction,kind,amount_cents,currency,description,origin,created_ms,created_at) "
+        "VALUES (%s,%s,%s,'Populated','they_owe','add',1250,'EUR','populate','manual',%s,%s)", (str(uuid.uuid4()), a["id"], str(uuid.uuid4()), now_ms, dt.datetime.now(dt.timezone.utc).isoformat()))
+    _db("INSERT INTO idempotency_keys (user_id,`key`,response,created_ms) VALUES (%s,%s,'{}',%s)", (a["id"], "populate-" + uuid.uuid4().hex, now_ms))
     # Written straight to the table, so the sessions the test already holds keep working; it only stops NEW sign-ins.
     _db("INSERT INTO account_deactivations (user_id,deactivated_ms,deactivated_by) VALUES (%s,%s,'self')", (a["id"], int(dt.datetime.now().timestamp() * 1000)))
 

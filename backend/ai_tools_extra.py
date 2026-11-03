@@ -11,7 +11,7 @@ from typing import Optional
 
 from sqlalchemy import select
 
-from models import Meal, Person, Recipe, Task, WeightEntry, Workout, Category
+from models import Category, DebtEntry, Meal, Person, Recipe, Task, WeightEntry, Workout
 
 
 def _fn(name, description, props=None, required=None):
@@ -54,11 +54,11 @@ EXTRA_TOOLS = [
          "recurring": {"type": "string", "enum": ["", "daily", "weekly", "monthly"], "description": "Empty string = does not repeat"},
          "done": _B}),
     _fn("delete_task", "Delete a task (preview first, then confirm).", {"task_id": _S, "match": _S, "confirm": _CONFIRM}),
-    _fn("get_people", "List people with what each owes the user or is owed (positive = they owe the user)."),
     _fn("update_person", "Rename a person or change their notes / payment preference.",
         {"person": _S, "new_name": _S, "notes": _S, "payment_preference": _S}, ["person"]),
     _fn("delete_person",
-        "Delete a person together with their splits and settlements (preview first, then confirm). Affects balances.",
+        "Delete a person (preview first, then confirm). They are archived, not erased: every record is kept and they can be restored. If they owe or are owed money the "
+        "preview says how much and deleting clears it (no payment is recorded).",
         {"person": _S, "confirm": _CONFIRM}, ["person"]),
     _fn("delete_recipe", "Delete a saved recipe (preview first, then confirm).", {"recipe": _S, "confirm": _CONFIRM}, ["recipe"]),
     _fn("get_workouts", "List recent workouts with exercises, plus personal records.", {"limit": _N}),
@@ -224,10 +224,6 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         await srv.delete_task(t.id, user, db)
         return {"deleted": t.title}
 
-    if name == "get_people":
-        return {"people": [{"id": p.get("id"), "name": p.get("name"), "balance": p.get("balance"), "notes": p.get("notes"),
-                            "payment_preference": p.get("payment_preference")} for p in await srv.people_balances(db, uid)],
-                "note": "A positive balance means the person owes the user."}
     if name == "update_person":
         p = await _find_person(db, user, args.get("person"))
         if not p:
@@ -239,14 +235,21 @@ async def dispatch_extra(srv, db, name, args, created, user, session_id=None, pr
         return {"updated": await srv.update_person(p.id, body, user, db)}
     if name == "delete_person":
         p = await _find_person(db, user, args.get("person"))
-        if not p:
+        if not p or p.archived:
             return {"error": f"No person matching '{args.get('person')}'"}
+        import debts
+        owed = {d: v for d, v in debts.outstanding(await debts.balance_of(db, uid, p.id)).items() if v > 0}
+        what = (" They still have a balance: " + " and ".join(debts._phrase(d, v, p.name) for d, v in owed.items()) + "; deleting clears it (no payment recorded).") if owed else ""
         gate = await _confirm(srv, db, user, session_id, previewed, name, p.id, args,
-                        f"This will delete {p.name} and every split and settlement with them, which changes balances. Ask the user to confirm.")
+                              f"This will delete {p.name}. Their records are kept and they can be restored.{what} Ask the user to confirm.")
         if gate:
             return gate
-        await srv.delete_person(p.id, user, db)
-        return {"deleted": p.name}
+        srv.remember_before(created, "people", p)
+        await srv._archive_people(db, uid, [p.id], True)
+        for line in (await db.execute(select(DebtEntry).where(DebtEntry.user_id == uid, DebtEntry.person_id == p.id, DebtEntry.kind == "clear")
+                                      .order_by(DebtEntry.created_ms.desc()).limit(len(owed)))).scalars():
+            created.append({"collection": "debt_entries", "id": line.id})   # undo restores what deleting cleared
+        return {"deleted": p.name, "archived": True, "cleared": {d: v / 100 for d, v in owed.items()}}
 
     if name == "delete_recipe":
         key = (args.get("recipe") or "").strip()

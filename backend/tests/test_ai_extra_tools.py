@@ -136,7 +136,7 @@ def test_person_rename_notes_and_confirmed_delete():
     assert any(p["name"] == f"{TAG} Marta S" for p in run(_tool("get_people", {}))["people"])
 
     preview, final = _confirm_flow("delete_person", {"person": f"{TAG} Marta S"})
-    assert preview.get("needs_confirmation") and final == {"deleted": f"{TAG} Marta S"}
+    assert preview.get("needs_confirmation") and final["deleted"] == f"{TAG} Marta S" and final["archived"] is True
     assert not any(TAG in p["name"] for p in run(_tool("get_people", {}))["people"])
 
 

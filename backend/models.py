@@ -506,6 +506,39 @@ class TotpRecoveryCode(Base):
     used_ms = Column(BigInteger, nullable=True)
 
 
+class DebtEntry(Base):
+    """One line of the debt ledger, written once and never edited: a correction or an undo is a NEW line that cancels (see debts.py).
+    `amount_cents` is the signed effect on the balance of `direction` (they_owe = what the person owes me, i_owe = what I owe
+    them). Expense splits and settlements are the other two sources of a balance; this table holds everything entered by hand
+    or by the assistant. Money is integer cents: no floating point."""
+    __tablename__ = "debt_entries"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    person_id = Column(String(36), nullable=False, index=True)
+    person_name = Column(String(255), nullable=False)
+    direction = Column(String(10), nullable=False)
+    kind = Column(String(12), nullable=False)             # add | reduce | correct | clear | excess | reversal
+    amount_cents = Column(BigInteger, nullable=False)
+    currency = Column(String(3), nullable=False, default="EUR")
+    description = Column(Text, nullable=True)
+    origin = Column(String(12), nullable=False, default="manual")   # manual | ai | payment
+    target_type = Column(String(8), nullable=True)        # what a clear / reversal points at: entry | split | all
+    target_id = Column(String(36), nullable=True)
+    settlement_id = Column(String(36), nullable=True)     # the payment an excess line belongs to
+    created_ms = Column(BigInteger, nullable=False, index=True)
+    created_at = Column(String(32), nullable=False)
+
+
+class IdempotencyKey(Base):
+    """A request that changes money is remembered by its key, so a retry (a double click, a lost answer, the assistant repeating a
+    call) returns the first answer instead of making the change twice."""
+    __tablename__ = "idempotency_keys"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    key = Column(String(120), primary_key=True)
+    response = Column(Text, nullable=False)
+    created_ms = Column(BigInteger, nullable=False, index=True)
+
+
 class AccountFavorite(Base):
     """Which money place is the favourite. scope is a main account's id (its favourite sub-account, the place new money and
     day-to-day entries go to) or the word "overall" (the main account used when no account is named). Its own table, so the

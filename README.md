@@ -382,10 +382,37 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 - Transfers between accounts, actual-spending calculation, and locked-funds support.
 - Expenses, income, and transfers all update account balances automatically.
 
-### People / shared expenses
-- People ledger, split expenses, repayments.
-- Recording a person payment now updates the selected account balance.
-- Clear all debts or per-person balances.
+### People and debts
+Every person has **two separate balances**, never netted against each other: *they owe you* and *you owe them*
+(`backend/debts.py`, `debts_api.py`, `ai_tools_people.py`; tests `test_debts.py`, `test_ai_people.py`, `frontend/e2e/people.spec.js`).
+- **Where a balance comes from** (per direction): expense splits (their share of what you paid; your share of what they paid),
+  minus payments, plus the debt ledger. The ledger (`debt_entries`) holds what is entered by hand or by the assistant; it is
+  append-only, in integer cents, so a correction, a clearing and an undo are new lines that cancel earlier ones and the history always
+  explains the balance. Expense-linked debt stays in the expense's splits and is not copied into the ledger, so nothing is counted twice.
+  Creating a debt never needs an expense and never creates one.
+- **Five different things** (screen and assistant use the same functions): *add* and *reduce* change a debt with no payment;
+  a **payment** is money that really changed hands (it lowers the debt it settles, appears in the payment history, and moves an account
+  only if you pick one: "Don't record in my accounts" is an option; the default is your favourite account); **clear** removes an
+  amount without a payment (confirmation first; it leaves the normal view and stays under "cleared items", each with **Restore**);
+  **correct** sets a balance to the right figure; **undo** cancels one line. Clearing never deletes the person; deleting a person never
+  means a payment happened.
+- **A payment larger than the debt** is not recorded until you say what the extra is: *a debt the other way* or *a tip or gift, no debt*.
+- **Deleting a person archives them** (hidden, restorable under "Archived", history kept). If they owe or are owed money the bar at the
+  top names the amounts and says deleting also clears them (no payment recorded). A person with no history at all is removed outright.
+- **Safety:** every change takes the user's money lock and carries an `Idempotency-Key` (the browser sends one per attempt; the assistant
+  derives one from the chat request and the call): a retry, a double click or a repeated tool call is applied once. A refused request leaves
+  nothing behind. Every route looks the person up by id **and** the signed-in user.
+- **The assistant** has tools `find_person`, `get_people`, `get_person_debts`, `adjust_debt`, `record_payment`, `clear_debt` (asks first),
+  `correct_debt`, `create_person`, `delete_person` (asks first). Several people matching a name, a missing amount, an unknown person or an
+  unclear direction are asked about, never guessed; a person who does not exist is offered, not created. It reports the balances the
+  server saved. Every action can be undone (by cancelling lines). The chat sends a `client_request_id`, so a retried send cannot apply a
+  change twice.
+- **The screen** (`pages/People.jsx`, `pages/people/*`): the two totals and the latest activity; a directory of rows with search, sort,
+  filters and quick actions; the profile as a side sheet (a bottom sheet on a phone); a bar at the top for delete confirmations. Deep teal
+  and amber, glass only on the floating layers (sheet, dialogs, the bar), light and dark; the tokens live in `.ppl-theme` in `index.css`.
+- **Not done:** due dates and reminders (decided against for now); one currency (EUR; every ledger line carries a currency column so a second is
+  never silently added); the old `DELETE /splits/{id}` and `/settlements/{id}` endpoints still exist for compatibility but the screen no
+  longer uses the first.
 
 ### Groceries
 - Multiple shopping lists with budgets, progress, and bulk actions.

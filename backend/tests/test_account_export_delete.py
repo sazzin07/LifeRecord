@@ -68,7 +68,7 @@ def test_the_export_holds_every_table_with_data_and_no_secret():
     assert r.headers["content-type"] == "application/zip" and "attachment" in r.headers["content-disposition"]
     data = json.loads(zf.read("data.json"))
     expected = set(_user_tables()) - {"ai_pending_confirmations", "auth_sessions", "auth_session_info", "account_deactivations", "totp_credentials", "totp_recovery_codes",
-                                           "webauthn_credentials", "webauthn_challenges", "sms_factors", "sms_codes"}  # internal: short-lived state, sign-in sessions, the on/off switch
+                                           "webauthn_credentials", "webauthn_challenges", "sms_factors", "sms_codes", "idempotency_keys"}  # internal: short-lived state, sign-in sessions, the on/off switch
     assert expected <= set(data["tables"]), sorted(expected - set(data["tables"]))
     empty = sorted(t for t in expected if not data["tables"][t])
     assert empty == [], f"populate() filled these but the export has no rows: {empty}"

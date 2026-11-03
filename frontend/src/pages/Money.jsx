@@ -395,6 +395,9 @@ export default function Money() {
   };
 
   const sumWait = !sum && !sumError;
+  const sumWaited = useRef(false);
+  if (sumWait) sumWaited.current = true;
+  const revealSum = !sumWait && sumWaited.current;   // fade in only what replaced placeholders
   const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
   const openBudgets = () => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); };
@@ -448,15 +451,15 @@ export default function Money() {
           {sumError && !sum ? (
             <ErrorBlock what="the figures" onRetry={() => load({ force: true })} className="min-h-[16rem]" />
           ) : (
-          <>
+          <div data-skeleton={sumWait ? "" : undefined} {...(sumWait ? { inert: "true" } : {})} aria-busy={sumWait || undefined} className={cn("space-y-4 sm:space-y-5", revealSum && "sk-reveal")}>
+            {sumWait && <span role="status" className="sr-only">Loading your money</span>}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
             {/* The total, and where money left the bank */}
-            <Resolve loading={sumWait} label="Loading balances" what="the balances" className="flex flex-col gap-4 lg:col-span-4"
-              skeleton={<><HeroSk /><FlowSk /></>}>
+              <div className="flex flex-col gap-4 lg:col-span-4">
               <section className="mny-card mny-hero p-5 sm:p-6" aria-labelledby="mny-total-h">
                 <h3 id="mny-total-h" className="mny-muted text-sm font-medium">Total available now</h3>
                 <p data-testid="money-total" className="mny-num mny-title mt-2 break-words text-4xl font-medium sm:text-5xl">{eur(sum?.total_available)}</p>
-                {lockedTotal > 0 && <p className="mny-amber mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
+                {(sumWait || lockedTotal > 0) && <p className="mny-amber sk-ph mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
                 <div className="mt-5 grid grid-cols-3 gap-2 text-center">
                   {[["Bank", sum?.bank], ["Hand", sum?.cash_available], ["Revolut", sum?.revolut]].map(([l, v]) => (
                     <div key={l} className="mny-tile px-1.5 py-2">
@@ -471,7 +474,7 @@ export default function Money() {
                 <h3 id="mny-flow-h" className="mny-title text-base font-semibold">Where it went</h3>
                 <div className="mt-3 space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0"><p className="mny-title">Left the bank</p><p className="mny-muted text-xs">Started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p></div>
+                    <div className="min-w-0"><p className="mny-title">Left the bank</p><p className="mny-muted sk-ph text-xs">Started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p></div>
                     <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(sum?.money_left_bank)}</p>
                   </div>
                   <div className="mny-hair border-t" />
@@ -486,44 +489,42 @@ export default function Money() {
                   </div>
                 </div>
               </section>
-            </Resolve>
+
+              </div>
 
             {/* The three accounts */}
-            <Resolve loading={sumWait} label="Loading accounts" what="the accounts" className="lg:col-span-4" skeleton={<AccountsSk />}>
-            <section className="mny-card p-5" aria-labelledby="mny-accounts-h">
+            <section className="mny-card p-5 lg:col-span-4" aria-labelledby="mny-accounts-h">
               <h3 id="mny-accounts-h" className="mny-title mb-3 text-base font-semibold">Accounts</h3>
               <div className="space-y-3">
                 <AccountRow
                   icon={Building2} label="Bank account" amount={mainAccounts.bank?.balance} testid="money-bank" account={mainAccounts.bank}
-                  meta={sum?.bank_initial ? <p>Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}</p> : null}
+                  meta={sumWait ? <p className="sk-ph">Started €0,000.00 · left bank €0.00</p> : sum?.bank_initial ? <p>Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}</p> : null}
                   onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
                   onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
                 />
                 <AccountRow
                   icon={Wallet} label="Money in hand" amount={sum?.cash_available} testid="money-cash" account={mainAccounts.cash}
-                  meta={<>{(sum?.cash_locked || 0) > 0 && <p className="mny-amber">{eur(sum.cash_locked)} locked</p>}<AllocationSummary account={mainAccounts.cash} /></>}
+                  meta={sumWait ? <><p className="sk-ph">€000.00 locked</p><p className="sk-ph">Total €000.00 · 3 places · favorite Default</p></> : <>{(sum?.cash_locked || 0) > 0 && <p className="mny-amber">{eur(sum.cash_locked)} locked</p>}<AllocationSummary account={mainAccounts.cash} /></>}
                   onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
                   onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
                   onTransferIn={() => mainAccounts.cash && openTransferTo(mainAccounts.cash.id)}
                 >
-                  <SubPlaces account={mainAccounts.cash} />
+                  {sumWait ? <p className="mny-muted text-xs"><span className="sk-ph">Show 3 places</span></p> : <SubPlaces account={mainAccounts.cash} />}
                 </AccountRow>
                 <AccountRow
                   icon={Smartphone} label="Revolut" amount={sum?.revolut} testid="money-revolut" account={mainAccounts.revolut}
-                  meta={<>{(sum?.revolut_locked || 0) > 0 && <p className="mny-amber">{eur(sum.revolut_locked)} locked</p>}<AllocationSummary account={mainAccounts.revolut} /></>}
+                  meta={sumWait ? <><p className="sk-ph">€000.00 locked</p><p className="sk-ph">Total €000.00 · 2 places · favorite Default</p></> : <>{(sum?.revolut_locked || 0) > 0 && <p className="mny-amber">{eur(sum.revolut_locked)} locked</p>}<AllocationSummary account={mainAccounts.revolut} /></>}
                   onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
                   onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
                   onTransferIn={() => mainAccounts.revolut && openTransferTo(mainAccounts.revolut.id)}
                 >
-                  <SubPlaces account={mainAccounts.revolut} />
+                  {sumWait ? <p className="mny-muted text-xs"><span className="sk-ph">Show 2 places</span></p> : <SubPlaces account={mainAccounts.revolut} />}
                 </AccountRow>
               </div>
             </section>
-            </Resolve>
 
             {/* The period in four tiles, then the pace */}
-            <Resolve loading={sumWait} label="Loading this period" what="this period" className="md:col-span-2 lg:col-span-4" skeleton={<PeriodSk />}>
-            <section className="mny-card p-5" aria-labelledby="mny-period-h">
+            <section className="mny-card p-5 md:col-span-2 lg:col-span-4" aria-labelledby="mny-period-h">
               <h3 id="mny-period-h" className="mny-title text-base font-semibold">This period</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 {[
@@ -535,7 +536,7 @@ export default function Money() {
                   <div key={t.id} data-testid={t.id} className="mny-tile p-3">
                     <p className="mny-muted flex items-center gap-1.5 text-xs"><t.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{t.label}</span></p>
                     <p className={cn("mny-num mt-1.5 truncate text-lg font-semibold sm:text-xl", t.amber ? "mny-amber" : "mny-title")}>{t.value}</p>
-                    <p className="mny-muted mt-0.5 truncate text-[11px]">{t.hint}</p>
+                    <p className="mny-muted sk-ph mt-0.5 truncate text-[11px]">{t.hint}</p>
                   </div>
                 ))}
               </div>
@@ -544,18 +545,16 @@ export default function Money() {
                   <div key={idx} className="min-w-0">
                     <p className="mny-muted flex items-center gap-1.5 text-xs"><i.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{i.label}</span></p>
                     <p className={cn("mny-num mt-0.5 truncate text-base font-semibold", i.accent ? (i.label === "vs previous period" && trendPct > 0 ? "mny-neg" : "mny-green") : "mny-title")}>{i.value}</p>
-                    {i.hint && <p className="mny-muted truncate text-[11px]">{i.hint}</p>}
+                    {i.hint && <p className="mny-muted sk-ph truncate text-[11px]">{i.hint}</p>}
                   </div>
                 ))}
               </div>
             </section>
-            </Resolve>
           </div>
 
           {/* Spending over time, and where it went by category */}
           <div className="grid gap-4 lg:grid-cols-12">
-            <Resolve loading={sumWait} label="Loading the spending chart" what="the chart" className="lg:col-span-8" skeleton={<ChartCardSk />}>
-            <section className="mny-card p-5" aria-labelledby="mny-time-h">
+            <section className="mny-card p-5 lg:col-span-8" aria-labelledby="mny-time-h">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 id="mny-time-h" className="mny-title text-base font-semibold">Spending over time</h3>
                 <div className="flex items-center gap-2">
@@ -565,10 +564,10 @@ export default function Money() {
                       {Math.abs(trendPct)}% {trendPct > 0 ? "more" : "less"} than before
                     </span>
                   )}
-                  <span className="mny-muted text-xs">{sum?.by_day?.length || 0} days</span>
+                  <span className="mny-muted sk-ph text-xs">{sum?.by_day?.length || 0} days</span>
                 </div>
               </div>
-              {sum?.by_day?.length ? (
+              {sumWait ? <SkChart className="mt-4" height={260} /> : sum?.by_day?.length ? (
                 <ResponsiveContainer width="100%" height={260} className="mt-4">
                   <AreaChart data={sum.by_day} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                     <defs><linearGradient id="mny-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.16} /><stop offset="100%" stopColor="#34d399" stopOpacity={0} /></linearGradient></defs>
@@ -581,12 +580,17 @@ export default function Money() {
                 </ResponsiveContainer>
               ) : <p className="mny-muted mt-12 text-center text-sm">No spending in this period.</p>}
             </section>
-            </Resolve>
 
-            <Resolve loading={sumWait} label="Loading categories" what="the categories" className="lg:col-span-4" skeleton={<CategoryCardSk />}>
-            <section className="mny-card p-5" aria-labelledby="mny-cat-h">
+            <section className="mny-card p-5 lg:col-span-4" aria-labelledby="mny-cat-h">
               <h3 id="mny-cat-h" className="mny-title text-base font-semibold">By category</h3>
-              {sum?.by_category?.length ? (
+              {sumWait ? (
+                <>
+                  <div className="mt-2 grid place-items-center" style={{ height: 170 }}><Sk className="h-[152px] w-[152px] !rounded-full" /></div>
+                  <ul className="mt-2 space-y-1.5" aria-hidden="true">
+                    {[0, 1, 2].map((i) => <li key={i} className="flex items-center justify-between gap-2 text-sm"><span className="flex items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--mny-line)]" /><span className="sk-ph">Groceries</span></span><span className="mny-num">€000.00 · 00%</span></li>)}
+                  </ul>
+                </>
+              ) : sum?.by_category?.length ? (
                 <>
                   <ResponsiveContainer width="100%" height={170} className="mt-2">
                     <PieChart>
@@ -607,14 +611,16 @@ export default function Money() {
                 </>
               ) : <p className="mny-muted mt-10 text-center text-sm">No data.</p>}
             </section>
-            </Resolve>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Resolve loading={sumWait} label="Loading top merchants" what="the merchants" skeleton={<ListCardSk n={4} />}>
             <section className="mny-card p-5" aria-labelledby="mny-merch-h">
               <h3 id="mny-merch-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Store className="h-4 w-4" aria-hidden="true" /> Top merchants</h3>
-              {sum?.top_merchants?.length ? (
+              {sumWait ? (
+                <ul className="mt-3 space-y-2.5" aria-hidden="true">
+                  {["Merchant name", "Another place", "Short", "A longer merchant"].map((n) => <li key={n} className="flex items-center justify-between gap-3 text-sm"><span className="sk-ph">{n}</span><span className="mny-num font-medium">€00.00</span></li>)}
+                </ul>
+              ) : sum?.top_merchants?.length ? (
                 <ul className="mt-3 space-y-2.5">
                   {sum.top_merchants.map((m) => (
                     <li key={m.name} className="flex items-center justify-between gap-3 text-sm">
@@ -625,9 +631,7 @@ export default function Money() {
                 </ul>
               ) : <p className="mny-muted mt-6 text-center text-sm">No data.</p>}
             </section>
-            </Resolve>
 
-            <Resolve loading={sumWait} label="Loading income and expense" what="income and expense" skeleton={<InexSk />}>
             <section className="mny-card p-5" aria-labelledby="mny-inex-h">
               <h3 id="mny-inex-h" className="mny-title text-base font-semibold">Income vs expense</h3>
               <div className="mt-3 grid grid-cols-3 gap-3 text-center">
@@ -635,6 +639,7 @@ export default function Money() {
                 <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Expense</p><p className="mny-num mny-title truncate text-base font-semibold">{eur(sum?.gross)}</p></div>
                 <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Net</p><p className={cn("mny-num truncate text-base font-semibold", (sum?.net || 0) >= 0 ? "mny-green" : "mny-neg")}>{eur(sum?.net)}</p></div>
               </div>
+              {sumWait ? <div className="mt-4" style={{ height: 90 }} aria-hidden="true"><Sk className="mt-6 h-3.5 w-full !rounded-full" /><Sk className="mt-3 h-3.5 w-4/5 !rounded-full" /></div> : (
               <ResponsiveContainer width="100%" height={90} className="mt-4">
                 <BarChart data={[{ name: "Period", income: sum?.income || 0, expense: sum?.gross || 0 }]} layout="vertical" margin={{ left: 0, right: 12, top: 0, bottom: 0 }}>
                   <XAxis type="number" hide />
@@ -644,8 +649,8 @@ export default function Money() {
                   <Bar dataKey="expense" fill="#7aa592" radius={[6, 6, 6, 6]} barSize={14} />
                 </BarChart>
               </ResponsiveContainer>
+              )}
             </section>
-            </Resolve>
           </div>
 
           {/* Budget progress */}
@@ -676,7 +681,7 @@ export default function Money() {
             </section>
           )}
 
-          </>
+          </div>
           )}
 
           {/* Transactions */}
@@ -917,91 +922,6 @@ function ChartTip({ active, payload }) {
   );
 }
 
-/* Each skeleton is the card it stands for, empty: the same padding and the same row heights, so nothing moves when the figures arrive. */
-const SkCardBox = ({ children, className = "" }) => <div className={`mny-card p-5 ${className}`} aria-hidden="true">{children}</div>;
-
-function HeroSk() {
-  return (
-    <div className="mny-card mny-hero p-5 sm:p-6" aria-hidden="true">
-      <Sk className="h-4 w-36" />
-      <Sk className="mt-3 h-10 w-52 sm:h-12" />
-      <div className="mt-5 grid grid-cols-3 gap-2">{[0, 1, 2].map((i) => <div key={i} className="mny-tile px-1.5 py-2"><Sk className="mx-auto h-3 w-8" /><Sk className="mx-auto mt-1.5 h-4 w-14" /></div>)}</div>
-    </div>
-  );
-}
-function FlowSk() {
-  return (
-    <SkCardBox className="flex-1">
-      <Sk className="h-5 w-28" />
-      <div className="mt-3 space-y-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-1.5"><Sk className="h-3.5 w-24" /><Sk className="h-3 w-44 max-w-full" /></div>
-            <Sk className="h-6 w-20 shrink-0" />
-          </div>
-        ))}
-      </div>
-    </SkCardBox>
-  );
-}
-function AccountsSk() {
-  return (
-    <SkCardBox>
-      <Sk className="mb-3 h-5 w-24" />
-      <div className="space-y-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="mny-tile flex flex-col gap-2.5 p-3.5">
-            <div className="flex items-center gap-3"><Sk className="h-10 w-10 shrink-0 !rounded-full" /><Sk className="h-4 w-32 flex-1" /><Sk className="h-6 w-20 shrink-0" /></div>
-            <div className="flex items-center justify-between"><Sk className="h-3 w-40" /><div className="flex gap-1"><Sk className="h-8 w-8 !rounded-full" /><Sk className="h-8 w-8 !rounded-full" /></div></div>
-          </div>
-        ))}
-      </div>
-    </SkCardBox>
-  );
-}
-function PeriodSk() {
-  return (
-    <SkCardBox>
-      <Sk className="h-5 w-28" />
-      <div className="mt-3 grid grid-cols-2 gap-3">{[0, 1, 2, 3].map((i) => <div key={i} className="mny-tile p-3"><Sk className="h-3 w-16" /><Sk className="mt-2 h-6 w-20" /><Sk className="mt-1.5 h-3 w-24" /></div>)}</div>
-      <div className="mny-hair mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-4">{[0, 1, 2, 3].map((i) => <div key={i}><Sk className="h-3 w-24" /><Sk className="mt-1.5 h-5 w-16" /><Sk className="mt-1 h-3 w-20" /></div>)}</div>
-    </SkCardBox>
-  );
-}
-function ChartCardSk() {
-  return (
-    <SkCardBox>
-      <div className="flex items-center justify-between"><Sk className="h-5 w-40" /><Sk className="h-5 w-36 !rounded-full" /></div>
-      <SkChart className="mt-4" height={260} />
-    </SkCardBox>
-  );
-}
-function CategoryCardSk() {
-  return (
-    <SkCardBox>
-      <Sk className="h-5 w-28" />
-      <div className="mt-2 grid place-items-center" style={{ height: 170 }}><Sk className="h-[152px] w-[152px] !rounded-full" /></div>
-      <div className="mt-2 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="flex items-center justify-between gap-2"><Sk className="h-3.5 w-28" /><Sk className="h-3.5 w-20" /></div>)}</div>
-    </SkCardBox>
-  );
-}
-function ListCardSk({ n = 4 }) {
-  return (
-    <SkCardBox>
-      <Sk className="h-5 w-32" />
-      <div className="mt-3 space-y-2.5">{Array.from({ length: n }, (_, i) => <div key={i} className="flex items-center justify-between gap-3"><Sk className={i % 2 ? "h-3.5 w-1/3" : "h-3.5 w-2/5"} /><Sk className="h-3.5 w-14 shrink-0" /></div>)}</div>
-    </SkCardBox>
-  );
-}
-function InexSk() {
-  return (
-    <SkCardBox>
-      <Sk className="h-5 w-36" />
-      <div className="mt-3 grid grid-cols-3 gap-3">{[0, 1, 2].map((i) => <div key={i} className="mny-tile p-2.5"><Sk className="mx-auto h-3 w-10" /><Sk className="mx-auto mt-1.5 h-5 w-14" /></div>)}</div>
-      <Sk className="mt-6 h-3.5 w-full !rounded-full" /><Sk className="mt-3 h-3.5 w-4/5 !rounded-full" />
-    </SkCardBox>
-  );
-}
 /** The transaction list: two day groups with their header bars and rows (round lead, title and category, figure). */
 function TxnListSk() {
   return (

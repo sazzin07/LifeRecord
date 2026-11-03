@@ -38,9 +38,9 @@ test("Money: the cards, the chart and the transaction list each wait only for th
   await slow(page2, fromPath("/api/analytics/summary"), 5000);
   await page2.goto("/money");
   await expect(page2.locator('section[aria-labelledby="mny-txn-h"]').getByTestId(/^txn-/).first()).toBeVisible({ timeout: 4000 });   // the list is here...
-  await expect(page2.getByTestId("money-bank")).toHaveCount(0);                                                                   // ...the cards are still placeholders
-  await expect(page2.locator('main [aria-busy="true"]').first()).toBeVisible();
-  await expect(page2.getByTestId("money-bank")).toBeVisible({ timeout: 12000 });
+  await expect(page2.locator('[data-skeleton][aria-busy="true"]')).toBeAttached();                                               // ...the cards are the real cards with placeholders in them
+  await expect(page2.getByRole("status").filter({ hasText: "Loading your money" })).toBeAttached();
+  await expect(page2.locator("[data-skeleton]")).toHaveCount(0, { timeout: 12000 });                                              // and the figures replace them
   await page2.close();
 });
 
@@ -81,7 +81,8 @@ test("placeholders are decoration for assistive technology, and they stop moving
   await expect(sk).toBeVisible();
   const loose = await page.evaluate(() => [...document.querySelectorAll("main .skeleton")].filter((e) => !e.closest('[aria-hidden="true"]')).length);
   expect(loose, "a placeholder is read out as if it were content").toBe(0);
-  await expect(page.locator('main [role="status"][aria-busy="true"]').first()).toBeAttached();       // one announcement for the group
+  await expect(page.getByRole("status").filter({ hasText: "Loading your money" })).toBeAttached();   // one announcement for the group
+  await expect(page.locator('[data-skeleton][inert]')).toBeAttached();                                // and the placeholder cards cannot be reached or read
   expect(await sk.evaluate((e) => getComputedStyle(e, "::after").animationName)).toBe("sk-sweep");
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(await sk.evaluate((e) => getComputedStyle(e, "::after").animationName)).toBe("none");

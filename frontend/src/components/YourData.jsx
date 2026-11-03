@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Download, Loader2, PauseCircle, Trash2 } from "lucide-react";
+import { Database, Download, Loader2, PauseCircle, Trash2 } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Card, Label } from "@/components/common";
+import { Section } from "@/components/settings/controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -80,25 +80,31 @@ export function YourData() {
   const ready = password.length > 0 && phrase === PHRASE && !busy;
 
   return (
-    <Card className="p-5" data-testid="your-data">
-      <Label>Your data</Label>
-      <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-        Download everything in your account (records, photos and saved chats) as one file, switch the account off for a while
-        (nothing is deleted), or delete the account and all of it.
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button variant="outline" onClick={exportData} disabled={exporting} data-testid="your-data-export">
-          {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4 mr-1" aria-hidden="true" />}
-          Download my data
-        </Button>
-        <Button variant="outline" onClick={() => setOffOpen(true)} data-testid="your-data-deactivate-open">
-          <PauseCircle className="h-4 w-4 mr-1" aria-hidden="true" />Deactivate my account
-        </Button>
-        <Button variant="outline" onClick={() => setOpen(true)} data-testid="your-data-delete-open"
-          className="text-red-700 border-red-300 hover:bg-red-50 dark:text-red-300 dark:border-red-500/40 dark:hover:bg-red-500/10">
-          <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />Delete my account
-        </Button>
-      </div>
+    <Section id="your-data" testid="your-data" icon={Database} title="Your data" description="Take it with you, switch the account off for a while, or remove it. Each one is explained again before it happens.">
+      <ul className="grid gap-3 md:grid-cols-3">
+        {[
+          { icon: Download, tone: "", title: "Download my data", text: "Everything in your account (records, photos and saved chats) as one file.", button: (
+            <Button variant="outline" className="w-full" onClick={exportData} disabled={exporting} data-testid="your-data-export">
+              {exporting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="mr-1 h-4 w-4" aria-hidden="true" />}Download
+            </Button>) },
+          { icon: PauseCircle, tone: "", title: "Deactivate my account", text: "Switch it off for a while. Nothing is deleted, and “Forgot password” switches it back on.", button: (
+            <Button variant="outline" className="w-full" onClick={() => setOffOpen(true)} data-testid="your-data-deactivate-open"><PauseCircle className="mr-1 h-4 w-4" aria-hidden="true" />Deactivate</Button>) },
+          { icon: Trash2, tone: "danger", title: "Delete my account", text: "Remove the account and everything in it. This cannot be undone.", button: (
+            <Button variant="outline" onClick={() => setOpen(true)} data-testid="your-data-delete-open"
+              className="w-full border-red-300 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"><Trash2 className="mr-1 h-4 w-4" aria-hidden="true" />Delete</Button>) },
+        ].map((t) => (
+          <li key={t.title} className={`flex flex-col gap-3 rounded-xl border p-4 ${t.tone === "danger" ? "border-red-300/70 dark:border-red-500/30" : "border-border"}`}>
+            <div className="flex items-center gap-2.5">
+              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${t.tone === "danger" ? "bg-red-100 dark:bg-red-900/30" : "bg-slate-100 dark:bg-slate-800"}`}>
+                <t.icon className={`h-[18px] w-[18px] ${t.tone === "danger" ? "text-red-700 dark:text-red-300" : "text-slate-700 dark:text-slate-300"}`} aria-hidden="true" />
+              </span>
+              <p className="text-sm font-semibold">{t.title}</p>
+            </div>
+            <p className="flex-1 text-sm text-slate-600 dark:text-slate-400">{t.text}</p>
+            {t.button}
+          </li>
+        ))}
+      </ul>
 
       <Dialog open={offOpen} onOpenChange={closeOff}>
         <DialogContent className="max-w-md" data-testid="deactivate-account-dialog">
@@ -158,6 +164,6 @@ export function YourData() {
           </form>
         </DialogContent>
       </Dialog>
-    </Card>
+    </Section>
   );
 }

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Busy } from "@/components/skeletons";
+import { Busy, Sk } from "@/components/skeletons";
+import { Section } from "@/components/settings/controls";
 import { Check, Fingerprint, LifeBuoy, MessageSquareText, Pencil, Plus, ShieldCheck, ShieldOff, Smartphone, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { createPasskey, passkeyBlocker } from "@/lib/webauthn";
-import { Card, Label } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StepUpDialog } from "./StepUpDialog";
@@ -12,6 +12,10 @@ import { AuthenticatorDialog } from "./AuthenticatorDialog";
 import { SmsCodeDialog } from "./SmsCodeDialog";
 import { RecoveryCodesDialog } from "./RecoveryCodesDialog";
 
+// The words of each way are the same whether or not the status has arrived, so the rows are drawn from these both while loading and after.
+const PASSKEY_HINT = "Your fingerprint, face or screen lock, or a USB key. The safest way: nothing to type, and it only works on the real site.";
+const TOTP_HINT = "A 6-digit code from an app on your phone, such as Google Authenticator, Microsoft Authenticator or Aegis.";
+const SMS_HINT = "A 6-digit code sent to your phone. Handy as a back-up; the other two are safer.";
 const when = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" }) : "");
 
 /** A name for the passkey that says where it lives, so a list of several is easy to read. */
@@ -174,33 +178,26 @@ export function TwoFactor() {
     }
   };
 
-  const smsHint = on && has("sms") ? `Codes are texted to ${status.sms.hint}.` : "A 6-digit code sent to your phone. Handy as a back-up; the other two are safer.";
+  const smsHint = on && has("sms") ? `Codes are texted to ${status.sms.hint}.` : SMS_HINT;
   const left = status?.recovery_codes_left ?? 0;
 
   return (
-    <Card className="p-5" data-testid="two-factor">
-      <div className="flex items-start gap-3">
-        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${on ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-slate-100 dark:bg-slate-800"}`}>
-          {on ? <ShieldCheck className="h-5 w-5 text-emerald-800 dark:text-emerald-300" aria-hidden="true" /> : <ShieldOff className="h-5 w-5 text-slate-600 dark:text-slate-400" aria-hidden="true" />}
-        </span>
-        <div className="min-w-0">
-          <Label>Two-step sign-in</Label>
-          <p className="mt-1 text-sm font-semibold" data-testid="two-factor-status" role="status">
-            {status === null ? "Checking…" : on ? `On · ${left} recovery code${left === 1 ? "" : "s"} left` : "Off"}
-          </p>
-        </div>
-      </div>
-      <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
-        {on ? "Signing in needs your password and one of these. Add a second way so losing one phone never locks you out."
-          : "Ask for a second proof as well as your password, so a stolen password alone cannot open your account. Choose any way below."}
-      </p>
-
+    <Section id="two-step" testid="two-factor" className="h-full" icon={on ? ShieldCheck : ShieldOff} title="Two-step sign-in"
+      description={on ? "Signing in needs your password and one of these. Add a second way so losing one phone never locks you out."
+        : "Ask for a second proof as well as your password, so a stolen password alone cannot open your account."}
+      aside={<span className={`mny-state shrink-0 ${on ? "" : "amber"}`} data-testid="two-factor-status" role="status">{status === null ? "Checking…" : on ? `On · ${left} recovery code${left === 1 ? "" : "s"} left` : "Off"}</span>}>
       {status === null ? (
-        <Busy label="Loading sign-in methods" className="mt-4 space-y-2">{[0, 1, 2].map((i) => <div key={i} aria-hidden="true" className="skeleton h-[68px] rounded-xl" />)}</Busy>
+        <Busy label="Loading sign-in methods">
+          <ul className="space-y-2.5">
+            {[[Fingerprint, "Passkeys and security keys", passkeyBlocker() || PASSKEY_HINT], [Smartphone, "Authenticator app", TOTP_HINT], [MessageSquareText, "Text message", SMS_HINT]].map(([Icon, title, hint]) => (
+              <Method key={title} icon={Icon} title={title} hint={hint} action={<Sk className="h-10 w-[4.75rem] !rounded-md" />} />
+            ))}
+          </ul>
+        </Busy>
       ) : (
-        <ul className="mt-4 space-y-2.5">
+        <ul className="space-y-2.5">
           <Method icon={Fingerprint} title="Passkeys and security keys" testId="method-passkey" state={has("passkey") ? `${status.passkeys.length} added` : ""}
-            hint={blocker || "Your fingerprint, face or screen lock, or a USB key. The safest way: nothing to type, and it only works on the real site."}
+            hint={blocker || PASSKEY_HINT}
             action={<Button variant="outline" disabled={!!blocker || status.passkeys.length >= 10} onClick={() => setFlow({ kind: "passkey-add" })} data-testid="passkey-add">
               <Plus className="mr-1 h-4 w-4" aria-hidden="true" />Add</Button>}>
             {status.passkeys.length > 0 && (
@@ -211,7 +208,7 @@ export function TwoFactor() {
           </Method>
 
           <Method icon={Smartphone} title="Authenticator app" testId="method-totp" state={has("totp") ? "On" : ""}
-            hint="A 6-digit code from an app on your phone, such as Google Authenticator, Microsoft Authenticator or Aegis."
+            hint={TOTP_HINT}
             action={has("totp")
               ? <Button variant="outline" onClick={() => setFlow({ kind: "totp-remove" })} data-testid="totp-remove">Remove</Button>
               : <Button variant="outline" onClick={() => setFlow({ kind: "totp-add" })} data-testid={on ? "totp-add" : "two-factor-open"}><Plus className="mr-1 h-4 w-4" aria-hidden="true" />{on ? "Add" : "Set up"}</Button>} />
@@ -254,6 +251,6 @@ export function TwoFactor() {
       <SmsCodeDialog pending={smsPending} onClose={() => { setSmsPending(null); load(); }}
         onDone={async (data) => { setSmsPending(null); await finished(data, "Text messages added"); }} />
       <RecoveryCodesDialog codes={codes} onClose={() => setCodes([])} />
-    </Card>
+    </Section>
   );
 }

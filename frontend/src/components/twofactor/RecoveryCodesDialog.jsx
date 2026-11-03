@@ -1,18 +1,21 @@
 import { Copy, Download, LifeBuoy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 /** The one-time recovery codes, shown once. Clicking beside the box or pressing Escape does not dismiss it: a code that was never
  *  written down is a lockout waiting for a lost phone. */
 export function RecoveryCodesDialog({ codes, onClose }) {
+  const { user } = useAuth();
   const copy = async () => {
     try { await navigator.clipboard.writeText(codes.join("\n")); toast.success("Recovery codes copied"); } catch { toast.error("Could not copy: write them down instead"); }
   };
   const download = () => {
     const url = URL.createObjectURL(new Blob([`Life Record recovery codes\nEach works once.\n\n${codes.join("\n")}\n`], { type: "text/plain" }));
     const a = document.createElement("a");
-    a.href = url; a.download = "life-record-recovery-codes.txt"; a.click();
+    const who = (user?.name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    a.href = url; a.download = `${who ? `${who}_` : ""}recovery_codes.txt`; a.click();
     URL.revokeObjectURL(url);
   };
   return (

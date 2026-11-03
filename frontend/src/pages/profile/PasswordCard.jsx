@@ -58,31 +58,33 @@ export function PasswordCard({ index }) {
   };
 
   return (
-    <Section id="password" index={index} icon={KeyRound} title="Password" description="Choose a new one. Other devices are signed out when it changes.">
+    <Section id="password" index={index} className="h-full" icon={KeyRound} title="Password" description="Choose a new one. Other devices are signed out when it changes.">
       <form onSubmit={(e) => { e.preventDefault(); if (ready) setOpen(true); }} data-testid="change-password-form" className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label htmlFor="pw-new" className="mny-title text-sm font-medium">New password</label>
-          <div className="relative mt-1">
-            <Input id="pw-new" type={type} autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="mny-field h-11 pr-11" data-testid="pw-new" aria-describedby="pw-rules" />
-            <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide passwords" : "Show passwords"} aria-pressed={show} className="mny-icon-btn absolute right-1.5 top-1.5">
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+            <label htmlFor="pw-new" className="mny-title text-sm font-medium">New password</label>
+            <div className="relative mt-1">
+              <Input id="pw-new" type={type} autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="mny-field h-11 pr-11" data-testid="pw-new" aria-describedby="pw-rules" />
+              <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide passwords" : "Show passwords"} aria-pressed={show} className="mny-icon-btn absolute right-1.5 top-1.5">
+                {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <AnimatePresence initial={false}>
+              {next && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="pt-2"><Meter {...s} /></div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <AnimatePresence initial={false}>
-            {next && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                <div className="pt-2"><Meter {...s} /></div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div>
-          <label htmlFor="pw-confirm" className="mny-title text-sm font-medium">Repeat it</label>
-          <Input id="pw-confirm" type={type} autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className="mny-field mt-1 h-11" data-testid="pw-confirm" />
-          <p aria-live="polite" className={cn("mt-1.5 h-4 text-xs", matches ? "mny-green" : "mny-neg")}>
-            {again && (matches ? "The two match." : "The two do not match yet.")}
-          </p>
+  
+          <div>
+            <label htmlFor="pw-confirm" className="mny-title text-sm font-medium">Repeat it</label>
+            <Input id="pw-confirm" type={type} autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} className="mny-field mt-1 h-11" data-testid="pw-confirm" />
+            <p aria-live="polite" className={cn("mt-1.5 h-4 text-xs", matches ? "mny-green" : "mny-neg")}>
+              {again && (matches ? "The two match." : "The two do not match yet.")}
+            </p>
+          </div>
         </div>
 
         <ul id="pw-rules" className="grid gap-1.5 sm:grid-cols-2" aria-label="What a new password needs">

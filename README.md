@@ -444,6 +444,10 @@ Every page draws its structure at once and fills in as data arrives (`components
   "Loading ..." announcement; the blocks themselves are hidden from assistive technology), `ErrorBlock` and `Resolve` (one section's life: skeleton, error with
   Try again, or the content, faded in only if a skeleton was shown). Each page keeps its own purpose-built skeletons beside it (Money's cards, the transaction list, the
   calendar's month grid, the people list's rows, the weight chart, the photo tiles, the two-step methods, the devices).
+- **The skeleton is the real thing.** Money, Home's nutrition rings, the two-step methods and the devices tiles are drawn from the real markup while their data is on
+  its way: static text stays, and what depends on data (`.mny-num`, `.sk-ph`, `Sk`) keeps its box and shows a sweep, inside a `[data-skeleton]` wrapper that is `inert`
+  and announced once. So placeholder and content cannot drift apart. `e2e/skeleton-fidelity.spec.js` measures every card in the loading state against the loaded card
+  (position and size, and that no card is squeezed into a sliver); cards whose height is the data's (lists, charts) are matched by place.
 - **Progressive.** Home has seven sections on seven requests and Money three; each section draws from its own data, so the slowest never holds the rest.
   A returning visitor sees the app's outline (side strip, top bar, the page's outline) while the first sign-in check runs.
 - **Only when there is nothing to show.** `useFetch` keeps the last-seen copy on screen while it refreshes (no skeleton over content), shows a skeleton only when it has

@@ -12,10 +12,16 @@ const inFlight = new Map();   // the same key being fetched: every avatar on scr
 // profile photo is a few dozen kilobytes. The whole cache goes when the page is closed.
 
 export function useProfilePhoto() {
+  return useProfilePhotoState().url;
+}
+
+/** `url`, and `pending`: the person has a photo that is still being fetched (the avatar then holds the photo's place, not their initials). */
+export function useProfilePhotoState() {
   const { user } = useAuth();
   const version = user?.photo_version || null;
   const key = user?.id && version ? `${user.id}:${version}` : null;
   const [url, setUrl] = useState(() => (key ? urls.get(key) || null : null));
+  const [failed, setFailed] = useState(null);   // the key whose fetch failed: the initials then stay
 
   useEffect(() => {
     if (!key) { setUrl(null); return undefined; }
@@ -26,16 +32,17 @@ export function useProfilePhoto() {
         .then(({ data }) => { const made = URL.createObjectURL(data); urls.set(key, made); return made; })
         .finally(() => inFlight.delete(key)));
     }
-    inFlight.get(key).then((made) => { if (live) setUrl(made); }).catch(() => { if (live) setUrl(null); });   // the initials stay
+    inFlight.get(key).then((made) => { if (live) setUrl(made); }).catch(() => { if (live) { setUrl(null); setFailed(key); } });   // the initials stay
     return () => { live = false; };
   }, [key]);
-  return url;
+  return { url: key && urls.has(key) ? urls.get(key) : url, pending: !!key && !url && !urls.has(key) && failed !== key };
 }
 
 /** The signed-in person: their photo when they have one, their initials when not. `size` is the width and height (Tailwind classes). */
 export function UserAvatar({ size = "h-9 w-9", className, decorative = false }) {
   const { user } = useAuth();
-  const url = useProfilePhoto();
+  const { url, pending } = useProfilePhotoState();
+  if (pending) return <span aria-hidden="true" className={cn("skeleton block shrink-0 !rounded-full", size, className)} />;
   if (url) return <img src={url} alt="" draggable={false} className={cn("shrink-0 rounded-full object-cover", size, className)} data-testid="user-photo" />;
   if (decorative) {
     // Initials drawn by CSS (not text in the page): the button that holds this already has a name, and text that differs from it would be flagged.

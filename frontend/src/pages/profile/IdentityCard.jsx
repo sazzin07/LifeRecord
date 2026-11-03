@@ -5,7 +5,8 @@ import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar, useProfilePhoto } from "@/components/UserAvatar";
 import { PhotoDialog } from "./PhotoDialog";
-import { useTwoFactorStatus } from "./useTwoFactorStatus";
+import { useTwoFactorState } from "./useTwoFactorStatus";
+import { Sk } from "@/components/skeletons";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
@@ -60,7 +61,7 @@ const since = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime(
 export function IdentityCard({ index, onSignOutAll }) {
   const { user, logout, updateUser } = useAuth();
   const [photoOpen, setPhotoOpen] = useState(false);
-  const twoStep = useTwoFactorStatus(0);
+  const { status: twoStep, ready: twoStepReady } = useTwoFactorState(0);
   const photoUrl = useProfilePhoto();
   const member = since(user?.created_at);
   return (
@@ -79,9 +80,11 @@ export function IdentityCard({ index, onSignOutAll }) {
         <p className="mny-muted flex flex-wrap items-center gap-x-2 text-sm"><Mail className="h-3.5 w-3.5" aria-hidden="true" /><span className="break-all" data-testid="profile-email">{user?.email}</span></p>
         <ul className="flex flex-wrap gap-1.5 pt-1" aria-label="About this account">
           {user?.email_verified && <li className="mny-state"><ShieldCheck className="h-3 w-3" aria-hidden="true" />Email verified</li>}
-          <li className={twoStep.enabled ? "mny-state" : "mny-state amber"} data-testid="two-step-chip">
-            {twoStep.enabled ? <ShieldCheck className="h-3 w-3" aria-hidden="true" /> : <ShieldOff className="h-3 w-3" aria-hidden="true" />}{twoStep.enabled ? "Two-step sign-in on" : "Two-step sign-in off"}
-          </li>
+          {twoStepReady ? (
+            <li className={twoStep.enabled ? "mny-state" : "mny-state amber"} data-testid="two-step-chip">
+              {twoStep.enabled ? <ShieldCheck className="h-3 w-3" aria-hidden="true" /> : <ShieldOff className="h-3 w-3" aria-hidden="true" />}{twoStep.enabled ? "Two-step sign-in on" : "Two-step sign-in off"}
+            </li>
+          ) : <li aria-hidden="true"><Sk className="h-[1.375rem] w-36 !rounded-full" /></li>}
           {member && <li className="mny-state"><CalendarDays className="h-3 w-3" aria-hidden="true" />Member since {member}</li>}
         </ul>
       </div>

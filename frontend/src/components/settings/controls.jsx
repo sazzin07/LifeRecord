@@ -26,19 +26,25 @@ export function Segmented({ value, onChange, options, label, testid, className }
 }
 
 /** A card for one group of settings: an icon and a title, what it is for, and its rows. */
-export function Section({ id, icon: Icon, title, description, children, index = 0, aside }) {
+export function SectionHead({ id, icon: Icon, title, description, aside }) {
   return (
-    <motion.section id={id} aria-labelledby={`${id}-h`} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.2, 0, 0, 1], delay: Math.min(index, 6) * 0.05 }} className="mny-card scroll-mt-24 p-5 sm:p-6">
-      <header className="flex items-start gap-3">
-        <span className="mny-badge">{Icon && <Icon className="h-5 w-5" aria-hidden="true" />}</span>
-        <div className="min-w-0 flex-1">
-          <h3 id={`${id}-h`} className="mny-title text-lg font-semibold tracking-tight">{title}</h3>
-          {description && <p className="mny-muted mt-0.5 text-sm">{description}</p>}
-        </div>
-        {aside}
-      </header>
-      <div className="mt-4">{children}</div>
+    <header className="flex items-start gap-3">
+      <span className="mny-badge">{Icon && <Icon className="h-5 w-5" aria-hidden="true" />}</span>
+      <div className="min-w-0 flex-1">
+        <h3 id={`${id}-h`} className="mny-title text-lg font-semibold leading-7 tracking-tight">{title}</h3>
+        {description && <p className="mny-muted mt-0.5 text-sm">{description}</p>}
+      </div>
+      {aside}
+    </header>
+  );
+}
+
+export function Section({ id, icon, title, description, children, index = 0, aside, testid, className }) {
+  return (
+    <motion.section id={id} aria-labelledby={`${id}-h`} data-testid={testid} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: [0.2, 0, 0, 1], delay: Math.min(index, 6) * 0.05 }} className={`mny-card flex scroll-mt-24 flex-col p-5 sm:p-6 ${className || ""}`}>
+      <SectionHead id={id} icon={icon} title={title} description={description} aside={aside} />
+      <div className="mt-4 flex-1">{children}</div>
     </motion.section>
   );
 }

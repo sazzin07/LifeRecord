@@ -26,7 +26,7 @@ function Ring({ value, max, color = "#10B981", label, unit }) {
             strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c} />
         </svg>
         <div className="absolute inset-0 grid place-items-center">
-          <span className="stat-num text-sm font-bold">{Math.round(value)}</span>
+          <span className="stat-num sk-ph text-sm font-bold">{Math.round(value)}</span>
         </div>
       </div>
       <span className="mt-1.5 text-xs font-medium text-slate-500">{label}</span>
@@ -40,19 +40,17 @@ function HeroFigure({ className, label }) {
   return <span aria-hidden="true" className={`skeleton block !bg-white/15 ${className}`} />;
 }
 
-/** The four rings of "Nutrition today", empty: same size, same labels' place. */
+/** The four rings of "Nutrition today" as they will be: the REAL rings (same size, same labels) with nothing in them yet, and the figures held as placeholders. */
 function RingsSkeleton() {
   return (
-    <div>
+    <div data-skeleton="" inert="true" aria-hidden="true">
       <div className="grid grid-cols-4 gap-1">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="flex flex-col items-center">
-            <span aria-hidden="true" className="skeleton block h-[76px] w-[76px] !rounded-full" />
-            <Sk className="mt-1.5 h-3 w-10" />
-          </div>
-        ))}
+        <Ring value={0} max={0} color="#10B981" label="kcal" />
+        <Ring value={0} max={0} color="#6366F1" label="Protein" />
+        <Ring value={0} max={0} color="#F59E0B" label="Carbs" />
+        <Ring value={0} max={0} color="#EF4444" label="Fat" />
       </div>
-      <Sk className="mt-3 h-3 w-48" />
+      <p className="mt-3 text-xs text-slate-500"><span className="sk-ph">Reference 0000 kcal</span> · grams for the macros</p>
     </div>
   );
 }
@@ -138,7 +136,7 @@ export default function Home() {
 
       {/* Insights */}
       {(sumWait || peopleWait || dayWait || !weight) && !sumError && (
-        <Card className="p-5" aria-hidden="true"><Sk className="mb-3 h-4 w-44" /><div className="grid gap-2 sm:grid-cols-2"><Sk className="h-10 rounded-xl" /><Sk className="h-10 rounded-xl" /></div></Card>
+        <Card className="p-5" aria-hidden="true"><div className="mb-3 flex h-6 items-center gap-2"><Sk className="h-4 w-4 !rounded" /><Sk className="h-4 w-44" /></div><div className="grid gap-2 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <Sk key={i} className="h-10 !rounded-xl" />)}</div></Card>
       )}
       {!sumWait && !peopleWait && !dayWait && weight && insights.length > 0 && (
         <Card className="p-5 lm-in">
@@ -181,7 +179,7 @@ export default function Home() {
 
       {/* Widgets */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="p-5 lm-in">
+        <Card className="p-5 lm-in" data-fid="home-nutrition">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Utensils className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Nutrition today</h3></div>
             <button onClick={() => nav("/nutrition")} aria-label="Open Nutrition" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
@@ -197,7 +195,7 @@ export default function Home() {
           </Resolve>
         </Card>
 
-        <Card className="p-5 lm-in">
+        <Card className="p-5 lm-in" data-fid="home-people">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><Users className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">People</h3></div>
             <button onClick={() => nav("/people")} aria-label="Open People" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
@@ -218,7 +216,7 @@ export default function Home() {
           </Resolve>
         </Card>
 
-        <Card className="p-5 lm-in">
+        <Card className="p-5 lm-in" data-fid="home-groceries">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2"><ShoppingCart className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Groceries</h3></div>
             <button onClick={() => nav("/groceries")} aria-label="Open Groceries" className="text-slate-400 hover:text-emerald-600"><ArrowRight className="h-4 w-4" /></button>
@@ -245,7 +243,7 @@ export default function Home() {
       </div>
 
       {/* Tasks preview */}
-      <Card className="p-5 lm-in">
+      <Card className="p-5 lm-in" data-fid="home-tasks">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2"><CheckSquare className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Today's tasks</h3></div>
           <button onClick={() => nav("/tasks")} className="text-sm text-emerald-600 font-medium inline-flex items-center gap-1">Open <ArrowUpRight className="h-3.5 w-3.5" /></button>
@@ -264,7 +262,7 @@ export default function Home() {
       </Card>
 
       {/* Today's transactions */}
-      <Card className="p-5 lm-in">
+      <Card className="p-5 lm-in" data-fid="home-txns">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-emerald-600" /><h3 className="font-semibold">Today's transactions</h3></div>
           <button onClick={() => nav("/money")} className="text-sm text-emerald-600 font-medium inline-flex items-center gap-1">Money <ArrowUpRight className="h-3.5 w-3.5" /></button>

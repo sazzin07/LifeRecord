@@ -50,16 +50,13 @@ export default function Profile() {
           variant="danger"
         />
 
-        <div className="grid items-start gap-4 sm:gap-5 lg:grid-cols-2">
-          <div className="min-w-0 space-y-4 sm:space-y-5">
-            <PasswordCard index={1} />
-            <TwoFactor />
-          </div>
-          <div className="min-w-0 space-y-4 sm:space-y-5">
-            <Sessions />
-            <YourData />
-          </div>
+        {/* Password and two-step: two cards of one height. Devices and your data: horizontal, full width, their items side by side. */}
+        <div className="grid items-stretch gap-4 sm:gap-5 lg:grid-cols-2">
+          <PasswordCard index={1} />
+          <TwoFactor />
         </div>
+        <Sessions />
+        <YourData />
       </div>
     </MotionConfig>
   );

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Wallet, Users, ShoppingCart, Utensils, Dumbbell,
   HeartPulse, CheckSquare, Calendar, Settings as SettingsIcon,
-  Plus, Search, Sparkles, LogOut, Sun, Moon, Ellipsis, Pin, PinOff,
+  Sparkles, LogOut, Sun, Moon, Ellipsis, Pin, PinOff,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth } from "@/context/AuthContext";
@@ -14,6 +14,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { AIAssistant } from "@/components/AIAssistant";
 import { CommandBar } from "@/components/CommandBar";
 import { QuickAdd } from "@/components/QuickAdd";
+import { QuickAddFab } from "@/components/QuickAddFab";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -29,13 +30,13 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-// The phone's bottom bar has room for four pages and the quick-add button; every other page is behind "More".
+// The phone's bottom bar has room for four pages and "More"; every other page is behind "More". Quick add floats above the bar.
 const BAR_PATHS = ["/", "/money", "/people", "/tasks"];
-const MOBILE_NAV = [NAV[0], NAV[1], null, NAV[2], NAV[7]];
+const MOBILE_NAV = [NAV[0], NAV[1], NAV[2], NAV[7]];
 const MORE_NAV = NAV.filter((n) => !BAR_PATHS.includes(n.to));   // derived, so a page added to NAV can never be unreachable on a phone
 
 export function openAI(prompt) {
-  window.dispatchEvent(new CustomEvent("lm:openAI", { detail: { prompt } }));
+  window.dispatchEvent(new CustomEvent("lm:openAI", { detail: { prompt, opener: document.activeElement } }));
 }
 
 function Intro({ name, onDone }) {
@@ -189,19 +190,15 @@ export function AppShell({ children }) {
             <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
             <span className="font-bold tracking-tight">Life Record</span>
           </div>
-          <button data-testid="command-bar-trigger" onClick={() => setCmdOpen(true)}
-            className="ml-auto flex h-10 items-center gap-2.5 rounded-full border border-border bg-card px-4 text-sm text-slate-500 transition-colors hover:border-emerald-600/50 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 lg:ml-0 lg:w-full lg:max-w-md">
-            <Search className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="sr-only sm:not-sr-only">Search or command…</span>
-            <kbd className="ml-auto hidden rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] sm:inline" aria-hidden="true">{/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl K"}</kbd>
-          </button>
-          <div className="flex items-center gap-2 lg:ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" data-testid="ai-trigger" aria-label="Open the assistant" aria-haspopup="dialog" onClick={() => openAI()}
+              className="group flex h-10 items-center gap-2 rounded-full border border-emerald-600/30 bg-emerald-50/70 px-3 text-sm font-semibold text-emerald-800 transition-[background-color,border-color,transform] duration-150 hover:border-emerald-600/60 hover:bg-emerald-100 active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20">
+              <Sparkles className="h-4 w-4 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:rotate-[18deg] group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:transform-none" aria-hidden="true" />
+              <span className="hidden sm:inline">Assistant</span>
+            </button>
             <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-slate-600 transition-colors hover:border-emerald-600/50 dark:text-slate-300">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button data-testid="quick-add-trigger" onClick={() => setQuickOpen(true)}
-              className="hidden h-10 items-center gap-1.5 rounded-full bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 sm:flex">
-              <Plus className="h-4 w-4" aria-hidden="true" />Add
             </button>
             <NavLink to="/profile" data-testid="header-profile" aria-label={`Your profile${user?.name ? `, ${user.name}` : ""}`}
               className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
@@ -219,26 +216,19 @@ export function AppShell({ children }) {
             ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.
           </div>
         )}
-        <div key={loc.pathname} className="lm-page max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-28 lg:pb-10">{children}</div>
+        <div key={loc.pathname} className="lm-page max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-40 lg:pb-24">{children}</div>
       </main>
 
       {/* Mobile bottom nav */}
       <nav className="lg:hidden glass-strong fixed bottom-0 inset-x-0 z-30 border-t border-border h-16 flex items-center justify-around px-2">
-        {MOBILE_NAV.map((n, i) =>
-          n === null ? (
-            <button key="qa" data-testid="mobile-quick-add" aria-label="Quick add" onClick={() => setQuickOpen(true)}
-              className="h-12 w-12 -mt-6 rounded-full bg-emerald-700 text-white grid place-items-center shadow-lg shadow-emerald-600/30">
-              <Plus className="h-6 w-6" aria-hidden="true" />
-            </button>
-          ) : (
-            <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`mnav-${n.label.toLowerCase()}`}
-              onTouchStart={() => warm(n.to)} onFocus={() => warm(n.to)}
-              className={({ isActive }) => cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
-                isActive ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
-              <n.icon className="h-5 w-5" />{n.label}
-            </NavLink>
-          )
-        )}
+        {MOBILE_NAV.map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`mnav-${n.label.toLowerCase()}`}
+            onTouchStart={() => warm(n.to)} onFocus={() => warm(n.to)}
+            className={({ isActive }) => cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
+              isActive ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
+            <n.icon className="h-5 w-5" />{n.label}
+          </NavLink>
+        ))}
         <button ref={moreButton} type="button" data-testid="mnav-more" aria-haspopup="dialog" aria-expanded={moreOpen} aria-current={inMore ? "page" : undefined}
           onClick={() => setMoreOpen(true)}
           className={cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
@@ -272,6 +262,7 @@ export function AppShell({ children }) {
         </SheetContent>
       </Sheet>
 
+      <QuickAddFab onClick={() => setQuickOpen(true)} />
       <AIAssistant />
       <CommandBar open={cmdOpen} setOpen={setCmdOpen} onQuickAdd={() => setQuickOpen(true)} />
       <QuickAdd open={quickOpen} setOpen={setQuickOpen} />

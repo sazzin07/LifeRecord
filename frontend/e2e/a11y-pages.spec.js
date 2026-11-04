@@ -56,16 +56,15 @@ for (const theme of THEMES) {
         };
         const byId = (id) => (p) => p.getByTestId(id);
         const tap = (id) => (p) => p.getByTestId(id).click();
-        // The top bar's "Add" exists from the sm breakpoint up; on a phone the round "+" in the bottom bar does the same job.
-        const quickAdd = viewport.width < 640 ? "mobile-quick-add" : "quick-add-trigger";
+        const quickAdd = "quick-add-trigger";   // the round "+" floating at the bottom-right, on every screen size
         await open("/money", [tap(quickAdd)], byId("quick-add-dialog"), "quick add");
         await open("/money", [tap(quickAdd), tap("qa-expense")], byId("expense-dialog"), "add expense");
         await open("/settings?section=money", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
         await open("/profile", [tap("photo-open")], byId("photo-dialog"), "profile photo");
         await open("/profile", [tap("your-data-delete-open")], byId("delete-account-dialog"), "delete account");
         await open("/profile", [tap("your-data-deactivate-open")], byId("deactivate-account-dialog"), "deactivate account");
-        await open("/", [tap("command-bar-trigger")], (p) => p.getByRole("dialog"), "search and commands");
-        await open("/", [tap("ai-fab")], byId("ai-panel"), "assistant");
+        await open("/", [(p) => p.keyboard.press("Control+K")], (p) => p.getByRole("dialog"), "command palette");
+        await open("/", [tap("ai-trigger")], byId("ai-panel"), "assistant");
       });
     });
   }

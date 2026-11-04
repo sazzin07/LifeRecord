@@ -15,7 +15,7 @@ export async function audit(page, label, { longList = false } = {}) {
   // lists the window is made as tall as the document and those two controls (audited on every other page) are hidden.
   const original = page.viewportSize();
   if (longList) {
-    await page.addStyleTag({ content: '[data-testid="ai-fab"], nav.glass-strong { display: none !important; }' });
+    await page.addStyleTag({ content: '[data-testid="quick-add-trigger"], nav.glass-strong { display: none !important; }' });
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
     await page.setViewportSize({ width: original.width, height: Math.min(Math.max(height, original.height), 16000) });
     await page.waitForTimeout(300);

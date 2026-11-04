@@ -6,7 +6,7 @@ const RED_PNG = Buffer.from(fs.readFileSync(path.join(__dirname, "red.b64"), "ut
 
 async function openWide(page) {
   await page.waitForTimeout(2600); // welcome splash
-  await page.getByTestId("ai-fab").click();
+  await page.getByTestId("ai-trigger").click();
   await expect(page.getByTestId("ai-panel")).toBeVisible();
   if ((await page.getByTestId("ai-panel").getAttribute("data-wide")) !== "true") await page.getByTestId("ai-wide").click();
 }

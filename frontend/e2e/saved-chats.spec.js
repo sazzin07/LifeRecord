@@ -23,7 +23,7 @@ async function makeChat(api, word) {
 }
 
 async function openWide(page) {
-  await page.getByTestId("ai-fab").click();
+  await page.getByTestId("ai-trigger").click();
   await expect(page.getByTestId("ai-panel")).toBeVisible();
   if ((await page.getByTestId("ai-panel").getAttribute("data-wide")) !== "true") await page.getByTestId("ai-wide").click();
   await expect(page.getByTestId("ai-panel")).toHaveAttribute("data-wide", "true");
@@ -150,7 +150,7 @@ authed.describe("Saved chats", () => {
   authed("on a phone the menu opens over the chat and picking a chat closes it", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await page.getByTestId("ai-search").waitFor({ state: "hidden" }).catch(() => {});
-    if (!(await page.getByTestId("ai-menu").isVisible())) await page.getByTestId("ai-fab").click();
+    if (!(await page.getByTestId("ai-menu").isVisible())) await page.getByTestId("ai-trigger").click();
     await page.getByTestId("ai-menu").click();
     await page.getByTestId("ai-search").fill(`${TAG} alpha`);
     await page.getByTestId("ai-chat-row").first().click();

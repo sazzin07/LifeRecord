@@ -52,13 +52,13 @@ test.describe("phone navigation", () => {
     await expect(more).toBeFocused();
   });
 
-  test("the sheet also holds Sign out, and the bar does not overlap the assistant button", async ({ authenticatedPage: page }) => {
+  test("the sheet also holds Sign out, and the bar does not overlap the quick-add button", async ({ authenticatedPage: page }) => {
     await page.goto("/");
     await page.getByTestId("mnav-more").click();
     await expect(page.getByTestId("more-signout")).toBeVisible();
     await page.keyboard.press("Escape");
     const bar = await page.locator("nav.glass-strong").boundingBox();
-    const ai = await page.getByTestId("ai-fab").boundingBox();
-    expect(ai.y + ai.height).toBeLessThanOrEqual(bar.y + 1);                          // the assistant button sits above the bar
+    const ai = await page.getByTestId("quick-add-trigger").boundingBox();
+    expect(ai.y + ai.height).toBeLessThanOrEqual(bar.y + 1);                          // the quick-add button sits above the bar
   });
 });

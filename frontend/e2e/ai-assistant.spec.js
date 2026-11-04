@@ -16,7 +16,7 @@ const REPLY = [
 ].join("\n");
 
 async function openPanel(page) {
-  await page.getByTestId("ai-fab").click();
+  await page.getByTestId("ai-trigger").click();
   await expect(page.getByTestId("ai-panel")).toBeVisible();
 }
 
@@ -92,14 +92,14 @@ test.describe("Assistant panel", () => {
     await expect(page.getByTestId("ai-message-user")).toHaveCount(0); // nothing was sent
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("ai-panel")).toHaveCount(0);
-    await expect(page.getByTestId("ai-fab")).toBeFocused();
+    await expect(page.getByTestId("ai-trigger")).toBeFocused();
     await openPanel(page);
     await expect(page.getByTestId("ai-input")).toHaveValue("first line\nsecond line");
   });
 
   test("works on a phone: sheet fills the width, nothing overflows sideways", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 780 });
-    await page.getByTestId("ai-fab").click();
+    await page.getByTestId("ai-trigger").click();
     const box = await page.getByTestId("ai-panel").boundingBox();
     expect(box.x).toBeLessThanOrEqual(1);
     expect(Math.round(box.width)).toBe(390);
@@ -112,7 +112,7 @@ test.describe("Assistant panel", () => {
 
   test("respects reduced motion", async ({ authenticatedPage: page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.getByTestId("ai-fab").click();
+    await page.getByTestId("ai-trigger").click();
     await expect(page.getByTestId("ai-panel")).toBeVisible({ timeout: 800 });
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("ai-panel")).toHaveCount(0, { timeout: 800 });

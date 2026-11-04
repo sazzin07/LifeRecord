@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures";
 // server before any model call, which is what the page then shows.
 async function openPanel(page) {
   await page.waitForTimeout(2600); // welcome splash
-  await page.getByTestId("ai-fab").click();
+  await page.getByTestId("ai-trigger").click();
   await expect(page.getByTestId("ai-panel")).toBeVisible();
 }
 

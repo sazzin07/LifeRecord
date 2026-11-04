@@ -33,7 +33,8 @@ export const Composer = forwardRef(function Composer(
   };
 
   return (
-    <div className="border-t border-border bg-background/60 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+    <div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-8 sm:pb-5">
+     <div className="mx-auto w-full max-w-[46rem]">
       {imageLoading && !image && (
         <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-card p-2 text-xs text-muted-foreground" role="status" data-testid="ai-image-loading">
           <span className="h-10 w-10 animate-pulse rounded-lg bg-muted" aria-hidden="true" /><span>Reading the image…</span>
@@ -52,7 +53,7 @@ export const Composer = forwardRef(function Composer(
           </button>
         </div>
       )}
-      <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-card p-1.5 transition-shadow focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/20">
+      <div className="flex items-end gap-1.5 rounded-[1.375rem] border border-border bg-card p-2 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_10px_24px_-14px_rgba(15,23,42,0.25)] transition-[box-shadow,border-color] duration-200 focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/20 motion-reduce:transition-none">
         <input ref={file} type="file" accept="image/*" className="hidden" data-testid="ai-file-input"
           onChange={(e) => { onPickImage(e); e.target.value = ""; }} />
         <Hint label="Attach an image">
@@ -87,6 +88,7 @@ export const Composer = forwardRef(function Composer(
         )}
       </div>
       <p className="mt-1.5 hidden px-1 text-[11px] text-muted-foreground sm:block">Enter to send · Shift+Enter for a new line · Esc to close</p>
+     </div>
     </div>
   );
 });

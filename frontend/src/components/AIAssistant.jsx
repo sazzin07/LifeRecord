@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowDown, Check, Loader2, Maximize2, Minimize2, PanelLeft, SquarePen, Sparkles, TriangleAlert, Undo2, X } from "lucide-react";
+import { ArrowDown, Check, Loader2, PanelLeft, SquarePen, TriangleAlert, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { refreshAll, useFetch } from "@/lib/useFetch";
@@ -35,6 +35,11 @@ const SUGGESTIONS = {
 };
 
 const pageOf = (pathname) => pathname.split("/")[1] || "home";
+
+// The modal's motion: a confident arrival (exponential ease-out), a quicker, quieter leave, and parts that settle one after another
+// from the top-right, where the button that opened it sits. The slower the thing, the further it travels.
+const EASE_OUT = [0.16, 1, 0.3, 1];
+const EASE_IN = [0.4, 0, 1, 1];
 
 function useMedia(query) {
   const [match, setMatch] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
@@ -71,17 +76,19 @@ function ActivityFeed({ actions, onUndo }) {
   );
 }
 
-function Empty({ page, onPick }) {
+function Empty({ page, onPick, reduce }) {
   return (
-    <div className="pt-8" data-testid="ai-empty">
-      <h2 className="text-lg font-semibold tracking-tight">What can I help with?</h2>
-      <p className="mt-1 text-sm text-muted-foreground">I can look things up, add records, edit them and explain your numbers across every page.</p>
-      <div className="mt-5 grid gap-2">
-        {(SUGGESTIONS[page] || GENERIC).map((s) => (
-          <button key={s} type="button" data-testid="ai-suggestion" onClick={() => onPick(s)}
-            className="rounded-xl border border-border bg-card px-3.5 py-2.5 text-left text-sm transition-colors hover:border-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10">
+    <div className="pt-6 sm:pt-12" data-testid="ai-empty">
+      <h2 className="text-2xl font-semibold tracking-tight text-balance">What can I help with?</h2>
+      <p className="mt-1.5 max-w-[52ch] text-sm leading-relaxed text-muted-foreground">I can look things up, add records, edit them and explain your numbers across every page.</p>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        {(SUGGESTIONS[page] || GENERIC).map((s, i) => (
+          <motion.button key={s} type="button" data-testid="ai-suggestion" onClick={() => onPick(s)}
+            initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT, delay: 0.28 + i * 0.05 }}
+            className="rounded-xl border border-border bg-card px-3.5 py-3 text-left text-sm transition-[border-color,background-color,transform] duration-150 hover:border-emerald-400 hover:bg-emerald-50/60 active:scale-[0.98] motion-reduce:transition-colors dark:hover:bg-emerald-500/10">
             {s}
-          </button>
+          </motion.button>
         ))}
       </div>
     </div>
@@ -125,7 +132,6 @@ export function AIAssistant() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("chat"); // chat | scheduled | activity
   const [menu, setMenu] = useState(false);
-  const [wide, setWide] = useState(() => { try { return localStorage.getItem("lm_ai_wide") === "1"; } catch { return false; } });
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem("lm_ai_draft") || ""; } catch { return ""; } });
   const [image, setImage] = useState(null);
   const [imageLoading, setImageLoading] = useState(false); // the chosen file is still being read
@@ -139,19 +145,18 @@ export function AIAssistant() {
   const [nameDraft, setNameDraft] = useState("");
 
   const panel = useRef(null);
-  const fab = useRef(null);
+  const opener = useRef(null);   // whatever had the focus when the modal was asked for, so closing can give it back
   const list = useRef(null);
   const composer = useRef(null);
   const recorder = useRef(null);
   const stick = useRef(true);
 
-  const docked = wide && roomy && !mobile;           // sidebar sits beside the chat instead of over it
+  const docked = roomy && !mobile;                   // on a roomy screen the chat list sits beside the conversation instead of over it
   const { data: scheduled } = useFetch(open ? "/scheduled/tasks" : null);
   const scheduledCount = (scheduled || []).filter((t) => t.status === "active").length;
 
   useEffect(() => { setOpen(false); }, [loc.pathname]);
   useEffect(() => { try { localStorage.setItem("lm_ai_draft", draft); } catch { /* storage blocked */ } }, [draft]);
-  useEffect(() => { try { localStorage.setItem("lm_ai_wide", wide ? "1" : "0"); } catch { /* storage blocked */ } }, [wide]);
   useEffect(() => { if (open) loadCurrent(); }, [open, loadCurrent]);
   useEffect(() => {
     const off = () => setOffline(true); const on = () => setOffline(false);
@@ -160,9 +165,9 @@ export function AIAssistant() {
     return () => { window.removeEventListener("offline", off); window.removeEventListener("online", on); window.removeEventListener("lm:offline", off); window.removeEventListener("lm:online", on); };
   }, []);
 
-  // Open from elsewhere (command bar, quick actions) with an optional prefilled prompt.
+  // Open from the top bar, the command bar or a quick action, with an optional prefilled prompt.
   useEffect(() => {
-    const h = (e) => { setOpen(true); setView("chat"); if (e.detail?.prompt) setDraft(e.detail.prompt); };
+    const h = (e) => { opener.current = e.detail?.opener || null; setOpen(true); setView("chat"); if (e.detail?.prompt) setDraft(e.detail.prompt); };
     window.addEventListener("lm:openAI", h);
     return () => window.removeEventListener("lm:openAI", h);
   }, []);
@@ -172,7 +177,13 @@ export function AIAssistant() {
     if (open && view === "chat") { const t = setTimeout(() => composer.current?.focus(), reduce ? 0 : 180); return () => clearTimeout(t); }
     return undefined;
   }, [open, view, reduce]);
-  const close = useCallback(() => { setOpen(false); setMenu(false); setTimeout(() => fab.current?.focus({ preventScroll: true }), 0); }, []);
+  const close = useCallback(() => {
+    setOpen(false); setMenu(false);
+    setTimeout(() => {
+      const back = opener.current?.isConnected ? opener.current : document.querySelector('[data-testid="ai-trigger"]');
+      back?.focus({ preventScroll: true });
+    }, 0);
+  }, []);
 
   const loadActions = useCallback(async () => {
     try { const { data } = await api.get("/ai/actions"); setActions(data); } catch { /* the feed stays as it was */ }
@@ -303,8 +314,19 @@ export function AIAssistant() {
 
   const lastSent = [...msgs].reverse().find((m) => m.role === "user")?.text;
   const lastReply = [...msgs].reverse().find((m) => m.role === "assistant");
-  const slide = mobile ? { y: "100%" } : { x: "100%" };
-  const t = reduce ? { duration: 0 } : { type: "spring", damping: 32, stiffness: 340 };
+  // The modal as a whole. A phone gets a sheet that rises on a spring and leaves quickly; a larger screen gets a dialog that
+  // fades in while it grows from the top-right and rises a little (the opacity finishes first, so it never looks like it pops).
+  // With reduced motion only the opacity changes. `part` times each piece's own settling, after the shell has started to arrive.
+  const shell = reduce
+    ? { initial: { opacity: 0 }, animate: { opacity: 1, transition: { duration: 0.12 } }, exit: { opacity: 0, transition: { duration: 0.1 } } }
+    : mobile
+      ? { initial: { y: "100%" }, animate: { y: 0, transition: { type: "spring", damping: 34, stiffness: 360 } }, exit: { y: "100%", transition: { duration: 0.24, ease: EASE_IN } } }
+      : {
+        initial: { opacity: 0, scale: 0.96, y: 18 },
+        animate: { opacity: 1, scale: 1, y: 0, transition: { opacity: { duration: 0.2, ease: "linear" }, scale: { duration: 0.44, ease: EASE_OUT }, y: { duration: 0.44, ease: EASE_OUT } } },
+        exit: { opacity: 0, scale: 0.985, y: 8, transition: { duration: 0.16, ease: EASE_IN } },
+      };
+  const part = (delay, from) => (reduce ? {} : { initial: { opacity: 0, ...from }, animate: { opacity: 1, x: 0, y: 0 }, transition: { duration: 0.42, ease: EASE_OUT, delay } });
   const heading = view === "scheduled" ? "Scheduled tasks" : view === "activity" ? "Activity" : msgs.length ? title : "Assistant";
 
   const sidebar = (
@@ -314,29 +336,28 @@ export function AIAssistant() {
 
   return (
     <>
-      <button ref={fab} type="button" data-testid="ai-fab" aria-label="Open the assistant" aria-haspopup="dialog" aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className="pulse-ring fixed bottom-20 right-4 z-40 grid h-14 w-14 place-items-center rounded-full border border-slate-300/50 shadow-2xl glass-strong dark:border-slate-700/60 lg:bottom-6 lg:right-6">
-        <Sparkles className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-      </button>
-
       <AnimatePresence>
         {open && (
           <>
-            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0 : 0.18 }}
-              onClick={close} aria-hidden="true" className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[2px]" />
-            <motion.div key="panel" ref={panel} role="dialog" aria-modal="true" aria-label="Assistant" data-testid="ai-panel" data-wide={wide ? "true" : "false"}
-              initial={slide} animate={{ x: 0, y: 0 }} exit={slide} transition={t} onKeyDown={onPanelKeyDown}
+            {/* The page behind goes soft and a little dim; the blur arrives with the fade and leaves with it. */}
+            <motion.div key="scrim" initial={reduce ? { opacity: 0 } : { opacity: 0, backdropFilter: "blur(0px)" }}
+              animate={reduce ? { opacity: 1 } : { opacity: 1, backdropFilter: "blur(6px)" }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, backdropFilter: "blur(0px)" }}
+              transition={{ duration: reduce ? 0.1 : 0.32, ease: EASE_OUT }}
+              onClick={close} aria-hidden="true" className="fixed inset-0 z-40 bg-slate-950/45" />
+            <div key="frame" className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
+            <motion.div ref={panel} role="dialog" aria-modal="true" aria-label="Assistant" data-testid="ai-panel" data-wide={docked ? "true" : "false"}
+              {...shell} style={{ transformOrigin: mobile ? "50% 100%" : "88% 0%" }} onKeyDown={onPanelKeyDown}
               className={cn(
-                "fixed z-50 flex glass-strong border-border shadow-2xl transition-[width] duration-200 motion-reduce:transition-none",
-                "inset-x-0 bottom-0 top-10 rounded-t-3xl border-t",
-                "sm:inset-y-0 sm:left-auto sm:right-0 sm:top-0 sm:rounded-none sm:border-l sm:border-t-0",
-                wide ? "sm:w-[min(920px,100vw)]" : "sm:w-[460px]",
+                "pointer-events-auto relative flex w-full overflow-hidden glass-strong border border-border",
+                "shadow-[0_40px_90px_-30px_rgba(2,6,23,0.55),0_10px_28px_-14px_rgba(2,6,23,0.3)]",
+                "h-[calc(100dvh-2.5rem)] rounded-t-3xl border-b-0",
+                "sm:h-[min(780px,calc(100dvh-3rem))] sm:max-w-[1060px] sm:rounded-3xl sm:border-b",
               )}>
-              {docked && <aside className="w-[270px] shrink-0 border-r border-border bg-background/40" aria-label="Chats and tools">{sidebar}</aside>}
+              {docked && <motion.aside {...part(0.14, { x: -12 })} className="w-[280px] shrink-0 border-r border-border bg-muted/40" aria-label="Chats and tools">{sidebar}</motion.aside>}
 
               <div className="relative flex min-w-0 flex-1 flex-col">
-                <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+                <motion.header {...part(0.1, { y: -8 })} className="flex h-16 shrink-0 items-center gap-2 border-b border-border px-4 sm:px-6">
                   {!docked && (
                     <Hint label="Chats and tools">
                       <button type="button" data-testid="ai-menu" aria-label="Open chats and tools" aria-expanded={menu} onClick={() => setMenu((m) => !m)}
@@ -360,40 +381,34 @@ export function AIAssistant() {
                     {view === "chat" && <SaveBadge state={saveState} onRetry={() => lastReply && retry(lastReply.id)} />}
                   </div>
                   <div className="flex items-center gap-0.5">
-                    {!mobile && roomy && (
-                      <Hint label={wide ? "Narrow panel" : "Wide panel"}>
-                        <button type="button" data-testid="ai-wide" aria-label={wide ? "Use the narrow panel" : "Use the wide panel"} aria-pressed={wide} onClick={() => setWide((w) => !w)}
-                          className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                          {wide ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                        </button>
-                      </Hint>
-                    )}
                     <Hint label="New chat">
                       <button type="button" data-testid="ai-new" aria-label="Start a new chat" onClick={newChat}
                         className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><SquarePen className="h-4 w-4" /></button>
                     </Hint>
                     <Hint label="Close">
                       <button type="button" data-testid="ai-close" aria-label="Close the assistant" onClick={close}
-                        className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
+                        className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-90 motion-reduce:active:scale-100"><X className="h-4 w-4" /></button>
                     </Hint>
                   </div>
-                </header>
+                </motion.header>
 
-                <div className="relative min-h-0 flex-1">
+                <motion.div {...part(0.18, {})} className="relative min-h-0 flex-1">
                   {view === "scheduled" ? <ScheduledView /> : (
                     <>
                       <div ref={list} onScroll={onScroll} role={view === "chat" ? "log" : undefined} aria-live="polite" aria-busy={busy}
-                        className="h-full space-y-5 overflow-y-auto overscroll-contain px-4 py-4 [overflow-anchor:none]" data-testid="ai-messages">
+                        className="h-full overflow-y-auto overscroll-contain px-4 py-5 sm:px-8 [overflow-anchor:none]" data-testid="ai-messages">
+                        <div className="mx-auto w-full max-w-[46rem] space-y-5">
                         {view === "activity" ? <ActivityFeed actions={actions} onUndo={undo} /> : (
                           <>
                             {msgs.length === 0 && loadState === "loading" && <ListSkeleton />}
                             {msgs.length === 0 && loadState === "failed" && (
                               <p role="alert" className="pt-8 text-center text-sm text-muted-foreground">Could not load this chat. <button type="button" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300" onClick={() => openConversation(sessionId)}>Try again</button></p>
                             )}
-                            {msgs.length === 0 && loadState !== "loading" && loadState !== "failed" && <Empty page={page} onPick={(s) => submit(s)} />}
+                            {msgs.length === 0 && loadState !== "loading" && loadState !== "failed" && <Empty page={page} reduce={reduce} onPick={(s) => submit(s)} />}
                             {msgs.map((m, i) => <Message key={m.id} m={m} onRetry={retry} last={i === msgs.length - 1} />)}
                           </>
                         )}
+                        </div>
                       </div>
                       <AnimatePresence>
                         {!stuck && view === "chat" && msgs.length > 0 && (
@@ -407,13 +422,13 @@ export function AIAssistant() {
                       </AnimatePresence>
                     </>
                   )}
-                </div>
+                </motion.div>
 
-                <div hidden={view !== "chat"}>
+                <motion.div {...part(0.24, { y: 10 })} hidden={view !== "chat"}>
                   <Composer ref={composer} value={draft} onChange={setDraft} onSend={() => submit()} onStop={stop} busy={busy} lastSent={lastSent}
                     image={image} imageLoading={imageLoading} onPickImage={pickImage} onClearImage={() => setImage(null)} onScan={scanReceipt} scanning={receipt.scanning}
                     recording={recording} onToggleRecord={toggleRecord} />
-                </div>
+                </motion.div>
 
                 <AnimatePresence>
                   {menu && !docked && (
@@ -430,6 +445,7 @@ export function AIAssistant() {
                 </AnimatePresence>
               </div>
             </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>

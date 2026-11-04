@@ -8,7 +8,7 @@ const seedHistory = (arg) => JSON.parse(execFileSync(PY, ["tests/support_seed_ru
 
 async function openScheduled(page) {
   await page.waitForTimeout(2600); // welcome splash
-  await page.getByTestId("ai-fab").click();
+  await page.getByTestId("ai-trigger").click();
   await expect(page.getByTestId("ai-panel")).toBeVisible();
   if ((await page.getByTestId("ai-panel").getAttribute("data-wide")) !== "true") await page.getByTestId("ai-wide").click();
   await page.getByTestId("ai-nav-scheduled").click();
@@ -154,7 +154,7 @@ test.describe("Scheduled tasks", () => {
   test("on a phone the whole flow fits without sideways scrolling", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await page.waitForTimeout(2600);
-    await page.getByTestId("ai-fab").click();
+    await page.getByTestId("ai-trigger").click();
     await page.getByTestId("ai-menu").click();
     await page.getByTestId("ai-nav-scheduled").click();
     await page.getByTestId("scheduled-new").click();

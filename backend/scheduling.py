@@ -643,6 +643,11 @@ class Scheduler:
         """One pass: recover stuck runs, claim due tasks and start their runs. Returns how many runs were started."""
         ids = await recover_runs(self.session_factory, now)
         ids += await claim_due_tasks(self.session_factory, now)
+        try:
+            import recurring_api   # the recurring transactions that fell due (F-11): the same loop, so there is one clock
+            await recurring_api.run_due(self.srv, self.session_factory, now.astimezone(UTC).date() if now else None)
+        except Exception:
+            logger.exception("recurring transactions pass failed")
         for rid in dict.fromkeys(ids):
             t = asyncio.create_task(process_run(self.srv, self.session_factory, rid))
             self._spawned.add(t)

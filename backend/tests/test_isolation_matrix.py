@@ -37,6 +37,7 @@ from support_populate import (  # noqa: E402,F401
     c_diary,
     c_plan,
     c_water,
+    c_recurring_txn,
     c_scheduled_task,
     c_recipient,
     c_run,
@@ -103,6 +104,9 @@ CASES: Dict[str, Case] = {
                                         ("POST", "/nutrition/diary/{id}/move", {"meal_type": "lunch"}), ("DELETE", "/nutrition/diary/{id}", None)]),
     "meal_plan_entries": Case(("meal_plan_entries",), c_plan, [("PUT", "/nutrition/plan/{id}", {"note": "hijacked"}), ("POST", "/nutrition/plan/{id}/log", {}),
                                                               ("DELETE", "/nutrition/plan/{id}", None)]),
+    "recurring_transactions": Case(("recurring_transactions",), c_recurring_txn, [
+        ("PUT", "/recurring/{id}", {"amount": 99}), ("POST", "/recurring/{id}/pause", {}), ("POST", "/recurring/{id}/resume", {}),
+        ("DELETE", "/recurring/{id}", None)], "/recurring"),
     "hydration_entries": Case(("hydration_entries",), c_water, [("PUT", "/nutrition/water/{id}", {"amount_ml": 1}), ("DELETE", "/nutrition/water/{id}", None)]),
     "scheduled_tasks": Case(("scheduled_tasks",), c_scheduled_task, [
         ("GET", "/scheduled/tasks/{id}", None), ("PUT", "/scheduled/tasks/{id}", {**SCHEDULED_BODY, "title": "hijacked"}), ("GET", "/scheduled/tasks/{id}/runs", None),

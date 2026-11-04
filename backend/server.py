@@ -62,6 +62,7 @@ import ai_tools_people
 import ai_tools_settings
 import debts
 import debts_api
+import recurring_api
 import two_factor_api
 import profile_api
 import nutrition_api
@@ -6047,6 +6048,7 @@ account_api.register(api_router, sys.modules[__name__])
 two_factor_api.register(api_router, sys.modules[__name__])
 profile_api.register(api_router, sys.modules[__name__])
 debts_api.register(api_router, sys.modules[__name__])
+recurring_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)
 
 # ---------------------------------------------------------------------------

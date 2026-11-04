@@ -169,6 +169,11 @@ def c_water(a):
     return {"id": _post(a, "/nutrition/water", {"amount_ml": 250})["id"]}
 
 
+def c_recurring_txn(a):
+    return {"id": _post(a, "/recurring", {"kind": "expense", "amount": 5, "account": _account(a), "category": "Bills", "description": "Iso rent",
+                                         "repeat": "monthly", "start_date": "2099-01-15"})["id"]}
+
+
 SCHEDULED_BODY = {"title": "Report", "instruction": "Summarise the week.", "schedule": {"kind": "weekly", "time": "09:00", "weekdays": [0]},
                   "timezone": "Europe/Lisbon", "data_sources": ["money"], "recipients": []}
 
@@ -240,6 +245,7 @@ CREATORS = {
     "diary": c_diary,
     "plan": c_plan,
     "water": c_water,
+    "recurring_txn": c_recurring_txn,
     "scheduled_task": c_scheduled_task,
     "recipient": c_recipient,
     "run": c_run,

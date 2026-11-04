@@ -84,8 +84,10 @@ class Transaction(Base):
     items = Column(JSON, nullable=True)
     from_account = Column(String(50), nullable=True, index=True)
     to_account = Column(String(50), nullable=True, index=True)
+    recurring_id = Column(String(36), nullable=True)   # the recurring rule that created it (F-11); one transaction per rule and day
     created_at = Column(String(32), nullable=False)
 
+    __table_args__ = (Index("uq_transactions_recurring_day", "recurring_id", "date", unique=True),)
     splits = relationship("Split", back_populates="transaction", cascade="all, delete-orphan", lazy="selectin")
 
 
@@ -742,3 +744,26 @@ class UserAvatar(Base):
     storage_path = Column(String(255), nullable=False)
     content_type = Column(String(30), nullable=False)
     updated_ms = Column(BigInteger, nullable=False)
+
+
+class RecurringTransaction(Base):
+    """A rule that becomes a real transaction on each due day (rent, a subscription, a salary): see recurring.py. `next_due` is the next day it
+    will be created for; `anchor_day` is the day of the month it started on; `seen_through` is the last created day the person has been told about."""
+    __tablename__ = "recurring_transactions"
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(10), nullable=False)                 # expense | income
+    amount = Column(DECIMAL(12, 2), nullable=False)
+    account = Column(String(50), nullable=False)
+    category = Column(String(255), nullable=True)
+    merchant = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    repeat = Column(String(10), nullable=False)               # weekly | monthly | yearly
+    anchor_day = Column(Integer, nullable=False)
+    next_due = Column(String(10), nullable=False, index=True)
+    end_date = Column(String(10), nullable=True)
+    status = Column(String(10), nullable=False, default="active")   # active | paused | ended
+    note = Column(String(255), nullable=True)                 # why it was paused by itself
+    last_created = Column(String(10), nullable=True)
+    seen_through = Column(String(10), nullable=True)
+    created_at = Column(String(32), nullable=False)

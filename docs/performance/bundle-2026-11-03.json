@@ -1,0 +1,194 @@
+{
+ "date": "2026-11-03",
+ "rows": [
+  {
+   "file": "main.e5b2dd40.js",
+   "role": "main.js",
+   "raw": 1106465,
+   "gzip": 333937,
+   "key": "main.js"
+  },
+  {
+   "file": "935.c3e4019d.chunk.js",
+   "role": null,
+   "raw": 443275,
+   "gzip": 115825,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "640.9c21607e.chunk.js",
+   "role": null,
+   "raw": 331939,
+   "gzip": 96466,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "739.c6167cee.chunk.js",
+   "role": null,
+   "raw": 155686,
+   "gzip": 37016,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "493.095d140a.chunk.js",
+   "role": null,
+   "raw": 124060,
+   "gzip": 30202,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "main.c2c2c161.css",
+   "role": "main.css",
+   "raw": 115926,
+   "gzip": 20697,
+   "key": "main.css"
+  },
+  {
+   "file": "896.a114aacd.chunk.js",
+   "role": null,
+   "raw": 55232,
+   "gzip": 15397,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "514.93bdfb36.chunk.js",
+   "role": null,
+   "raw": 54563,
+   "gzip": 14212,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "811.cf08c23b.chunk.js",
+   "role": null,
+   "raw": 38714,
+   "gzip": 11208,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "245.9971f54f.chunk.js",
+   "role": null,
+   "raw": 36621,
+   "gzip": 10588,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "131.0a8d7839.chunk.js",
+   "role": null,
+   "raw": 36552,
+   "gzip": 10549,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "656.c21615b4.chunk.js",
+   "role": null,
+   "raw": 25938,
+   "gzip": 8199,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "74.d289c827.chunk.js",
+   "role": null,
+   "raw": 22509,
+   "gzip": 7703,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "614.e730fde5.chunk.js",
+   "role": null,
+   "raw": 16871,
+   "gzip": 6183,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "723.6f9e1b04.chunk.js",
+   "role": null,
+   "raw": 19919,
+   "gzip": 5993,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "269.3d6493e2.chunk.js",
+   "role": null,
+   "raw": 15659,
+   "gzip": 5876,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "508.382cc58a.chunk.js",
+   "role": null,
+   "raw": 13710,
+   "gzip": 5448,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "110.8da8d350.chunk.js",
+   "role": null,
+   "raw": 15723,
+   "gzip": 5144,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "270.71eb4e38.chunk.js",
+   "role": null,
+   "raw": 10862,
+   "gzip": 3923,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "411.952f350f.chunk.js",
+   "role": null,
+   "raw": 9477,
+   "gzip": 3711,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "607.230d5759.chunk.js",
+   "role": null,
+   "raw": 6628,
+   "gzip": 3152,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "931.d7ec6069.chunk.js",
+   "role": null,
+   "raw": 6665,
+   "gzip": 2573,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "176.137f111c.chunk.js",
+   "role": null,
+   "raw": 6328,
+   "gzip": 2355,
+   "key": "lazy chunk"
+  },
+  {
+   "file": "976.e6b8b4e2.chunk.js",
+   "role": null,
+   "raw": 3290,
+   "gzip": 1625,
+   "key": "lazy chunk"
+  }
+ ],
+ "summary": [
+  {
+   "key": "main.css",
+   "files": 1,
+   "gzip_total": 20697,
+   "gzip_largest": 20697
+  },
+  {
+   "key": "lazy chunk",
+   "files": 22,
+   "gzip_total": 403348,
+   "gzip_largest": 115825
+  },
+  {
+   "key": "main.js",
+   "files": 1,
+   "gzip_total": 333937,
+   "gzip_largest": 333937
+  }
+ ],
+ "total_gzip": 757982
+}

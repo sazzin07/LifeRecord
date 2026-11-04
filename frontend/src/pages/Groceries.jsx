@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   ShoppingCart, Package, Plus, Trash2, Pencil, Sparkles, Check, Store,
   AlertTriangle, Search, X, ChevronDown, ChevronUp, ListChecks, ArrowRight,
@@ -437,13 +437,16 @@ export default function Groceries() {
     locations: setLocations, products: setProducts, recipeIdeas: setRecipeIdeas, appliances: setAppliances,
   }), []);
   // Every piece is its own request: each one lands in the page the moment it is back, so a slow one never holds the others.
+  const loadSeq = useRef(0);   // a slow answer to an older request (made before a list was chosen) must never overwrite a newer one
   const load = useCallback(async () => {
     const fresh = {};
     let listId = selectedListId;
+    const mine = ++loadSeq.current;
     try {
       await Promise.all(Object.keys(GROCERY_PARTS).map(async (k) => {
         try {
           const data = await GROCERY_PARTS[k](selectedListId);
+          if (mine !== loadSeq.current) return;
           fresh[k] = data;
           setters[k](data);
           setHave((h) => (h[k] ? h : { ...h, [k]: true }));
@@ -458,7 +461,7 @@ export default function Groceries() {
           }
         } catch { setFailed((f) => ({ ...f, [k]: true })); }
       }));
-      if (Object.keys(GROCERY_PARTS).every((k) => k in fresh)) writeCache(user?.id, GROCERIES_CACHE_KEY, { ...fresh, selectedListId: listId });
+      if (mine === loadSeq.current && Object.keys(GROCERY_PARTS).every((k) => k in fresh)) writeCache(user?.id, GROCERIES_CACHE_KEY, { ...fresh, selectedListId: listId });
     } finally { setLoading(false); }
   }, [selectedListId, user?.id, setters]);
 

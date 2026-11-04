@@ -29,10 +29,63 @@ class SmsError(Exception):
     """A text message that did not go. `str()` is words fit to show a person."""
 
 
+def verify_mode() -> bool:
+    """True when Twilio Verify (TWILIO_VERIFY_SERVICE_SID=VA...) makes, sends and checks the codes instead of this server."""
+    return bool(os.environ.get("TWILIO_VERIFY_SERVICE_SID"))
+
+
 def available() -> bool:
     return (os.environ.get("SMS_PROVIDER", "").lower() == "twilio" and bool(os.environ.get("TWILIO_ACCOUNT_SID"))
             and bool(os.environ.get("TWILIO_AUTH_TOKEN"))
-            and bool(os.environ.get("TWILIO_FROM") or os.environ.get("TWILIO_MESSAGING_SERVICE_SID")))
+            and bool(verify_mode() or os.environ.get("TWILIO_FROM") or os.environ.get("TWILIO_MESSAGING_SERVICE_SID")))
+
+
+def _verify_url(path: str) -> str:
+    base = (os.environ.get("TWILIO_VERIFY_API_BASE") or os.environ.get("TWILIO_API_BASE") or "https://verify.twilio.com").rstrip("/")
+    return f"{base}/v2/Services/{os.environ['TWILIO_VERIFY_SERVICE_SID']}/{path}"
+
+
+async def _verify_post(path: str, data: dict) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.post(_verify_url(path), data=data,
+                                     auth=(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"]))
+    except httpx.HTTPError as exc:
+        logger.warning("verification request failed: %s", type(exc).__name__)
+        raise SmsError(SEND_FAILED) from exc
+
+
+async def start_verification(to: str) -> None:
+    """Have Twilio Verify text a code to the E.164 number `to`. Raises SmsError (words for the person) on any failure."""
+    if not (available() and verify_mode()):
+        raise SmsError("Text messages are not set up on this server.")
+    response = await _verify_post("Verifications", {"To": to, "Channel": "sms"})
+    if response.status_code < 300:
+        return
+    try:
+        code = int(response.json().get("code") or 0)
+    except Exception:
+        code = 0
+    logger.warning("verification refused by the provider: HTTP %s, code %s", response.status_code, code or "-")
+    if code in _BAD_NUMBER_CODES or code in (60200, 60205):
+        raise SmsError(BAD_NUMBER)
+    raise SmsError(SEND_FAILED)
+
+
+async def check_verification(to: str, code: str) -> bool:
+    """True when Twilio Verify approves `code` for `to`. A wrong, expired or already-used code is False; an outage raises SmsError."""
+    if not (available() and verify_mode()):
+        raise SmsError("Text messages are not set up on this server.")
+    response = await _verify_post("VerificationCheck", {"To": to, "Code": code})
+    if response.status_code == 404 or response.status_code == 429:  # no pending verification (expired or spent) / too many checks
+        return False
+    if response.status_code >= 300:
+        logger.warning("verification check failed: HTTP %s", response.status_code)
+        raise SmsError(SEND_FAILED)
+    try:
+        return response.json().get("status") == "approved"
+    except Exception:
+        return False
 
 
 def normalise_phone(text: str) -> Optional[str]:

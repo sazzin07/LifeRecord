@@ -384,10 +384,13 @@ def register(api_router, srv):
         if await srv.claim_global_slot("sms-send", 3600, int(os.environ.get("SMS_MAX_PER_HOUR", "60"))) is not None:
             raise HTTPException(503, "Too many text messages have been sent in the last hour. Try again later, or use another way.")
         phone = await _unavailable(_async(totp.decrypt_secret, phone_enc))
-        code = sms_codes.new_code()
+        code = None if sms_service.verify_mode() else sms_codes.new_code()  # with Twilio Verify the provider makes the code
         sent_ms = await sms_codes.store(db, db_user.id, code)
         try:
-            await sms_service.send(phone, _text_body(code))
+            if code is None:
+                await sms_service.start_verification(phone)
+            else:
+                await sms_service.send(phone, _text_body(code))
         except sms_service.SmsError as exc:
             await sms_codes.discard(db, db_user.id, sent_ms)
             raise HTTPException(400 if str(exc) == sms_service.BAD_NUMBER else 503, str(exc))

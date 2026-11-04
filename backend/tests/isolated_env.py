@@ -40,7 +40,7 @@ _counter = itertools.count(1)
 
 # Everything a real deployment configures that the scratch server must not have.
 BLANKED = ("GEMINI_API_KEY", "SENDGRID_API_KEY", "SENDGRID_FROM_EMAIL", "SMTP_PASSWORD", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN",
-           "TWILIO_FROM", "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_API_BASE")
+           "TWILIO_FROM", "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_API_BASE", "TWILIO_VERIFY_SERVICE_SID", "TWILIO_VERIFY_API_BASE")
 # Mail is "configured" (so reserved test domains are skipped exactly as in a real setup) but the relay is a dead end:
 # loopback port 1 has no listener, so even a non-reserved recipient could only produce a connection error.
 # The assistant counts as "configured" (so validation and error paths behave as in production) but its provider address is

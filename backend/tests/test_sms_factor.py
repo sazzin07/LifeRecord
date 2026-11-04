@@ -300,3 +300,22 @@ def test_a_second_number_cannot_be_started_while_one_is_confirmed():
     r = post("/auth/2fa/sms/start", {"password": PASSWORD, "phone": phone2, "code": recovery[0]}, token=user["token"])
     assert r.status_code == 400 and "already on" in r.json()["detail"]
     assert texts_to(phone2) == []
+
+
+# -- Twilio Verify: the provider makes, sends and checks the code ---------------------------------------------------------------
+
+def test_verify_mode_sends_and_checks_through_the_provider(provider, monkeypatch):
+    import sms_codes
+    monkeypatch.setenv("TWILIO_VERIFY_SERVICE_SID", "VA" + "1" * 32)
+    monkeypatch.delenv("TWILIO_FROM", raising=False)
+    assert sms_service.verify_mode() and sms_service.available()
+    phone = new_phone()
+    asyncio.run(sms_service.start_verification(phone))
+    code = texts_to_base(provider, phone)[-1]["body"].split()[-1]
+    assert asyncio.run(sms_service.check_verification(phone, "000000")) is False
+    assert asyncio.run(sms_service.check_verification(phone, code)) is True
+    assert asyncio.run(sms_service.check_verification(phone, code)) is False, "a code works once"
+    with pytest.raises(sms_service.SmsError) as bad:
+        asyncio.run(sms_service.start_verification(fake_twilio.INVALID_NUMBER))
+    assert str(bad.value) == sms_service.BAD_NUMBER
+    assert sms_codes.RESEND_GAP_SECONDS == 60

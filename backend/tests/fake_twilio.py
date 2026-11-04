@@ -20,6 +20,7 @@ TOKEN = "scratch-twilio-token"
 INVALID_NUMBER = "+15005550001"
 
 _messages = []
+_pending = {}  # Verify: number -> the code it was sent
 _lock = threading.Lock()
 
 
@@ -41,9 +42,27 @@ class _Handler(BaseHTTPRequestHandler):
         expected = "Basic " + base64.b64encode(f"{SID}:{TOKEN}".encode()).decode()
         if self.headers.get("Authorization") != expected:
             return self._send(401, {"code": 20003, "message": "Authenticate"})
-        if not urlparse(self.path).path.endswith("/Messages.json"):
-            return self._send(404, {"message": "not found"})
+        path = urlparse(self.path).path
         to = form.get("To", "")
+        if path.endswith("/Verifications") or path.endswith("/VerificationCheck"):  # Twilio Verify
+            if to == INVALID_NUMBER:
+                return self._send(400, {"code": 60200, "message": "Invalid parameter"})
+            if to.endswith("0000"):
+                return self._send(503, {"message": "provider down"})
+            with _lock:
+                if path.endswith("/Verifications"):
+                    code = f"{abs(hash((to, uuid.uuid4().hex))) % 10 ** 6:06d}"
+                    _pending[to] = code
+                    _messages.append({"to": to, "from": "verify", "body": f"Your verification code is {code}"})
+                    return self._send(201, {"sid": "VE" + uuid.uuid4().hex, "status": "pending"})
+                if _pending.get(to) is None:
+                    return self._send(404, {"code": 20404, "message": "not found"})
+                if _pending[to] != form.get("Code"):
+                    return self._send(200, {"status": "pending"})
+                del _pending[to]
+                return self._send(200, {"status": "approved"})
+        if not path.endswith("/Messages.json"):
+            return self._send(404, {"message": "not found"})
         if to == INVALID_NUMBER:
             return self._send(400, {"code": 21211, "message": f"The 'To' number {to} is not a valid phone number."})
         if to.endswith("0000"):

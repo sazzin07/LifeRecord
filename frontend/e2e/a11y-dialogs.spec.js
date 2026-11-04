@@ -22,6 +22,7 @@ for (const theme of THEMES) {
       const dlg = (p) => p.getByRole("dialog");
       await open("/money", [(p) => p.getByRole("button", { name: "Transfer", exact: true }).click()], dlg, "money transfer");
       await open("/money", [(p) => p.getByRole("button", { name: "Budgets", exact: true }).click()], dlg, "money budgets");
+      await open("/money", [(p) => p.getByTestId("recurring-add").click()], (p) => p.getByTestId("recurring-dialog"), "money recurring");
       await open("/money", [(p) => p.getByRole("button", { name: "Add sub-place" }).first().click()], (p) => p.getByTestId("account-dialog"), "money add place");
       await open("/people", [(p) => p.getByTestId("add-person-btn").click()], dlg, "people add person");
       const people = await (await apiContext.get("/api/people")).json();

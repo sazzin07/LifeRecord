@@ -15,6 +15,7 @@ import { AIAssistant } from "@/components/AIAssistant";
 import { CommandBar } from "@/components/CommandBar";
 import { QuickAdd } from "@/components/QuickAdd";
 import { QuickAddFab } from "@/components/QuickAddFab";
+import { RecurringNotice } from "@/components/RecurringNotice";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -263,6 +264,7 @@ export function AppShell({ children }) {
       </Sheet>
 
       <QuickAddFab onClick={() => setQuickOpen(true)} />
+      <RecurringNotice />
       <AIAssistant />
       <CommandBar open={cmdOpen} setOpen={setCmdOpen} onQuickAdd={() => setQuickOpen(true)} />
       <QuickAdd open={quickOpen} setOpen={setQuickOpen} />

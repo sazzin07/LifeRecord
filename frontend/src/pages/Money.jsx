@@ -20,6 +20,7 @@ import { EditExpenseDialog } from "@/components/EditExpenseDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { FirstAccounts } from "@/components/FirstAccounts";
+import { Recurring } from "@/pages/money/Recurring";
 import { ErrorBlock, Resolve, Sk, SkChart } from "@/components/skeletons";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -682,6 +683,8 @@ export default function Money() {
 
           </div>
           )}
+
+          <Recurring accounts={accountOptions} categories={categories} />
 
           {/* Transactions */}
           <section className="mny-card overflow-hidden" aria-labelledby="mny-txn-h">

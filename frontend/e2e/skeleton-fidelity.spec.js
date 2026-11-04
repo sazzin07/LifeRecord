@@ -42,7 +42,7 @@ async function compare(page, path, selector, { release, flexible = [], yToleranc
 test("Money: every card's placeholder is the size and place of the real card", async ({ authenticatedPage: page }) => {
   await compare(page, "/money", "main section.mny-card, main div.mny-card", {
     release: (p) => expect(p.getByTestId("money-bank")).toBeVisible({ timeout: 15000 }),
-    flexible: ["mny-time-h", "mny-cat-h", "mny-merch-h", "mny-inex-h", "mny-txn-h", "mny-budget-h"],      // as tall as the data (a chart row, a list)
+    flexible: ["mny-time-h", "mny-cat-h", "mny-merch-h", "mny-inex-h", "mny-txn-h", "mny-budget-h", "mny-rec-h"],      // as tall as the data (a chart row, a list)
   });
 });
 

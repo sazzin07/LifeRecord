@@ -55,7 +55,9 @@ export function currencyOptions() {
 
 /** The currency of the bank account (the first top-level one), else of the first top-level account, else EUR. Mirrors the server. */
 export function mainCurrencyOf(accounts) {
-  const top = (accounts || []).filter((a) => !a.parent_id);
+  // the same order as the server: the first bank account, by position and then by when it was made
+  const top = (accounts || []).filter((a) => !a.parent_id && a.is_active !== false)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
   const bank = top.find((a) => a.type === "bank") || top[0];
   return (bank && bank.currency) || "EUR";
 }

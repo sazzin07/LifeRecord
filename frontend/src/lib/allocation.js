@@ -16,9 +16,21 @@ export const NEW_MONEY_LABEL = "Add this amount as new money to the main account
  *  - `amount`: what the person typed; `newMoney`: the checkbox.
  * Returns { text, error, showNewMoney }: the sentence to show, whether it is a refusal, and whether the checkbox applies.
  */
-export function planAllocation({ account, host, amount, newMoney }) {
+export function planAllocation({ account, host, amount, newMoney, currency }) {
   const typed = cents(amount);
   const nothing = { text: "", error: false, showNewMoney: false };
+
+  // A place in a currency of its own holds money of its own: nothing is taken out of the main account's places, and nothing is converted.
+  const own = account ? account.currency : currency;
+  if (host && own && own !== host.currency && (!account || account.parent_id)) {
+    const delta = typed - (account ? cents(account.balance) : 0);
+    if (delta === 0) return nothing;
+    return {
+      text: delta > 0 ? `${eur(delta / 100, own)} of new money in ${own} is added to this place. Nothing is taken from ${host.name} (${host.currency}) and nothing is converted.`
+        : `${eur(-delta / 100, own)} is taken out of this place (withdrawn).`,
+      error: false, showNewMoney: false,
+    };
+  }
 
   // A main account: the figure is its total, places included; the difference goes into (or out of) its favourite place.
   if (account && !account.parent_id) {

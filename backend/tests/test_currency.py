@@ -47,9 +47,10 @@ def test_currency_is_stored_normalised_validated_and_inherited_by_places(me):
     assert acc(me, usd)["currency"] == "USD"
     bad = me["session"].post(api(me, "/accounts"), json={"name": "x", "type": "cash", "currency": "XXXX", "opening_balance": 0}, timeout=30)
     assert bad.status_code == 422
-    sub = _post(me, "/accounts", {"name": "Envelope", "type": "cash_place", "parent_id": usd, "currency": "JPY", "opening_balance": 0})
-    assert sub["currency"] == "USD"                         # a place always uses its main account's currency
-    assert place_of(me, usd)["currency"] == "USD"
+    sub = _post(me, "/accounts", {"name": "Envelope", "type": "cash_place", "parent_id": usd, "opening_balance": 0})
+    assert sub["currency"] == "USD"                         # a place without a currency of its own uses its main account's
+    own = _post(me, "/accounts", {"name": "Yen box", "type": "cash_place", "parent_id": usd, "currency": "jpy", "opening_balance": 0})
+    assert own["currency"] == "JPY"                         # ...but may have one of its own
 
 
 def test_changing_a_main_accounts_currency_changes_its_places_and_is_refused_after_a_crossing_transfer(me):

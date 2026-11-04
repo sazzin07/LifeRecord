@@ -675,7 +675,7 @@ class AccountBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     type: str = Field(..., min_length=1, max_length=50)
     parent_id: Optional[str] = Field(default=None, max_length=36)
-    currency: str = Field(default="EUR", max_length=10)
+    currency: Optional[str] = Field(default=None, max_length=10)   # a place without one uses its main account's; a main account without one, EUR
     opening_balance: float = Field(default=0, ge=0)
     initial_balance: Optional[float] = Field(default=None, ge=0)
     is_locked: bool = Field(default=False)
@@ -1097,17 +1097,29 @@ async def compute_balances(db: AsyncSession, user_id: str, account_ids: List[str
 def main_currency_of(accounts: list) -> str:
     """The currency of the bank account (the first top-level one), else of the first top-level account, else EUR. It is where single figures,
     budgets and short answers are quoted; every account may still be in its own currency."""
-    top = [a for a in accounts if not a.get("parent_id")]
+    top = sorted((a for a in accounts if not a.get("parent_id") and a.get("is_active", True)), key=lambda a: (a.get("sort_order") or 0, str(a.get("created_at") or "")))
     bank = next((a for a in top if a.get("type") == "bank"), None) or (top[0] if top else None)
     return (bank.get("currency") if bank else None) or "EUR"
+
+
+def tops_of(accounts_all: list):
+    """Which accounts stand at the top of their own currency: a main account, and a place whose currency differs from its main account's
+    (that place's money is not part of the main account's figure, so it counts by itself)."""
+    by_id = {a["id"]: a for a in accounts_all}
+
+    def is_top(a: dict) -> bool:
+        parent = by_id.get(a.get("parent_id"))
+        return parent is None or (parent.get("currency") or "EUR") != (a.get("currency") or "EUR")
+    return is_top
 
 
 def currency_figures(accounts_all: list, cur: str) -> dict:
     """The same bank / cash / Revolut / total figures the summary gives, for the accounts in one currency."""
     accs = [a for a in accounts_all if (a.get("currency") or "EUR") == cur]
+    is_top = tops_of(accounts_all)
 
     def top(*types):
-        return round(sum(a["balance"] for a in accs if a["type"] in types and not a.get("parent_id")), 2)
+        return round(sum(a["balance"] for a in accs if a["type"] in types and is_top(a)), 2)
 
     def locked(t):
         return round(sum(a["balance"] for a in accs if a["type"] == t and a.get("is_locked")), 2)
@@ -1127,12 +1139,28 @@ def arrival_amount(from_acc: Account, to_acc: Account, to_amount: Optional[float
     return round(to_amount, 2)
 
 
+async def _has_transfer(db: AsyncSession, user_id: str, ids: list) -> bool:
+    return bool((await db.execute(select(Transaction.id).where(
+        Transaction.user_id == user_id, Transaction.type == "transfer",
+        (Transaction.from_account.in_(ids)) | (Transaction.to_account.in_(ids))).limit(1))).first())
+
+
+async def change_place_currency(db: AsyncSession, user_id: str, place: Account, main: Account, favourite_id: Optional[str], code: str) -> None:
+    """A place may use any currency, but not once money has moved between it and another place (those amounts are in the old currency),
+    and the favourite place always uses its main account's currency (that is where the main account's own deposits land)."""
+    if place.id == favourite_id and code != main.currency:
+        raise HTTPException(400, f"{place.name} is the favourite place of {main.name}, which is in {main.currency}. Choose another favourite first.")
+    if await _has_transfer(db, user_id, [place.id]):
+        raise HTTPException(409, f"Money has already moved to or from {place.name}, so its currency cannot change.")
+    place.currency = code
+
+
 async def change_main_currency(db: AsyncSession, user_id: str, main: Account, code: str) -> None:
-    """A main account and its places share one currency. It cannot change once a transfer between two currencies touches the family: that
-    transfer's two amounts would stop making sense."""
+    """A main account and the places that share its currency change together (a place in another currency keeps its own). It cannot change
+    once a transfer between two currencies touches them: that transfer's two amounts would stop making sense."""
     defines_main = (await debts.main_account_id(db, user_id)) == main.id      # asked before the change: the bank account fixes the main currency
     old_code = main.currency
-    family = [main.id] + [i for (i,) in (await db.execute(select(Account.id).where(Account.user_id == user_id, Account.parent_id == main.id))).all()]
+    family = [main.id] + [i for (i,) in (await db.execute(select(Account.id).where(Account.user_id == user_id, Account.parent_id == main.id, Account.currency == old_code))).all()]
     crossed = (await db.execute(select(Transaction.id).where(
         Transaction.user_id == user_id, Transaction.type == "transfer", Transaction.to_amount.is_not(None),
         (Transaction.from_account.in_(family)) | (Transaction.to_account.in_(family))).limit(1))).first()
@@ -1228,8 +1256,10 @@ async def allocation_transfer_ids(db: AsyncSession, user_id: str, account_ids: l
 
 async def allocated_total(db: AsyncSession, user_id: str, main_id: str) -> float:
     """What the active sub-accounts of a main account hold between them."""
+    main = await _fetch_account(db, user_id, main_id)
     ids = [i for (i,) in (await db.execute(
-        select(Account.id).where(Account.user_id == user_id, Account.parent_id == main_id, Account.is_active == True)  # noqa: E712
+        select(Account.id).where(Account.user_id == user_id, Account.parent_id == main_id, Account.is_active == True,  # noqa: E712
+                                 Account.currency == (main.currency if main else "EUR"))
     )).all()]
     return round(sum((await compute_balances(db, user_id, ids)).values()), 2)
 
@@ -1257,10 +1287,18 @@ async def account_views(db: AsyncSession, user_id: str, accounts: List[Account])
     own = await compute_balances(db, user_id, [a.id for a in accounts] + [a.id for a in missing])
     allocated: Dict[str, float] = {}
     places: Dict[str, int] = {}
+    foreign: Dict[str, Dict[str, float]] = {}      # per main account: what its places in OTHER currencies hold, by currency
+    currency_of_main = {a.id: a.currency for a in list(accounts) + list(missing)}
+    for m in (await db.execute(select(Account.id, Account.currency).where(Account.user_id == user_id, Account.id.in_(mains)))).all() if mains else []:
+        currency_of_main[m[0]] = m[1]
     for a in list(accounts) + list(missing):
         if a.parent_id:
-            allocated[a.parent_id] = allocated.get(a.parent_id, 0.0) + own[a.id]
             places[a.parent_id] = places.get(a.parent_id, 0) + 1
+            if a.currency == currency_of_main.get(a.parent_id, a.currency):
+                allocated[a.parent_id] = allocated.get(a.parent_id, 0.0) + own[a.id]
+            else:
+                per = foreign.setdefault(a.parent_id, {})
+                per[a.currency] = round(per.get(a.currency, 0.0) + own[a.id], 2)
     stored = await account_favorites.favourites(db, user_id)
     favourite_main = await account_favorites.overall_main(db, user_id)
     favourite_places: Dict[str, str] = {}
@@ -1281,6 +1319,8 @@ async def account_views(db: AsyncSession, user_id: str, accounts: List[Account])
             d["place_count"] = places.get(a.id, 0)
             d["total_balance"] = d["balance"] = round(own[a.id] + d["allocated_balance"], 2)
             d["is_favorite"] = favourite_main is not None and favourite_main.id == a.id
+            # `balance` is in the main account's own currency; places in other currencies are listed apart (nothing is converted or summed).
+            d["other_balances"] = [{"currency": c, "balance": v} for c, v in sorted(foreign.get(a.id, {}).items())]
             d["favorite_place_id"] = favourite_places.get(a.id)
             fav = next((x for x in list(accounts) + list(missing) if x.id == favourite_places.get(a.id)), None)
             d["favorite_place_name"] = fav.name if fav else None
@@ -2258,7 +2298,12 @@ async def create_account(body: AccountBody, user: dict = Depends(get_current_use
         if parent.parent_id:
             raise HTTPException(400, "A sub-account cannot have sub-accounts of its own.")
     amount = round(body.opening_balance, 2)
-    carved_out = parent is not None and amount > 0 and not body.add_as_new_money
+    try:
+        cur = currencies.normalize(body.currency) if body.currency else (parent.currency if parent is not None else "EUR")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    # Money is set aside out of the favourite place only when both are in the same currency; a place in another currency starts with money of its own.
+    carved_out = parent is not None and amount > 0 and not body.add_as_new_money and cur == parent.currency
     source = None
     if carved_out:
         source = await account_favorites.ensure_default_place(me, db, uid, parent)
@@ -2267,10 +2312,6 @@ async def create_account(body: AccountBody, user: dict = Depends(get_current_use
             raise _over_allocation("allocation", amount, available, f"{parent.name} › {source.name}", NEW_MONEY_HINT)
     elif parent is not None:
         await account_favorites.ensure_default_place(me, db, uid, parent)  # a main account always has its favourite place
-    try:
-        cur = parent.currency if parent is not None else currencies.normalize(body.currency)   # a place always uses its main account's currency
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
     acc = Account(
         id=new_id(), user_id=uid, name=body.name, type=body.type,
         parent_id=body.parent_id, currency=cur,
@@ -2298,9 +2339,9 @@ async def _freed_money_target(db: AsyncSession, uid: str, acc: Account, parent: 
     next one (which then becomes the favourite). None when it is the only place."""
     stored = await account_favorites.favourites(db, uid)
     favourite = await account_favorites.place_of(db, uid, parent, stored)
-    if favourite is not None and favourite.id != acc.id:
+    if favourite is not None and favourite.id != acc.id and favourite.currency == acc.currency:
         return favourite
-    others = [p for p in await account_favorites.active_places(db, uid, parent.id) if p.id != acc.id]
+    others = [p for p in await account_favorites.active_places(db, uid, parent.id) if p.id != acc.id and p.currency == acc.currency]
     return next((p for p in others if p.name == account_favorites.DEFAULT_NAME), others[0] if others else None)
 
 
@@ -2318,17 +2359,21 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     target_balance = updates.pop("balance", None)
     new_money = updates.pop("add_as_new_money", False)
+    new_cur = None
     if "currency" in updates:
         try:
             new_cur = currencies.normalize(updates.pop("currency"))
         except ValueError as exc:
             raise HTTPException(422, str(exc))
-        if not acc.parent_id and new_cur != acc.currency:       # a place keeps its main account's currency, whatever is asked
-            await change_main_currency(db, uid, acc, new_cur)
     parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
     extra = []  # transfers that carry the change between two places
     favourite = await account_favorites.place_of(db, uid, parent) if parent else None
     is_favourite = favourite is not None and favourite.id == acc.id
+    if new_cur and new_cur != acc.currency:
+        if parent:
+            await change_place_currency(db, uid, acc, parent, favourite.id if favourite else None, new_cur)
+        else:
+            await change_main_currency(db, uid, acc, new_cur)
 
     if "parent_id" in updates:
         if updates["parent_id"] == aid:
@@ -2351,7 +2396,7 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
 
     own = await compute_account_balance(db, aid, uid)
     if target_balance is not None:
-        if parent and is_favourite:
+        if parent and (is_favourite or acc.currency != parent.currency):
             delta = cents(target_balance) - cents(own)
             updates["opening_balance"] = round(float(acc.opening_balance) + delta / 100, 2)   # a deposit or a withdrawal
         elif parent:
@@ -2374,11 +2419,14 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
     if updates.get("is_active") is False and acc.is_active and parent:
         # A place that stops existing gives what it holds to the favourite place, like deleting it.
         heir = await _freed_money_target(db, uid, acc, parent)
-        if heir is None:
+        if heir is None and acc.currency != parent.currency:
+            if cents(own) != 0:
+                raise HTTPException(400, f"Move the money out of {acc.name} first: there is no other place in {acc.currency} to take it.")
+        elif heir is None:
             raise HTTPException(400, f"{parent.name} needs at least one place. Create another first.")
-        if is_favourite:
+        if heir is not None and is_favourite:
             await account_favorites.set_favourite(db, uid, parent.id, heir.id)
-        if cents(own) != 0:
+        if heir is not None and cents(own) != 0:
             extra.append(allocation_transfer(uid, acc, heir, own, f"Returned from {acc.name}") if own > 0
                          else allocation_transfer(uid, heir, acc, -own, f"Covered for {acc.name}"))
     for t in extra:
@@ -2421,14 +2469,19 @@ async def delete_account(aid: str, user: dict = Depends(get_current_user), db: A
         await db.commit()
         return {"ok": True}
     heir = await _freed_money_target(db, uid, acc, parent)
-    if heir is None:
+    held = await compute_account_balance(db, aid, uid)
+    if heir is None and acc.currency != parent.currency:
+        if cents(held) != 0:
+            raise HTTPException(400, f"Move the money out of {acc.name} first: there is no other place in {acc.currency} to take it.")
+    elif heir is None:
         raise HTTPException(400, f"{parent.name} needs at least one place. Create another first.")
     stored = await account_favorites.favourites(db, uid)
     favourite = await account_favorites.place_of(db, uid, parent, stored)
-    if favourite is not None and favourite.id == acc.id:
+    if heir is not None and favourite is not None and favourite.id == acc.id:
         await account_favorites.set_favourite(db, uid, parent.id, heir.id)
-    held = await compute_account_balance(db, aid, uid)
-    if cents(held) > 0:
+    if heir is None:
+        pass                                              # an empty foreign-currency place with nowhere to hand money to: nothing to move
+    elif cents(held) > 0:
         db.add(allocation_transfer(uid, acc, heir, held, f"Returned from {acc.name}"))
     elif cents(held) < 0:
         db.add(allocation_transfer(uid, heir, acc, -held, f"Covered for {acc.name}"))
@@ -2498,6 +2551,10 @@ async def set_favourite_account(aid: str, user: dict = Depends(get_current_user)
     acc = await _fetch_account(db, uid, aid)
     if not acc or not acc.is_active:
         raise HTTPException(404, "Account not found")
+    if acc.parent_id:
+        main = await _fetch_account(db, uid, acc.parent_id)
+        if main and acc.currency != main.currency:
+            raise HTTPException(400, f"{acc.name} is in {acc.currency} and {main.name} in {main.currency}: only a place in {main.currency} can be its favourite.")
     await account_favorites.set_favourite(db, uid, acc.parent_id or account_favorites.OVERALL, acc.id)
     await db.commit()
     return await favourite_account(user, db)
@@ -2854,8 +2911,10 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     money_left_bank = round(bank_initial - bank_current, 2)
     # A main account's balance already includes its sub-accounts, so only top-level accounts are added up; the locked
     # sub-accounts are then set apart from the freely available rest.
+    is_top = tops_of(accounts_all)
+
     def top_level(*types):
-        return round(sum(a["balance"] for a in accounts if a["type"] in types and not a.get("parent_id")), 2)
+        return round(sum(a["balance"] for a in accounts if a["type"] in types and is_top(a)), 2)
 
     def locked(type_):
         return round(sum(a["balance"] for a in accounts if a["type"] == type_ and a.get("is_locked")), 2)

@@ -3,7 +3,7 @@ import { BadgeInfo } from "lucide-react";
 import { api, errorMessage, eur } from "@/lib/api";
 import { planAllocation, NEW_MONEY_LABEL } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
-import { currencyOptions, currencyStep, currencySymbol } from "@/lib/money";
+import { currencyOptions, currencyStep, currencySymbol, mainCurrency } from "@/lib/money";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,15 +27,16 @@ export function buildAccountTree(accounts) {
   return { roots, byId };
 }
 
-export const canHaveSubPlaces = (a) => a.type === "cash" || a.type === "revolut";
+export const canHaveSubPlaces = (a) => !a.parent_id && (a.type === "cash" || a.type === "revolut" || a.type === "bank");
 
-const EMPTY = { name: "", type: "cash_place", parent_id: "", opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR", add_as_new_money: false };
+const EMPTY = { name: "", type: "cash_place", kind: "bank", parent_id: "", opening_balance: "", initial_balance: "", is_locked: false, currency: "EUR", add_as_new_money: false };
+const KINDS = [["bank", "Bank account"], ["cash", "Cash / money in hand"], ["revolut", "Digital wallet or card"]];
 
 /**
  * Create a sub-place under `parent`, or edit `account`. `parents` are the places a new sub-place may go under.
  * Shared by the Money page and Settings so both behave the same.
  */
-export function AccountDialog({ open, setOpen, account = null, parent = null, parents = [] }) {
+export function AccountDialog({ open, setOpen, account = null, parent = null, parents = [], newMain = false }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
@@ -53,18 +54,19 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
         add_as_new_money: false,
       });
     } else {
-      setForm({ ...EMPTY, type: parent?.type === "revolut" ? "revolut_space" : "cash_place", parent_id: parent?.id || "" });
+      setForm({ ...EMPTY, type: parent?.type === "revolut" ? "revolut_space" : "cash_place", parent_id: parent?.id || "", currency: parent?.currency || mainCurrency() });
     }
   }, [open, account, parent]);
 
   // The main account whose money this place is a part of, and what saving would do to it.
   const host = account ? (account.parent_id ? parents.find((p) => p.id === account.parent_id) : null) : (parents.find((p) => p.id === form.parent_id) || parent);
   const isMain = !!account && !account.parent_id;
-  // A place always uses its main account's currency; only a main account's own currency can be chosen here.
-  const cur = (host && host.currency) || form.currency || "EUR";
+  const creatingMain = !account && newMain;
+  // Every account and place chooses its own currency; a place may differ from its main account (it then holds money of its own, nothing is converted).
+  const cur = form.currency || (host && host.currency) || "EUR";
   const sym = currencySymbol(cur);
   const step = currencyStep(cur);
-  const plan = planAllocation({ account, host, amount: form.opening_balance, newMoney: form.add_as_new_money });
+  const plan = planAllocation({ account, host, amount: form.opening_balance, newMoney: form.add_as_new_money, currency: form.currency });
 
   const save = async () => {
     if (!form.name.trim()) { toast.error("Give the place a name"); return; }
@@ -72,8 +74,8 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
     const chosenParent = parents.find((p) => p.id === form.parent_id);
     const payload = {
       name: form.name.trim(),
-      type: account ? form.type : chosenParent?.type === "revolut" ? "revolut_space" : "cash_place",
-      parent_id: form.parent_id || null,
+      type: creatingMain ? form.kind : account ? form.type : chosenParent?.type === "revolut" ? "revolut_space" : "cash_place",
+      parent_id: creatingMain ? null : (form.parent_id || null),
       currency: form.currency || "EUR",
       initial_balance: form.initial_balance === "" ? null : parseFloat(form.initial_balance || "0"),
       is_locked: !!form.is_locked,
@@ -107,19 +109,28 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="mny-dialog max-w-md" data-testid="account-dialog">
         <DialogHeader>
-          <DialogTitle>{account ? "Edit place" : "Add place"}</DialogTitle>
-          <DialogDescription>{account ? "Update the name and balance." : "Set money aside in a new place under the selected location."}</DialogDescription>
+          <DialogTitle>{account ? (isMain ? "Edit account" : "Edit place") : creatingMain ? "New account" : "Add place"}</DialogTitle>
+          <DialogDescription>{account ? "Update the name, currency and balance." : creatingMain ? "A bank, cash or wallet account of your own, in any currency." : "Set money aside in a new place under the selected location."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 mt-2">
           <div>
             <Label className="mny-muted text-xs" htmlFor="account-name">Name</Label>
-            <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" data-testid="account-name" className="mny-field" />
+            <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={creatingMain ? "e.g. Savings, Trip cash" : "e.g. Wallet"} data-testid="account-name" className="mny-field" />
           </div>
+          {creatingMain && (
+            <div>
+              <Label className="mny-muted text-xs">Kind</Label>
+              <Select value={form.kind} onValueChange={(v) => setForm((f) => ({ ...f, kind: v }))}>
+                <SelectTrigger className="mny-field" aria-label="Kind of account" data-testid="account-kind"><SelectValue /></SelectTrigger>
+                <SelectContent>{KINDS.map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label className="mny-muted text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? `Total balance, including sub-accounts (${sym})` : host ? (account ? `Balance (${sym})` : `Amount to set aside (${sym})`) : `Current balance (${sym})`}</Label>
             <Input id="account-balance" type="number" min={0} step={step} value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" className="mny-field" />
           </div>
-          {isMain && (
+          {(isMain || creatingMain || !!host || !!account?.parent_id) && (
             <div>
               <Label className="mny-muted text-xs">Currency</Label>
               <Select value={form.currency} onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}>
@@ -128,7 +139,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
                   {currencyOptions().map((c) => <SelectItem key={c.code} value={c.code}>{c.code} · {c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="mny-muted mt-1 text-xs">Its places use the same one. Amounts are not converted: only how they are shown changes.</p>
+              <p className="mny-muted mt-1 text-xs">{isMain || creatingMain ? "Its places start in the same one, and each place can use another. " : host && cur !== host.currency ? `This place holds ${cur} of its own while ${host.name} is in ${host.currency}. ` : ""}Nothing is ever converted: only how an amount is shown changes.</p>
             </div>
           )}
           {host && plan.showNewMoney && (
@@ -151,7 +162,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
             <Checkbox id="is-locked" checked={!!form.is_locked} onCheckedChange={(c) => setForm((f) => ({ ...f, is_locked: c === true }))} />
             <Label htmlFor="is-locked" className="mny-title text-xs">Locked / not freely available</Label>
           </div>
-          {!account && (
+          {!account && !creatingMain && (
             <div>
               <Label className="mny-muted text-xs">Parent location</Label>
               <Select value={form.parent_id} onValueChange={(v) => setForm((f) => ({ ...f, parent_id: v }))}>

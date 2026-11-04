@@ -6,12 +6,13 @@ import {
 import {
   Plus, Trash2, Wallet, CreditCard, Pencil, Search, Download, ArrowUpRight,
   ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
-  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock, Star, AlertTriangle,
+  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock, Star, AlertTriangle, Banknote,
 } from "lucide-react";
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
-import { currencyStep, currencySymbol, moneyCompact } from "@/lib/money";
+import { currencyDigits, currencyStep, currencySymbol, moneyCompact } from "@/lib/money";
+import { AddMoneyDialog } from "@/components/AddMoneyDialog";
 import { useSettings } from "@/context/SettingsContext";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
@@ -121,7 +122,8 @@ export default function Money() {
   const [budgetForm, setBudgetForm] = useState({});
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferDefaults, setTransferDefaults] = useState({ to: "" });
-  const [accountDialog, setAccountDialog] = useState({ open: false, account: null, parent: null });
+  const [accountDialog, setAccountDialog] = useState({ open: false, account: null, parent: null, newMain: false });
+  const [addMoney, setAddMoney] = useState({ open: false, defaultId: null });
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const scrollRef = useRef(null);
 
@@ -269,8 +271,11 @@ export default function Money() {
     }
   };
 
-  const openNewSubAccount = (parent) => setAccountDialog({ open: true, account: null, parent });
-  const openEditAccount = (acc) => setAccountDialog({ open: true, account: acc, parent: null });
+  const openNewSubAccount = (parent) => setAccountDialog({ open: true, account: null, parent, newMain: false });
+  const openNewMain = () => setAccountDialog({ open: true, account: null, parent: null, newMain: true });
+  // Adding money to a main account lands in its favourite place unless another one is chosen in the dialog.
+  const openAddMoney = (main) => setAddMoney({ open: true, defaultId: main ? (accounts.find((a) => a.parent_id === main.id && a.is_favorite)?.id || main.id) : null });
+  const openEditAccount = (acc) => setAccountDialog({ open: true, account: acc, parent: null, newMain: false });
   const [openPlaces, setOpenPlaces] = useState({});
   const setFavorite = async (acc) => {
     try {
@@ -304,7 +309,7 @@ export default function Money() {
   }, [sum, trendPct]);
 
   // One account as a tile: badge, name (with its star), balance; a line of facts and the three small actions underneath.
-  const AccountRow = ({ icon: Icon, label, amount, meta, children, onEdit, onAddSub, onTransferIn, testid, account }) => (
+  const AccountRow = ({ icon: Icon, label, amount, meta, children, onEdit, onAddSub, onTransferIn, onAddMoney, testid, account }) => (
     <div className="mny-tile flex flex-col gap-2.5 p-3.5" data-testid={testid}>
       <div className="flex items-center gap-3">
         <span className="mny-badge"><Icon className="h-5 w-5" aria-hidden="true" /></span>
@@ -314,6 +319,11 @@ export default function Money() {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="mny-muted min-w-0 space-y-0.5 text-xs">{meta}</div>
         <div className="flex gap-0.5">
+          {onAddMoney && (
+            <Hint label="Add money"><button type="button" className="mny-icon-btn" onClick={onAddMoney} aria-label={`Add money to ${label}`} data-testid={`add-money-${testid}`}>
+              <Banknote className="h-4 w-4" />
+            </button></Hint>
+          )}
           {onAddSub && (
             <Hint label="Add sub-place"><button type="button" className="mny-icon-btn" onClick={onAddSub} aria-label="Add sub-place">
               <Plus className="h-4 w-4" />
@@ -404,6 +414,9 @@ export default function Money() {
     if (!sum?.by_currency || !account || account.currency === sum.main_currency) return fallback;
     return sum.by_currency.find((r) => r.currency === account.currency)?.[key] ?? fallback;
   };
+  // Every main account, in the order the server uses (position, then when it was made); the first of each kind keeps the familiar test ids.
+  const mainList = useMemo(() => accountRoots.filter((a) => a.type !== "owed" && a.type !== "owed_person")
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.created_at || "").localeCompare(String(b.created_at || ""))), [accountRoots]);
   const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
   const openBudgets = () => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); };
@@ -418,6 +431,9 @@ export default function Money() {
           <p className="mny-muted mt-0.5 text-sm">Bank, cash, Revolut and actual spending</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="mny-pill" onClick={() => openAddMoney(null)} data-testid="add-money-btn">
+            <Banknote className="h-4 w-4" aria-hidden="true" /> Add money
+          </button>
           <button type="button" className="mny-pill" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }}>
             <ArrowRightLeft className="h-4 w-4" aria-hidden="true" /> Transfer
           </button>
@@ -509,12 +525,15 @@ export default function Money() {
             <section className="mny-card p-5 lg:col-span-4" aria-labelledby="mny-accounts-h">
               <h3 id="mny-accounts-h" className="mny-title mb-3 text-base font-semibold">Accounts</h3>
               <div className="space-y-3">
+                {sumWait ? (<>
                 <AccountRow
                   icon={Building2} label="Bank account" amount={mainAccounts.bank?.balance} testid="money-bank" account={mainAccounts.bank}
-                  meta={sumWait ? <p className="sk-ph">Started €0,000.00 · left bank €0.00</p> : sum?.bank_initial ? <p>Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}</p> : null}
+                  meta={<><p className="sk-ph">Started €0,000.00 · left bank €0.00</p><p className="sk-ph">Total €000.00 · 1 place · favorite Default</p></>}
                   onEdit={() => mainAccounts.bank && openEditAccount(mainAccounts.bank)}
                   onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
-                />
+                >
+                  <p className="mny-muted text-xs"><span className="sk-ph">Show 1 place</span></p>
+                </AccountRow>
                 <AccountRow
                   icon={Wallet} label="Money in hand" amount={inCurrency(mainAccounts.cash, "cash_available", sum?.cash_available)} testid="money-cash" account={mainAccounts.cash}
                   meta={sumWait ? <><p className="sk-ph">€000.00 locked</p><p className="sk-ph">Total €000.00 · 3 places · favorite Default</p></> : <>{(sum?.cash_locked || 0) > 0 && <p className="mny-amber">{eur(sum.cash_locked)} locked</p>}<AllocationSummary account={mainAccounts.cash} /></>}
@@ -533,6 +552,29 @@ export default function Money() {
                 >
                   {sumWait ? <p className="mny-muted text-xs"><span className="sk-ph">Show 2 places</span></p> : <SubPlaces account={mainAccounts.revolut} />}
                 </AccountRow>
+                  <button type="button" className="mny-pill w-full" disabled tabIndex={-1}><Plus className="h-4 w-4" aria-hidden="true" />New account</button>
+                </>) : (<>
+                  {mainList.map((m) => {
+                    const first = mainList.find((x) => x.type === m.type)?.id === m.id;
+                    const Icon = { bank: Building2, cash: Wallet, revolut: Smartphone }[m.type] || Wallet;
+                    const lockedHere = (m.children || []).filter((c) => c.is_locked && c.currency === m.currency).reduce((a, c) => a + (c.balance || 0), 0);
+                    const amount = m.type === "bank" ? m.balance : m.balance - lockedHere;   // money in hand and wallets show what is free to use
+                    return (
+                      <AccountRow key={m.id} icon={Icon} label={m.name} amount={amount} account={m} testid={first ? `money-${m.type}` : `money-account-${m.id}`}
+                        meta={<>
+                          {m.type === "bank" && first && sum?.bank_initial ? <p>Started {eur(sum.bank_initial)} · left bank {eur(sum.money_left_bank)}</p> : null}
+                          {lockedHere > 0 && <p className="mny-amber">{eur(lockedHere, m.currency)} locked</p>}
+                          {(m.other_balances || []).map((o) => <p key={o.currency} className="mny-title font-medium" data-testid={`other-balance-${o.currency}`}>+ {eur(o.balance, o.currency)} in {o.currency}</p>)}
+                          <AllocationSummary account={m} />
+                        </>}
+                        onEdit={() => openEditAccount(m)} onAddMoney={() => openAddMoney(m)}
+                        onAddSub={canHaveSubPlaces(m) ? () => openNewSubAccount(m) : undefined} onTransferIn={() => openTransferTo(m.id)}>
+                        <SubPlaces account={m} />
+                      </AccountRow>
+                    );
+                  })}
+                  <button type="button" className="mny-pill w-full" onClick={openNewMain} data-testid="add-account"><Plus className="h-4 w-4" aria-hidden="true" />New account</button>
+                </>)}
               </div>
             </section>
 
@@ -807,7 +849,9 @@ export default function Money() {
       <ExpenseDialog open={expenseOpen} setOpen={setExpenseOpen} />
       <EditExpenseDialog txn={editTxn} open={!!editTxn} setOpen={(v) => !v && setEditTxn(null)} />
 
-      <AccountDialog open={accountDialog.open} setOpen={(o) => setAccountDialog((d) => ({ ...d, open: o }))}
+      <AddMoneyDialog open={addMoney.open} setOpen={(o) => setAddMoney((d) => ({ ...d, open: o }))} options={accountOptions} defaultId={addMoney.defaultId} />
+
+      <AccountDialog open={accountDialog.open} setOpen={(o) => setAccountDialog((d) => ({ ...d, open: o }))} newMain={!!accountDialog.newMain}
         account={accountDialog.account} parent={accountDialog.parent} parents={accountRoots.filter(canHaveSubPlaces)} />
 
       {/* Transfer dialog */}
@@ -883,6 +927,16 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
   // Two currencies: nothing is converted for the person. They say what arrived, and the rate that implies is shown back to them.
   const crossing = !!source && !!target && (source.currency || "EUR") !== (target.currency || "EUR");
   const rate = crossing && Number(amount) > 0 && Number(arrives) > 0 ? Number(arrives) / Number(amount) : null;
+  // The last rate you used for this pair pre-fills what arrives (never fetched from anywhere); typing in the field is always the last word.
+  const touched = useRef(false);
+  const rateKey = crossing ? `lr-rate:${source.currency}>${target.currency}` : null;
+  useEffect(() => { touched.current = false; setArrives(""); }, [from, to]);
+  useEffect(() => {
+    if (!crossing || touched.current || !(Number(amount) > 0)) return;
+    let remembered = 0;
+    try { remembered = Number(localStorage.getItem(rateKey)); } catch { /* no memory of a rate */ }
+    if (remembered > 0) { const d = 10 ** currencyDigits(target.currency); setArrives(String(Math.round(Number(amount) * remembered * d) / d)); }
+  }, [amount, crossing, rateKey]);   // eslint-disable-line react-hooks/exhaustive-deps
   // The server refuses to take more than a place, or a main account's unassigned part, holds: say so before it has to.
   const tooMuch = checkSpend(source, amount, { everyAccount: true });
   const option = (a, withAmount) => (
@@ -923,15 +977,21 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
       {crossing && (
         <div>
           <Label className="mny-muted text-xs" htmlFor="transfer-arrives">Amount arriving in {target.name} ({currencySymbol(target.currency)})</Label>
-          <Input id="transfer-arrives" type="number" min={0.01} step={currencyStep(target.currency)} value={arrives} onChange={(e) => setArrives(e.target.value)} placeholder="0.00" aria-describedby="transfer-rate" data-testid="transfer-arrives" className="mny-field" />
+          <Input id="transfer-arrives" type="number" min={0.01} step={currencyStep(target.currency)} value={arrives} onChange={(e) => { touched.current = true; setArrives(e.target.value); }} placeholder="0.00" aria-describedby="transfer-rate" data-testid="transfer-arrives" className="mny-field" />
           <p id="transfer-rate" data-testid="transfer-rate" className="mny-muted mt-1.5 text-xs">
             {rate ? `1 ${source.currency} = ${rate.toFixed(4)} ${target.currency}. Nothing is converted for you: this is the rate you are giving.` : `These places use different currencies. Enter how much arrives in ${target.currency}.`}
           </p>
         </div>
       )}
+      {source && target && Number(amount) > 0 && (
+        <div className="mny-tile space-y-1 p-3 text-sm" data-testid="transfer-summary" aria-live="polite">
+          <p><span className="mny-num font-semibold">{eur(Number(amount), source.currency)}</span> <span className="mny-muted">leaves {source.label}</span></p>
+          <p><span className="mny-num mny-green font-semibold">{eur(crossing ? (Number(arrives) || 0) : Number(amount), target.currency)}</span> <span className="mny-muted">arrives in {target.label}</span></p>
+        </div>
+      )}
       <div className="flex justify-end gap-2 mt-4">
         <button type="button" className="mny-pill" onClick={onCancel}>Cancel</button>
-        <button type="button" className="mny-pill mny-cta" onClick={() => onSubmit(from, to, amount, crossing ? arrives : null)} disabled={!from || !to || !amount || from === to || !!tooMuch || (crossing && !(Number(arrives) > 0))}>Transfer</button>
+        <button type="button" className="mny-pill mny-cta" onClick={() => { if (rate && rateKey) { try { localStorage.setItem(rateKey, String(rate)); } catch { /* not remembered */ } } onSubmit(from, to, amount, crossing ? arrives : null); }} disabled={!from || !to || !amount || from === to || !!tooMuch || (crossing && !(Number(arrives) > 0))}>Transfer</button>
       </div>
     </div>
   );

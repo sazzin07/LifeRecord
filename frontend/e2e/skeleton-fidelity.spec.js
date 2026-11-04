@@ -12,7 +12,7 @@ const cards = (page, selector) => page.evaluate((sel) => [...document.querySelec
   .filter((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 40)
   .map((e) => { const r = e.getBoundingClientRect(); return { id: e.getAttribute("data-fid") || e.getAttribute("aria-labelledby") || e.getAttribute("data-testid") || "", x: Math.round(r.x), y: Math.round(r.y + scrollY), w: Math.round(r.width), h: Math.round(r.height) }; }), selector);
 
-async function compare(page, path, selector, { release, flexible = [] }) {
+async function compare(page, path, selector, { release, flexible = [], yTolerance = 20 }) {
   await cold(page);
   let open;
   const gate = new Promise((resolve) => { open = resolve; });
@@ -34,7 +34,7 @@ async function compare(page, path, selector, { release, flexible = [] }) {
     const match = (sk.id && loaded.find((r) => r.id === sk.id)) || loaded.find((r) => Math.abs(r.x - sk.x) <= 6 && Math.abs(r.w - sk.w) <= 8 && Math.abs(r.y - sk.y) <= 70);
     if (!match) { problems.push(`no real card in the place of ${sk.id || "a card"} ${JSON.stringify(sk)}`); continue; }
     if (!flexible.includes(match.id) && Math.abs(match.h - sk.h) > 20) problems.push(`${match.id || "card"}: ${match.h}px tall, placeholder ${sk.h}px`);
-    if (!flexible.includes(match.id) && Math.abs(match.y - sk.y) > 20) problems.push(`${match.id || "card"}: at y=${match.y}, placeholder at y=${sk.y}`);
+    if (!flexible.includes(match.id) && Math.abs(match.y - sk.y) > yTolerance) problems.push(`${match.id || "card"}: at y=${match.y}, placeholder at y=${sk.y}`);
   }
   expect(problems, [path, ...problems, `real: ${JSON.stringify(loaded)}`].join("\n  ")).toEqual([]);
 }
@@ -47,7 +47,7 @@ test("Money: every card's placeholder is the size and place of the real card", a
 });
 
 test("Home: the hero, the cards and the widgets match their placeholders", async ({ authenticatedPage: page }) => {
-  await compare(page, "/", "main .card-ambient, main .rounded-3xl", { release: (p) => expect(p.getByTestId("stat-tasks")).not.toHaveAttribute("aria-busy", "true", { timeout: 15000 }), flexible: ["home-tasks", "home-txns", "home-nutrition", "home-people", "home-groceries"] });   // as tall as the day's tasks, transactions, people and lists (the three widgets share one row height)
+  await compare(page, "/", "main .card-ambient, main .rounded-3xl", { release: (p) => expect(p.getByTestId("stat-tasks")).not.toHaveAttribute("aria-busy", "true", { timeout: 15000 }), flexible: ["home-tasks", "home-txns", "home-nutrition", "home-people", "home-groceries"], yTolerance: 40 });   // an insight that wraps to a second line (a long person name) makes the insights card one text line taller than its two-row placeholder, and everything below shifts with it; as tall as the day's tasks, transactions, people and lists (the three widgets share one row height)
 });
 
 test("Profile: password, two-step, devices and your data keep their size while loading", async ({ freshUserPage: { page } }) => {

@@ -192,16 +192,16 @@ export function AppShell({ children }) {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button type="button" data-testid="ai-trigger" aria-label="Open the assistant" aria-haspopup="dialog" onClick={() => openAI()}
-              className="group flex h-10 items-center gap-2 rounded-full border border-emerald-600/30 bg-emerald-50/70 px-3 text-sm font-semibold text-emerald-800 transition-[background-color,border-color,transform] duration-150 hover:border-emerald-600/60 hover:bg-emerald-100 active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20">
+              className="group flex h-11 min-w-[2.75rem] items-center justify-center gap-2 rounded-full sm:h-10 sm:min-w-0 border border-emerald-600/30 bg-emerald-50/70 px-3 text-sm font-semibold text-emerald-800 transition-[background-color,border-color,transform] duration-150 hover:border-emerald-600/60 hover:bg-emerald-100 active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20">
               <Sparkles className="h-4 w-4 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:rotate-[18deg] group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:transform-none" aria-hidden="true" />
               <span className="hidden sm:inline">Assistant</span>
             </button>
             <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-slate-600 transition-colors hover:border-emerald-600/50 dark:text-slate-300">
+              className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-slate-600 sm:h-10 sm:w-10 transition-colors hover:border-emerald-600/50 dark:text-slate-300">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <NavLink to="/profile" data-testid="header-profile" aria-label={`Your profile${user?.name ? `, ${user.name}` : ""}`}
-              className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
+              className="grid h-11 w-11 place-items-center overflow-hidden rounded-full sm:h-10 sm:w-10 border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
               {/* Decorative: the button's label already names the person (the initials would not match it). A fixed size, so a large photo is scaled, not cropped by its own size. */}
               <span aria-hidden="true" className="block h-[38px] w-[38px] overflow-hidden rounded-full"><UserAvatar size="h-[38px] w-[38px]" className="text-xs" decorative /></span>
             </NavLink>

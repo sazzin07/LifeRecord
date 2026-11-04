@@ -28,6 +28,9 @@ export async function audit(page, label, { longList = false } = {}) {
 }
 
 async function auditNow(page, label) {
+  // An entrance that is still fading (the assistant's staggered suggestion chips) is measured at a lower contrast than it ends at: wait for running animations first.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity), null, { timeout: 2000 }).catch(() => {});
+  await page.waitForTimeout(100);
   const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   const lines = results.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n   ${v.nodes.slice(0, 4).map((n) => n.target.join(" ")).join("\n   ")}`);
   if (process.env.A11Y_LIST) {

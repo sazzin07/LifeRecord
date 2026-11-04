@@ -352,6 +352,8 @@ A backup of `tools/mysql-data` was made at `tools/mysql-data-backup` before the 
 
 ### Money
 - Dynamic account hierarchy: bank, cash places, Revolut, locked funds, owed accounts.
+- **A currency per account.** Each main account (bank, money in hand, Revolut) has its own ISO currency, chosen in its edit dialog (`backend/currencies.py`); its places always share it. Nothing is ever converted and no exchange rate is stored: Money and Home show **one total per currency** when more than one is in use, and the main currency (the bank account's) is what single figures, budgets and short answers use. A transfer between two currencies asks for the amount that arrived as well and shows the rate that implies (`transactions.to_amount`). A single-currency user sees nothing new. **People and debts follow it too:** a debt belongs to a currency and each currency is its own ledger (a person's list row names what is owed in the others, the profile has a currency switch, the debt dialog offers a Currency choice when several exist, a payment through an account counts in that account's currency); the main currency behaves exactly as before.
+- **Recurring transactions** (rent, a subscription, a salary): the Recurring card on Money. Each item becomes a real transaction on its due day, by itself (weekly, monthly or yearly, optional end date; a day 29 to 31 falls on the last day of a shorter month; days missed while the app was off are made once each), through the scheduler loop. A notice says what was recorded and offers Undo; an item that cannot be carried out (place deleted, not enough money) is paused with the reason. Deleting an item keeps what it already recorded.
 - **A main account and its places are one amount of money.** Money in hand, Revolut and the bank account are divided into
   places (wallet, envelope, pot, a space). The main account's balance is the total and each place holds part of it.
   - **Every main account has a starred Default place** (`backend/account_favorites.py`), created with the account and
@@ -448,7 +450,7 @@ Every page draws its structure at once and fills in as data arrives (`components
   its way: static text stays, and what depends on data (`.mny-num`, `.sk-ph`, `Sk`) keeps its box and shows a sweep, inside a `[data-skeleton]` wrapper that is `inert`
   and announced once. So placeholder and content cannot drift apart. `e2e/skeleton-fidelity.spec.js` measures every card in the loading state against the loaded card
   (position and size, and that no card is squeezed into a sliver); cards whose height is the data's (lists, charts) are matched by place.
-- **Progressive.** Home has seven sections on seven requests and Money three; each section draws from its own data, so the slowest never holds the rest.
+- **Progressive.** Home has seven sections on seven requests, Money three and Groceries nine (`GROCERY_PARTS`); each section draws from its own data, so the slowest never holds the rest. Groceries' Overview and Nutrition's day view use the real-markup placeholders too; the small dialogs (price history, food detail, goals) show skeletons instead of "Loading...".
   A returning visitor sees the app's outline (side strip, top bar, the page's outline) while the first sign-in check runs.
 - **Only when there is nothing to show.** `useFetch` keeps the last-seen copy on screen while it refreshes (no skeleton over content), shows a skeleton only when it has
   nothing, and now reports `error` when a request failed with nothing to show: the section says "Could not load ..." with **Try again**, never a skeleton that waits for ever.
@@ -476,6 +478,9 @@ Two pages, switched from the top of either (`pages/Profile.jsx`, `pages/Settings
     signs out every other device and emails a notice. A request already on its way when the password changes waits for the change and uses the new token (`replacingSession` in `lib/api.js`), so the tab that changed it is never signed out by its own change.
 - **The assistant** can read and change the low-risk choices (`get_settings`, `update_settings`: theme, animations, week start, what Money opens on, the display name),
   and the user can undo. It has no tool for the password, two-step, sessions or deleting data, and says where to do those (Profile).
+
+### Offline
+Life Record needs its server. When the backend cannot be reached a banner says so and that changes will not save until it returns; changes are **not queued or replayed**. That is a decision (roadmap F-10), not a gap.
 
 ### Home dashboard
 - Summary stats, tasks, people balances, nutrition rings, and today's transactions.
@@ -557,6 +562,12 @@ Most tests call the running backend (start it first with `start-all.ps1`) and wo
 - Email is never sent to reserved test domains (`example.com`, `*.test`, …), so the auth tests do not use the SendGrid quota.
 - New tables come from `alembic upgrade head` (the server also creates missing tables at startup; in-process tests need the migration).
 
+### Browser tests (Playwright)
+
+Start the scratch stack (`python backend/tests/isolated_env.py serve --frontend-port 3100`) and run `python backend/tests/isolated_env.py run -- npx playwright test <specs>` from `frontend/`; do not run two Playwright runs, or a backend `pytest` with `LR_ISOLATED=1`, against it at the same time. Specs added or extended in November 2026: `a11y-dialogs` (Money and People dialogs, axe at three widths in both themes), `keyboard-motion` (keyboard-only Tab pass, dialog focus return, reduced motion), `skeleton-fidelity` (Home, Money, Profile, Groceries, Nutrition), `quick-add-fab`, `recurring`, `currency`. The tests that call the real model ("real model", "real assistant") fail without keys, as intended.
+
+**One live run of the assistant** (roadmap F-05): `python tools/live_assistant_probe.py --run` sends 20 prompts to the real model through a scratch server (never your database) and prints which tools it chose. It costs quota, is never part of a test run, and caps itself at 25 calls.
+
 ### Frontend build
 
 ```powershell
@@ -573,7 +584,7 @@ python ..\backend\local_secrets.py run -- npx playwright test --grep-invert "rea
 ## Backups
 
 ```powershell
-python tools\backup.py --dest D:\Backups\LifeRecord          # database + uploaded files into one dated .zip, then prune old ones
+python tools\backup.py --dest D:\Backups\LifeRecord          # database + uploaded files into one dated, encrypted archive, then prune old ones
 python tools\restore_check.py --dest D:\Backups\LifeRecord   # rehearse: restore the newest one into a scratch schema and compare every table
 ```
 
@@ -581,7 +592,8 @@ python tools\restore_check.py --dest D:\Backups\LifeRecord   # rehearse: restore
 - The administrative database login comes from the encrypted store and reaches `mysqldump` only through its environment, never on a command line. The zip contains **health data and password hashes**: put it somewhere only you can read (an encrypted drive).
 - **`UPLOAD_ENCRYPTION_KEY` is not in the backup and must be kept separately** (`python backend\local_secrets.py reveal UPLOAD_ENCRYPTION_KEY`, stored in a password manager). Without it the photos and chat pictures in a backup cannot be opened.
 - `restore_check.py` never touches the live database. It restores into a throw-away schema, compares each table with the manifest, reports `ALL TABLES MATCH` (exit code 0) or lists the mismatches, and removes the schema. A backup that has not been through it is a hope, not a backup.
-- Nothing runs automatically yet: choose the folder and schedule (for example a daily Windows Task Scheduler job running the first command) and rehearse a restore after the first run.
+- **Encrypted by default.** The archive is then encrypted with Windows DPAPI (`liferecord-….zip.dpapi`, in chunks, `local_secrets.encrypt_file`): only this Windows account on this PC can open it, `restore_check.py` decrypts by itself, and `--encrypt none` writes a plain zip. After a Windows reinstall or on another machine an encrypted backup is unreadable, so copy the folder somewhere safe too and keep `UPLOAD_ENCRYPTION_KEY` separately. Every run adds one line to `backup.log` in the backup folder (OK or FAIL, never a secret).
+- **Daily at 03:00:** `powershell -ExecutionPolicy Bypass -File tools\schedule_backup.ps1` registers the Task Scheduler job "LifeRecord daily backup" (`-Dest`, `-Time` to change; `-Remove` to take it away). It runs as you while you are signed in, catches up when the PC was off, and needs the database running (`start-all.ps1`). The owner's choice: `C:\Users\Sá\LifeRecordBackups`.
 
 ## Production deployment checklist
 

@@ -1294,6 +1294,9 @@ async def people_balances(db: AsyncSession, user_id: str, archived: bool = False
         select(Person).where(Person.user_id == user_id, Person.archived == archived).order_by(Person.name)
     )).scalars().all()
     raw = await debts.raw_balances(db, user_id, [p.id for p in people]) if people else {}
+    # Only when more than one currency is in use: what is owed in the others (nothing is converted), per person.
+    in_use = await debts.currencies_in_use(db, user_id) if people else []
+    others = {c: await debts.raw_balances(db, user_id, [p.id for p in people], c) for c in in_use[1:]}
     result = []
     for p in people:
         r = raw[p.id]
@@ -1304,6 +1307,13 @@ async def people_balances(db: AsyncSession, user_id: str, archived: bool = False
         d["owes_me_cents"], d["i_owe_cents"] = out[debts.THEY_OWE], out[debts.I_OWE]
         d["net"] = round(d["owes_me"] - d["i_owe"], 2)
         d["overpaid"] = {k: max(-r[k], 0) / 100 for k in debts.DIRECTIONS if r[k] < 0}
+        other = []
+        for c, rows in others.items():
+            o = debts.outstanding(rows[p.id])
+            if o[debts.THEY_OWE] or o[debts.I_OWE]:
+                other.append({"currency": c, "owes_me": o[debts.THEY_OWE] / 100, "i_owe": o[debts.I_OWE] / 100})
+        if other:
+            d["other_currencies"] = other
         result.append(d)
     return result
 

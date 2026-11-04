@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useFetch } from "@/lib/useFetch";
 import { eur } from "@/lib/api";
+import { moneyCompact } from "@/lib/money";
 import { Card, StatCard, Label } from "@/components/common";
 import { Resolve, Sk, SkRows } from "@/components/skeletons";
 import { openAI } from "@/components/AppShell";
@@ -172,8 +173,8 @@ export default function Home() {
 
       {/* Stat grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard testid="stat-spent" label="Spent (all)" loading={sumWait} value={sum ? eur(sum.gross) : "—"} hint={sum ? `Your share ${eur(sum.personal)}` : ""} icon={TrendingDown} />
-        <StatCard testid="stat-owed" label="You are owed" loading={sumWait} value={sum ? eur(sum.owed_to_me) : "—"} hint={sum ? `You owe ${eur(sum.i_owe)}` : ""} icon={Users} accent="text-emerald-600 dark:text-emerald-400" />
+        <StatCard testid="stat-spent" label="Spent (all)" loading={sumWait} value={sum ? moneyCompact(sum.gross) : "—"} hint={sum ? `Your share ${eur(sum.personal)}` : ""} icon={TrendingDown} />
+        <StatCard testid="stat-owed" label="You are owed" loading={sumWait} value={sum ? moneyCompact(sum.owed_to_me) : "—"} hint={sum ? `You owe ${eur(sum.i_owe)}` : ""} icon={Users} accent="text-emerald-600 dark:text-emerald-400" />
         <StatCard testid="stat-weight" label="Current weight" loading={!weight} value={lastW ? `${lastW.weight} kg` : "—"} hint={wDelta ? `${wDelta > 0 ? "+" : ""}${wDelta} kg vs last` : "No data"} icon={Scale} />
         <StatCard testid="stat-tasks" label="Open tasks" loading={tasksWait} value={openTasks.length} hint={`${(tasks || []).length} total today`} icon={CheckSquare} />
       </div>

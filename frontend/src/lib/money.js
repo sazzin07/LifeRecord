@@ -59,3 +59,11 @@ export function mainCurrencyOf(accounts) {
   const bank = top.find((a) => a.type === "bank") || top[0];
   return (bank && bank.currency) || "EUR";
 }
+
+/** Like `money`, but from a million up the figure is abbreviated (€2.47M), so a total in a small tile never breaks across lines or loses its end. */
+export function moneyCompact(n, currency) {
+  const v = Number(n || 0);
+  if (Math.abs(v) < 1_000_000) return money(v, currency);
+  const cur = String(currency || main).toUpperCase();
+  try { return new Intl.NumberFormat("en-IE", { style: "currency", currency: cur, notation: "compact", maximumFractionDigits: 2 }).format(v); } catch { return money(v, cur); }
+}

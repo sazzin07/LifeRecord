@@ -28,6 +28,7 @@ class DebtBody(BaseModel):
     description: Optional[str] = Field(default=None, max_length=500)
     line_type: Optional[str] = Field(default=None, max_length=8)           # clear_line: split | entry
     line_id: Optional[str] = Field(default=None, max_length=36)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)   # the ledger to change; the main currency when not named
 
 
 class PaymentBody(BaseModel):
@@ -38,6 +39,7 @@ class PaymentBody(BaseModel):
     excess: Optional[str] = Field(default=None, pattern="^(tip|opposite)$")
     description: Optional[str] = Field(default=None, max_length=500)
     date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)   # without an account: the ledger it counts in (an account decides it otherwise)
 
 
 class ArchiveBody(BaseModel):
@@ -51,6 +53,17 @@ def entry_view(e: DebtEntry) -> dict:
 
 def item_view(i: dict) -> dict:
     return {**i, "effect": i["effect_cents"] / 100}
+
+
+def _other_totals(people: list) -> list:
+    """What is owed in each currency other than the main one, across everyone: [{currency, they_owe, i_owe}]."""
+    totals: dict = {}
+    for p in people:
+        for o in p.get("other_currencies", []):
+            t = totals.setdefault(o["currency"], {"currency": o["currency"], "they_owe": 0.0, "i_owe": 0.0})
+            t["they_owe"] = round(t["they_owe"] + o["owes_me"], 2)
+            t["i_owe"] = round(t["i_owe"] + o["i_owe"], 2)
+    return sorted(totals.values(), key=lambda t: t["currency"])
 
 
 def register(api_router, srv):
@@ -88,10 +101,16 @@ def register(api_router, srv):
             await db.rollback()
         return result
 
-    async def answer(db, user, person: Person, message: str, entries=None, **extra) -> dict:
-        raw = await debts.balance_of(db, user["_id"], person.id)
-        return {"ok": True, "message": message, "person": {"id": person.id, "name": person.name}, "balances": debts.view(raw),
-                "entries": [entry_view(e) for e in (entries or [])], **extra}
+    async def answer(db, user, person: Person, message: str, entries=None, currency=None, **extra) -> dict:
+        uid = user["_id"]
+        cur = (currency or (entries[0].currency if entries else None) or await debts.main_currency(db, uid)).upper()
+        raw = await debts.balance_of(db, uid, person.id, cur)
+        res = {"ok": True, "message": message, "person": {"id": person.id, "name": person.name}, "balances": debts.view(raw, cur),
+               "entries": [entry_view(e) for e in (entries or [])], **extra}
+        others = [{**debts.view(r, c)} for c, r in (await debts.all_balances_of(db, uid, person.id)).items() if c != await debts.main_currency(db, uid) and any(v > 0 for v in debts.outstanding(r).values())]
+        if others:
+            res["other_currencies"] = others
+        return res
 
     # -- reading --------------------------------------------------------------------------------------------------------------
 
@@ -114,20 +133,27 @@ def register(api_router, srv):
         events.sort(key=lambda x: x["at_ms"], reverse=True)
         return {"they_owe": round(sum(p["owes_me"] for p in people), 2), "i_owe": round(sum(p["i_owe"] for p in people), 2),
                 "people": len(people), "people_with_debt": sum(1 for p in people if p["owes_me"] > 0 or p["i_owe"] > 0),
-                "recent": [e for e in events if e["person_id"] in names][:8], "currency": debts.CURRENCY}
+                "recent": [e for e in events if e["person_id"] in names][:8], "currency": await debts.main_currency(db, uid),
+                "other_currencies": _other_totals(people)}
 
     @api_router.get("/debts/archived")
     async def archived(user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
         return await srv.people_balances(db, user["_id"], archived=True)
 
     @api_router.get("/debts/people/{pid}")
-    async def person_debts(pid: str, user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+    async def person_debts(pid: str, currency: Optional[str] = None, user: dict = Depends(srv.get_current_user), db: AsyncSession = Depends(srv.get_db)):
+        """One person's balances and history in one currency (the main one unless `?currency=` names another); `currencies` lists the ledgers
+        that exist, with what is owed in each, so the screen can offer them."""
         uid = user["_id"]
         person = await person_of(db, user, pid)
+        main = await debts.main_currency(db, uid)
+        cur = (currency or main).upper()
         names = {a.id: a.name for a in (await db.execute(select(Account).where(Account.user_id == uid))).scalars()}
-        h = await debts.history(db, uid, person, names)
-        raw = await debts.balance_of(db, uid, person.id)
-        return {"person": {**srv.to_dict(person), "archived": bool(person.archived)}, "balances": debts.view(raw),
+        h = await debts.history(db, uid, person, names, cur)
+        every = await debts.all_balances_of(db, uid, person.id)
+        raw = every.get(cur) or await debts.balance_of(db, uid, person.id, cur)
+        return {"person": {**srv.to_dict(person), "archived": bool(person.archived)}, "balances": debts.view(raw, cur), "currency": cur, "main_currency": main,
+                "currencies": [debts.view(r, c) for c, r in every.items()],
                 "items": [item_view(i) for i in h["items"]], "audit": [item_view({**i, "effect_cents": i.get("effect_cents", 0)}) for i in h["audit"]]}
 
     # -- changing -----------------------------------------------------------------------------------------------------------------
@@ -141,27 +167,28 @@ def register(api_router, srv):
         async def work(before):
             person = await person_of(db, user, pid, archived_ok=False)
             cents = debts.to_cents(body.amount)
-            plan = await debts.payment_plan(db, uid, person, body.direction, cents)
-            if plan["excess_cents"] > 0 and body.excess is None:
-                who = person.name
-                return {"ok": False, "pending": True, "needs_excess_choice": True, "outstanding": plan["outstanding_cents"] / 100,
-                        "excess": plan["excess_cents"] / 100, "person": {"id": person.id, "name": who},
-                        "message": (f"{debts._phrase(plan['paid_direction'], plan['outstanding_cents'], who)}, and this payment is {debts.money(cents)}. "
-                                    f"What is the extra {debts.money(plan['excess_cents'])}?"),
-                        "options": [{"value": "opposite", "label": (f"I owe {who} the extra {debts.money(plan['excess_cents'])}" if body.direction == "in"
-                                                                    else f"{who} owes me the extra {debts.money(plan['excess_cents'])}")},
-                                    {"value": "tip", "label": "A tip or gift, no debt"}]}
-            account_id = None
+            account_id, account_currency = None, None
             if body.account:
                 acc = await srv.resolve_account(db, body.account, uid)
                 if acc is None:
                     raise HTTPException(400, "That account does not exist. Choose one you have, or record the payment without an account.")
-                account_id = acc.id
+                account_id, account_currency = acc.id, acc.currency      # a payment counts in the currency of the account it went through
+            plan = await debts.payment_plan(db, uid, person, body.direction, cents, account_currency or body.currency)
+            cur = plan["currency"]
+            if plan["excess_cents"] > 0 and body.excess is None:
+                who = person.name
+                return {"ok": False, "pending": True, "needs_excess_choice": True, "outstanding": plan["outstanding_cents"] / 100, "currency": cur,
+                        "excess": plan["excess_cents"] / 100, "person": {"id": person.id, "name": who},
+                        "message": (f"{debts._phrase(plan['paid_direction'], plan['outstanding_cents'], who, currency=cur)}, and this payment is {debts.money(cents, cur)}. "
+                                    f"What is the extra {debts.money(plan['excess_cents'], cur)}?"),
+                        "options": [{"value": "opposite", "label": (f"I owe {who} the extra {debts.money(plan['excess_cents'], cur)}" if body.direction == "in"
+                                                                    else f"{who} owes me the extra {debts.money(plan['excess_cents'], cur)}")},
+                                    {"value": "tip", "label": "A tip or gift, no debt"}]}
             date = body.date or srv.now_iso()[:10]
             amount = Decimal(cents) / 100
             settlement = Settlement(id=srv.new_id(), user_id=uid, person_id=person.id, person_name=person.name, amount=amount,
                                     method=(body.method or ("Other" if not account_id else "Revolut")), account=account_id or "", direction=body.direction,
-                                    date=date, created_at=srv.now_iso())
+                                    date=date, currency=cur, created_at=srv.now_iso())
             db.add(settlement)
             await db.flush()
             created_txn = None
@@ -181,8 +208,8 @@ def register(api_router, srv):
             await db.flush()
             await srv.money_check(db, uid, before)
             who = "from" if body.direction == "in" else "to"
-            note = f" The extra {debts.money(plan['excess_cents'])} {'became a debt the other way' if body.excess == 'opposite' else 'was kept as a tip, no debt'}." if lines else ""
-            res = await answer(db, user, person, f"Recorded a payment of {debts.money(cents)} {who} {person.name}.{note}", lines,
+            note = f" The extra {debts.money(plan['excess_cents'], cur)} {'became a debt the other way' if body.excess == 'opposite' else 'was kept as a tip, no debt'}." if lines else ""
+            res = await answer(db, user, person, f"Recorded a payment of {debts.money(cents, cur)} {who} {person.name}.{note}", lines, cur,
                                payment={"id": settlement.id, "amount": float(amount), "direction": body.direction, "recorded_in_account": bool(account_id)})
             res["undo"] = {"settlement_id": settlement.id}
             return res
@@ -198,7 +225,7 @@ def register(api_router, srv):
         async def work(_before):
             person = await person_of(db, user, pid, archived_ok=False)
             result = await debts.adjust(db, uid, person, body.direction, op, amount=body.amount, new_amount=body.new_amount, description=body.description,
-                                        origin="manual", line_type=body.line_type, line_id=body.line_id)
+                                        origin="manual", line_type=body.line_type, line_id=body.line_id, currency=body.currency)
             res = await answer(db, user, person, result["message"], result["entries"])
             res["undo"] = {"entry_ids": [e.id for e in result["entries"]]}
             return res

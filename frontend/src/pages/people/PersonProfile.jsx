@@ -30,7 +30,7 @@ function useCompact() {
   return compact;
 }
 
-function Balance({ direction, amount, person, onAction }) {
+function Balance({ direction, amount, person, onAction, currency }) {
   const theirs = direction === THEY;
   const settled = amount < 0.005;
   const Icon = theirs ? ArrowDownLeft : ArrowUpRight;
@@ -44,7 +44,7 @@ function Balance({ direction, amount, person, onAction }) {
         <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{theirs ? `${person.name} owes you` : `You owe ${person.name}`}
       </p>
       <p className={cn("mt-1.5 break-words text-[1.75rem] font-semibold leading-tight tracking-tight", settled ? "ppl-muted" : theirs ? "ppl-teal" : "ppl-amber")}>
-        <Amount value={amount} className="stat-num" testid={`balance-${direction}-amount`} />
+        <Amount value={amount} currency={currency} className="stat-num" testid={`balance-${direction}-amount`} />
       </p>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Button size="sm" variant="outline" className={small} onClick={() => act("add")} data-testid={`act-add-${direction}`}><Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Add</Button>
@@ -57,7 +57,7 @@ function Balance({ direction, amount, person, onAction }) {
   );
 }
 
-function Row({ item, onUndo, onClearLine, audit, onRestore, reduce }) {
+function Row({ item, onUndo, onClearLine, audit, onRestore, reduce, currency }) {
   const Icon = ICON[item.kind] || Wallet;
   const effect = item.effect;
   const theirs = item.direction === THEY;
@@ -80,7 +80,7 @@ function Row({ item, onUndo, onClearLine, audit, onRestore, reduce }) {
         </p>
       </div>
       <div className="flex max-w-[45%] shrink-0 flex-col items-end gap-0.5">
-        <span className="stat-num whitespace-nowrap text-sm font-semibold">{effect >= 0 ? "+" : "−"}{eur(Math.abs(effect))}</span>
+        <span className="stat-num whitespace-nowrap text-sm font-semibold">{effect >= 0 ? "+" : "−"}{eur(Math.abs(effect), currency)}</span>
         {!audit && item.can_reverse && <button type="button" onClick={() => onUndo(item)} className="ppl-muted inline-flex min-h-6 items-center gap-1 rounded px-1 text-xs hover:text-[var(--ppl-text)]" data-testid="row-undo"><Undo2 className="h-3 w-3" aria-hidden="true" />Undo</button>}
         {!audit && item.can_clear && <button type="button" onClick={() => onClearLine(item)} className="ppl-amber inline-flex min-h-6 items-center gap-1 rounded px-1 text-xs hover:underline" data-testid="row-clear"><Eraser className="h-3 w-3" aria-hidden="true" />Clear</button>}
         {audit && item.can_restore && <button type="button" onClick={() => onRestore(item)} className="ppl-teal inline-flex min-h-6 items-center gap-1 rounded px-1 text-xs hover:underline" data-testid="row-restore"><RotateCcw className="h-3 w-3" aria-hidden="true" />Restore</button>}
@@ -92,7 +92,9 @@ function Row({ item, onUndo, onClearLine, audit, onRestore, reduce }) {
 /** A person's financial profile, a glass sheet over the list (a bottom sheet on a phone): the two balances apart, what each can do,
  *  and the history that explains them. */
 export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction }) {
-  const { data, loading } = useFetch(personId ? `/debts/people/${personId}` : null);
+  const [ledger, setLedger] = useState(null);          // the currency being looked at; null = the main one
+  useEffect(() => { setLedger(null); }, [personId]);
+  const { data, loading } = useFetch(personId ? `/debts/people/${personId}${ledger ? `?currency=${ledger}` : ""}` : null);
   const [showCleared, setShowCleared] = useState(false);
   const compact = useCompact();
   const reduce = useReducedMotion();
@@ -111,6 +113,8 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
   const items = data?.items || [];
   const audit = (data?.audit || []).filter((a) => a.kind === "clear" || a.state === "cleared" || a.kind === "reversal" || a.state === "reversed");
   const both = (kind, direction) => onAction(kind, direction, { ...person, owes_me: balances.they_owe, i_owe: balances.i_owe }, balances);
+  const ledgers = data?.currencies || [];
+  const currency = data?.currency;
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
@@ -142,12 +146,22 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
             </Busy>
           ) : person && (
             <>
+              {ledgers.length > 1 && (
+                <div role="group" aria-label="Currency" className="mb-3 flex flex-wrap gap-1.5" data-testid="ledger-switch">
+                  {ledgers.map((l) => (
+                    <button key={l.currency} type="button" aria-pressed={l.currency === currency} data-testid={`ledger-${l.currency}`} onClick={() => setLedger(l.currency === data.main_currency ? null : l.currency)}
+                      className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors", l.currency === currency ? "border-transparent bg-[var(--ppl-text)] text-[var(--ppl-surface)]" : "border-[var(--ppl-line)] ppl-muted hover:text-[var(--ppl-text)]")}>
+                      {l.currency}{(l.they_owe > 0 || l.i_owe > 0) ? " ·" : ""}{l.they_owe > 0 ? ` +${eur(l.they_owe, l.currency)}` : ""}{l.i_owe > 0 ? ` −${eur(l.i_owe, l.currency)}` : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="grid gap-3">
-                <Balance direction={THEY} amount={balances.they_owe} person={person} onAction={both} />
-                <Balance direction={I} amount={balances.i_owe} person={person} onAction={both} />
+                <Balance direction={THEY} amount={balances.they_owe} person={person} onAction={both} currency={currency} />
+                <Balance direction={I} amount={balances.i_owe} person={person} onAction={both} currency={currency} />
               </div>
               {(balances.overpaid?.they_owe || balances.overpaid?.i_owe) ? (
-                <p className="ppl-solid mt-3 p-2.5 text-xs">An older payment was recorded for more than was owed ({eur(balances.overpaid.they_owe || balances.overpaid.i_owe)} extra). Use Correct to settle it.</p>
+                <p className="ppl-solid mt-3 p-2.5 text-xs">An older payment was recorded for more than was owed ({eur(balances.overpaid.they_owe || balances.overpaid.i_owe, currency)} extra). Use Correct to settle it.</p>
               ) : null}
 
               <h3 className="mt-7 text-sm font-semibold">History</h3>
@@ -155,7 +169,7 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
                 <p className="ppl-muted mt-2 text-sm" data-testid="history-empty">Nothing recorded yet. Add a debt or record a payment above.</p>
               ) : (
                 <ul className="mt-1 divide-y divide-[var(--ppl-line)]" data-testid="history-list">
-                  <AnimatePresence initial={false}>{items.map((i) => <Row key={i.id} item={i} onUndo={undoRow} onClearLine={clearLine} reduce={reduce} />)}</AnimatePresence>
+                  <AnimatePresence initial={false}>{items.map((i) => <Row key={i.id} item={i} onUndo={undoRow} onClearLine={clearLine} reduce={reduce} currency={currency} />)}</AnimatePresence>
                 </ul>
               )}
 

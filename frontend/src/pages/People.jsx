@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Archive, ArrowDownLeft, ArrowUpRight, HandCoins, Loader2, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
+import { mainCurrency } from "@/lib/money";
 import { api, eur, errorMessage } from "@/lib/api";
 import { newKey } from "@/lib/debts";
 import { useFetch, refreshAll } from "@/lib/useFetch";
@@ -41,7 +42,7 @@ const KIND_WORDS = { add: "debt added", reduce: "debt reduced", correct: "correc
  *  names who goes, says what happens to any balance, and has a red Delete and a Cancel. */
 function DeleteBar({ targets, busy, onCancel, onConfirm }) {
   const reduce = useReducedMotion();
-  const owing = (targets || []).filter((p) => p.owes_me > 0 || p.i_owe > 0);
+  const owing = (targets || []).filter((p) => p.owes_me > 0 || p.i_owe > 0 || p.other_currencies?.length);
   const names = (targets || []).map((p) => p.name);
   const bar = useRef(null);
   const open = !!(targets && targets.length > 0);
@@ -175,7 +176,7 @@ export default function People() {
     } catch (err) { toast.error(errorMessage(err, "Could not delete")); } finally { setDeleting(false); }
   };
 
-  const openDebt = (kind, direction, person, balances) => setDebtDialog({ kind, direction, person, current: kind === "correct" ? (direction === "they_owe" ? balances?.they_owe : balances?.i_owe) : undefined });
+  const openDebt = (kind, direction, person, balances) => setDebtDialog({ kind, direction, person, currency: balances?.currency, current: kind === "correct" ? (direction === "they_owe" ? balances?.they_owe : balances?.i_owe) : undefined });
   const withBalance = overview?.people_with_debt ?? 0;
 
   return (
@@ -288,7 +289,12 @@ export default function People() {
                     <button type="button" onClick={() => nav(`/people/${p.id}`)} className="flex min-w-0 items-center gap-3 rounded-lg text-left" data-testid={`person-open-${p.id}`}>
                       <span className="shrink-0"><Avatar name={p.name} photo={p.photo} size="h-10 w-10" /></span>
                       <span className="min-w-0"><span className="block truncate font-medium" data-testid="person-name">{p.name}</span>
-                        {p.payment_preference && <span className="ppl-muted block truncate text-xs">Pays by {p.payment_preference}</span>}</span>
+                        {p.payment_preference && <span className="ppl-muted block truncate text-xs">Pays by {p.payment_preference}</span>}
+                        {p.other_currencies?.map((o) => (
+                          <span key={o.currency} className="ppl-muted block truncate text-xs" data-testid={`other-currency-${o.currency}`}>
+                            {[o.owes_me > 0 && `owes you ${eur(o.owes_me, o.currency)}`, o.i_owe > 0 && `you owe ${eur(o.i_owe, o.currency)}`].filter(Boolean).join(" · ")} in {o.currency}
+                          </span>
+                        ))}</span>
                     </button>
                     <div className="col-start-2 grid grid-cols-2 gap-3 sm:contents">
                       {p.owes_me > 0 || p.i_owe > 0 ? (
@@ -296,7 +302,7 @@ export default function People() {
                           <Cell direction="they_owe" amount={p.owes_me} name={p.name} />
                           <Cell direction="i_owe" amount={p.i_owe} name={p.name} />
                         </>
-                      ) : <p className="ppl-muted col-span-2 text-sm">Settled</p>}
+                      ) : <p className="ppl-muted col-span-2 text-sm">{p.other_currencies?.length ? `Settled in ${mainCurrency()}` : "Settled"}</p>}
                     </div>
                     <div className="col-start-2 flex gap-1.5 sm:col-start-auto sm:justify-end">
                       {view === "active" ? (
@@ -323,7 +329,7 @@ export default function People() {
       <DebtDialog state={debtDialog} onClose={() => setDebtDialog(null)} />
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="ppl-theme ppl-glass max-w-md" data-testid="person-form">
+        <DialogContent className="ppl-theme ppl-glass !bg-[var(--ppl-surface)] max-w-md" data-testid="person-form">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit person" : "Add person"}</DialogTitle>
             <DialogDescription className="ppl-muted">Notes and how they usually pay make settling up easier.</DialogDescription>

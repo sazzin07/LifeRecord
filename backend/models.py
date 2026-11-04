@@ -118,6 +118,7 @@ class Settlement(Base):
     date = Column(String(10), nullable=False, index=True)
     transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, index=True)
     balance_transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, index=True)
+    currency = Column(String(3), nullable=True)   # the ledger a payment counts in; empty = the currency of its account, else the main one (F-19)
     created_at = Column(String(32), nullable=False)
 
 

@@ -11,7 +11,7 @@ import {
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
-import { currencyStep, currencySymbol } from "@/lib/money";
+import { currencyStep, currencySymbol, moneyCompact } from "@/lib/money";
 import { useSettings } from "@/context/SettingsContext";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
@@ -477,7 +477,7 @@ export default function Money() {
                   {[["Bank", sum?.bank], ["Hand", sum?.cash_available], ["Revolut", sum?.revolut]].map(([l, v]) => (
                     <div key={l} className="mny-tile px-1.5 py-2">
                       <p className="mny-muted text-[11px]">{l}</p>
-                      <p className="mny-num mny-title truncate text-sm font-semibold">{eur(v)}</p>
+                      <p className="mny-num mny-title truncate text-[13px] font-semibold tracking-tight" title={eur(v)}>{moneyCompact(v)}</p>
                     </div>
                   ))}
                 </div>
@@ -541,10 +541,10 @@ export default function Money() {
               <h3 id="mny-period-h" className="mny-title text-base font-semibold">This period</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 {[
-                  { id: "money-gross", label: "Spent", value: eur(sum?.gross), hint: `Your share ${eur(sum?.personal)}`, icon: ArrowUpRight },
-                  { id: "money-card-spent", label: "Card", value: eur(sum?.card_spent), hint: "Card spending", icon: CreditCard },
-                  { id: "money-cash-spent", label: "Cash", value: eur(sum?.cash_spent), hint: "Cash spending", icon: Wallet },
-                  { id: "money-pending", label: "Pending refunds", value: eur(sum?.pending), hint: `Refunded ${eur(sum?.refunded)}`, icon: PiggyBank, amber: true },
+                  { id: "money-gross", label: "Spent", value: moneyCompact(sum?.gross), hint: `Your share ${eur(sum?.personal)}`, icon: ArrowUpRight },
+                  { id: "money-card-spent", label: "Card", value: moneyCompact(sum?.card_spent), hint: "Card spending", icon: CreditCard },
+                  { id: "money-cash-spent", label: "Cash", value: moneyCompact(sum?.cash_spent), hint: "Cash spending", icon: Wallet },
+                  { id: "money-pending", label: "Pending refunds", value: moneyCompact(sum?.pending), hint: `Refunded ${eur(sum?.refunded)}`, icon: PiggyBank, amber: true },
                 ].map((t) => (
                   <div key={t.id} data-testid={t.id} className="mny-tile p-3">
                     <p className="mny-muted flex items-center gap-1.5 text-xs"><t.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{t.label}</span></p>

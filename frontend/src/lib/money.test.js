@@ -1,4 +1,4 @@
-import { currencyDigits, currencyOptions, currencyStep, currencySymbol, mainCurrency, mainCurrencyOf, money, setMainCurrency } from "./money";
+import { currencyDigits, currencyOptions, currencyStep, currencySymbol, mainCurrency, mainCurrencyOf, money, moneyCompact, setMainCurrency } from "./money";
 
 beforeEach(() => { localStorage.clear(); setMainCurrency("EUR"); });
 
@@ -27,4 +27,10 @@ test("symbols, the option list and the main currency of an account list", () => 
   expect(mainCurrencyOf([{ type: "cash", currency: "GBP" }, { type: "bank", currency: "CHF" }, { type: "cash_place", parent_id: "x", currency: "JPY" }])).toBe("CHF");
   expect(mainCurrencyOf([{ type: "cash", currency: "GBP" }])).toBe("GBP");
   expect(mainCurrencyOf([])).toBe("EUR");
+});
+
+test("a figure from a million up is abbreviated, a smaller one is shown in full", () => {
+  expect(moneyCompact(2469440.73, "EUR")).toMatch(/2\.47M/);
+  expect(moneyCompact(999999.5, "EUR")).toBe(money(999999.5, "EUR"));
+  expect(moneyCompact(5609.3)).toBe(money(5609.3));
 });

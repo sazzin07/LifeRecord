@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur } from "@/lib/api";
-import { currencySymbol } from "@/lib/money";
+import { currencyStep, currencySymbol, mainCurrency } from "@/lib/money";
 import { orderAccounts, defaultSpendAccount } from "@/lib/allocation";
 import { changeDebt, errorMessage, I, newKey, THEY, undoChange } from "@/lib/debts";
 import { refreshAll } from "@/lib/useFetch";
@@ -37,22 +37,26 @@ export function DebtDialog({ state, onClose, onDone }) {
   const [problem, setProblem] = useState("");
   const [ask, setAsk] = useState(null);        // the server asked what the extra of an overpayment is
   const [accounts, setAccounts] = useState([]);
+  const [currency, setCurrency] = useState(mainCurrency());   // the ledger the change belongs to
   const attempt = useRef(newKey());
 
   useEffect(() => {
     if (!open) return;
     setDirection(startDirection || THEY); setAmount(kind === "correct" && state.current != null ? String(state.current) : ""); setNote(""); setProblem(""); setAsk(null);
     attempt.current = newKey();
-    if (kind === "payment") {
-      api.get("/accounts").then((r) => {
-        const list = r.data.filter((a) => a.type !== "owed" && a.type !== "owed_person");
-        setAccounts(list);
-        setAccount(defaultSpendAccount(list)?.id || NO_ACCOUNT);
-      }).catch(() => setAccounts([]));
-    }
+    setCurrency(state?.currency || mainCurrency());
+    api.get("/accounts").then((r) => {
+      const list = r.data.filter((a) => a.type !== "owed" && a.type !== "owed_person");
+      setAccounts(list);
+      if (kind === "payment") setAccount(defaultSpendAccount(list)?.id || NO_ACCOUNT);
+    }).catch(() => setAccounts([]));
   }, [open, kind, startDirection, state]);
 
   const options = useMemo(() => orderAccounts(accounts), [accounts]);
+  // The currencies that exist: a choice is offered only when there is more than one. A payment through an account counts in that account's currency.
+  const currencies = useMemo(() => [...new Set([mainCurrency(), ...accounts.map((a) => a.currency || "EUR")])], [accounts]);
+  const viaAccount = kind === "payment" && account !== NO_ACCOUNT ? options.find((a) => a.id === account) : null;
+  const shown = viaAccount ? (viaAccount.currency || "EUR") : currency;
   const copy = COPY[kind] || COPY.add;
   const owed = direction === THEY ? person?.owes_me : person?.i_owe;
   const noAmount = kind === "clear";
@@ -66,13 +70,13 @@ export function DebtDialog({ state, onClose, onDone }) {
       let body;
       if (kind === "payment") {
         body = { direction: direction === THEY ? "in" : "out", amount: Number(amount), method, description: note || undefined, excess: excess || undefined };
-        if (account !== NO_ACCOUNT) body.account = account;
+        if (account !== NO_ACCOUNT) body.account = account; else body.currency = currency;
       } else if (kind === "clear") {
-        body = { direction, description: note || undefined };
+        body = { direction, description: note || undefined, currency };
       } else if (kind === "correct") {
-        body = { direction, new_amount: Number(amount), description: note || undefined };
+        body = { direction, new_amount: Number(amount), description: note || undefined, currency };
       } else {
-        body = { direction, amount: Number(amount), description: note || undefined };
+        body = { direction, amount: Number(amount), description: note || undefined, currency };
       }
       const result = await changeDebt(person.id, kind, body, attempt.current);
       if (result.needs_excess_choice) { setAsk(result); attempt.current = newKey(); return; }
@@ -90,7 +94,7 @@ export function DebtDialog({ state, onClose, onDone }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && !o && onClose()}>
-      <DialogContent className="ppl-theme ppl-glass max-w-md" data-testid="debt-dialog">
+      <DialogContent className="ppl-theme ppl-glass !bg-[var(--ppl-surface)] max-w-md" data-testid="debt-dialog">
         <DialogHeader>
           <DialogTitle>{copy.title}{person ? ` · ${person.name}` : ""}</DialogTitle>
           <DialogDescription className="ppl-muted">{copy.hint}</DialogDescription>
@@ -105,11 +109,20 @@ export function DebtDialog({ state, onClose, onDone }) {
                 ))}
               </div>
             )}
-            {startDirection && <p className="text-sm font-medium" data-testid="debt-direction-label">{startDirection === THEY ? `${person?.name} owes you` : `You owe ${person?.name}`} {eur(owed || 0)}</p>}
+            {startDirection && <p className="text-sm font-medium" data-testid="debt-direction-label">{startDirection === THEY ? `${person?.name} owes you` : `You owe ${person?.name}`} {eur(owed || 0, currency)}</p>}
             {!noAmount && (
               <div>
-                <Label htmlFor="debt-amount" className="text-xs">{kind === "correct" ? `What it should be now (${currencySymbol()})` : `Amount (${currencySymbol()})`}</Label>
-                <Input id="debt-amount" inputMode="decimal" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus placeholder="0.00" data-testid="debt-amount" />
+                <Label htmlFor="debt-amount" className="text-xs">{kind === "correct" ? `What it should be now (${currencySymbol(shown)})` : `Amount (${currencySymbol(shown)})`}</Label>
+                <Input id="debt-amount" inputMode="decimal" type="number" min="0" step={currencyStep(shown)} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus placeholder="0.00" data-testid="debt-amount" />
+              </div>
+            )}
+            {currencies.length > 1 && !viaAccount && (
+              <div>
+                <Label className="text-xs">Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger aria-label="Currency" data-testid="debt-currency"><SelectValue /></SelectTrigger>
+                  <SelectContent>{currencies.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
             )}
             {kind === "payment" && (
@@ -140,7 +153,7 @@ export function DebtDialog({ state, onClose, onDone }) {
 
             {ask && (
               <div role="group" aria-label="What is the extra?" className="ppl-solid p-3 text-sm" data-testid="debt-excess">
-                <p className="font-medium">{eur(ask.excess)} more than is owed ({eur(ask.outstanding)}). What is the extra?</p>
+                <p className="font-medium">{eur(ask.excess, ask.currency)} more than is owed ({eur(ask.outstanding, ask.currency)}). What is the extra?</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button type="button" variant="outline" size="sm" disabled={busy} onClick={(e) => submit(e, "opposite")} data-testid="debt-excess-opposite">{ask.options?.find((o) => o.value === "opposite")?.label || "A debt the other way"}</Button>
                   <Button type="button" variant="outline" size="sm" disabled={busy} onClick={(e) => submit(e, "tip")} data-testid="debt-excess-tip">{ask.options?.find((o) => o.value === "tip")?.label || "A tip or gift, no debt"}</Button>

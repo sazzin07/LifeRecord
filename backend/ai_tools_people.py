@@ -208,12 +208,17 @@ async def dispatch_people(srv, db, user, name, args, created, ctx=None, session_
         async def work(before):
             cents = debts.to_cents(args.get("amount") or 0)
             direction = args.get("direction", "in")
-            plan = await debts.payment_plan(db, uid, person, direction, cents)
+            acc_currency = None
+            if args.get("account"):
+                found = await srv.resolve_account(db, args["account"], uid)
+                acc_currency = found.currency if found else None      # a payment counts in the currency of the account it went through
+            plan = await debts.payment_plan(db, uid, person, direction, cents, acc_currency)
+            cur = plan["currency"]
             if plan["excess_cents"] > 0 and args.get("excess") not in ("tip", "opposite"):
                 return {"pending": True, "needs_confirmation": True, "recorded": False,
-                        "message": (f"{debts._phrase(plan['paid_direction'], plan['outstanding_cents'], person.name)}, and this payment is {debts.money(cents)}. Nothing was recorded. "
-                                    f"Ask the user what the extra {debts.money(plan['excess_cents'])} is: (1) excess 'opposite' = "
-                                    + (f"the user now owes {person.name} the extra {debts.money(plan['excess_cents'])} back" if direction == "in" else f"{person.name} now owes the user the extra {debts.money(plan['excess_cents'])} back")
+                        "message": (f"{debts._phrase(plan['paid_direction'], plan['outstanding_cents'], person.name, currency=cur)}, and this payment is {debts.money(cents, cur)}. Nothing was recorded. "
+                                    f"Ask the user what the extra {debts.money(plan['excess_cents'], cur)} is: (1) excess 'opposite' = "
+                                    + (f"the user now owes {person.name} the extra {debts.money(plan['excess_cents'], cur)} back" if direction == "in" else f"{person.name} now owes the user the extra {debts.money(plan['excess_cents'], cur)} back")
                                     + ", or (2) excess 'tip' = a tip/gift with no debt either way."),
                         "outstanding": plan["outstanding_cents"] / 100, "excess": plan["excess_cents"] / 100}
             account_id = None
@@ -226,7 +231,7 @@ async def dispatch_people(srv, db, user, name, args, created, ctx=None, session_
             amount = Decimal(cents) / 100
             method = args.get("method") or ("Other" if not account_id else "Revolut")
             s = Settlement(id=srv.new_id(), user_id=uid, person_id=person.id, person_name=person.name, amount=amount, method=method, account=account_id or "",
-                           direction=direction, date=date, created_at=srv.now_iso())
+                           direction=direction, date=date, currency=cur, created_at=srv.now_iso())
             db.add(s)
             await db.flush()
             created.append({"collection": "settlements", "id": s.id})
@@ -245,9 +250,9 @@ async def dispatch_people(srv, db, user, name, args, created, ctx=None, session_
             await db.flush()
             await srv.money_check(db, uid, before)
             where = "recorded in your account" if account_id else "not recorded in any of your accounts"
-            extra = f" The extra {debts.money(plan['excess_cents'])} {'became a debt the other way' if args.get('excess') == 'opposite' else 'was kept as a tip, no debt'}." if lines else ""
-            return _answer(person, debts.view(await debts.balance_of(db, uid, person.id)),
-                           f"Recorded a payment of {debts.money(cents)} {'from' if direction == 'in' else 'to'} {person.name} ({where}).{extra}")
+            extra = f" The extra {debts.money(plan['excess_cents'], cur)} {'became a debt the other way' if args.get('excess') == 'opposite' else 'was kept as a tip, no debt'}." if lines else ""
+            return _answer(person, debts.view(await debts.balance_of(db, uid, person.id, cur), cur),
+                           f"Recorded a payment of {debts.money(cents, cur)} {'from' if direction == 'in' else 'to'} {person.name} ({where}).{extra}")
         return await _run(srv, db, user, ctx, name, args, work)
 
     return {"error": "unknown tool"}

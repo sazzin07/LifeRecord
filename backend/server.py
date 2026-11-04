@@ -1130,6 +1130,8 @@ def arrival_amount(from_acc: Account, to_acc: Account, to_amount: Optional[float
 async def change_main_currency(db: AsyncSession, user_id: str, main: Account, code: str) -> None:
     """A main account and its places share one currency. It cannot change once a transfer between two currencies touches the family: that
     transfer's two amounts would stop making sense."""
+    defines_main = (await debts.main_account_id(db, user_id)) == main.id      # asked before the change: the bank account fixes the main currency
+    old_code = main.currency
     family = [main.id] + [i for (i,) in (await db.execute(select(Account.id).where(Account.user_id == user_id, Account.parent_id == main.id))).all()]
     crossed = (await db.execute(select(Transaction.id).where(
         Transaction.user_id == user_id, Transaction.type == "transfer", Transaction.to_amount.is_not(None),
@@ -1138,6 +1140,8 @@ async def change_main_currency(db: AsyncSession, user_id: str, main: Account, co
         raise HTTPException(409, "A transfer between two currencies already involves this account, so its currency cannot change.")
     for a in (await db.execute(select(Account).where(Account.id.in_(family)))).scalars().all():
         a.currency = code
+    if defines_main:      # the debts kept in the main currency follow it (changing it relabels the money; it does not make a second currency)
+        await debts.move_main_ledger(db, user_id, old_code, code)
 
 
 async def compute_account_balance(db: AsyncSession, account: str, user_id: str) -> float:

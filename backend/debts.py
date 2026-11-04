@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from models import Account, DebtEntry, IdempotencyKey, Person, Settlement, Split, Transaction
 
@@ -47,13 +47,32 @@ def money(cents: int, currency: str = CURRENCY) -> str:
     return f"€{cents / 100:,.2f}" if currency == "EUR" else f"{currency} {cents / 100:,.2f}"
 
 
+async def _main_row(db, user_id: str):
+    rows = (await db.execute(select(Account.id, Account.type, Account.currency).where(Account.user_id == user_id, Account.parent_id.is_(None), Account.is_active == True)  # noqa: E712
+                             .order_by(Account.sort_order, Account.created_at))).all()
+    return next((r for r in rows if r[1] == "bank"), None) or (rows[0] if rows else None)
+
+
+async def main_account_id(db, user_id: str) -> Optional[str]:
+    """The account whose currency is the main currency (the bank account, else the first top-level one)."""
+    row = await _main_row(db, user_id)
+    return row[0] if row else None
+
+
 async def main_currency(db, user_id: str) -> str:
     """The currency of the bank account (the first top-level one), else of the first top-level account, else EUR: where a debt is kept when
     no currency is named. Mirrors `server.main_currency_of`."""
-    rows = (await db.execute(select(Account.type, Account.currency).where(Account.user_id == user_id, Account.parent_id.is_(None), Account.is_active == True)  # noqa: E712
-                             .order_by(Account.sort_order, Account.created_at))).all()
-    bank = next((r for r in rows if r[0] == "bank"), None) or (rows[0] if rows else None)
-    return (bank[1] if bank else None) or CURRENCY
+    row = await _main_row(db, user_id)
+    return (row[2] if row else None) or CURRENCY
+
+
+async def move_main_ledger(db, user_id: str, old: str, new: str) -> None:
+    """The main account changed its currency: that only relabels the money, so what was kept in the old main currency (ledger lines and
+    payments made without an account) moves to the new one instead of becoming a separate "other currency" list."""
+    if old == new:
+        return
+    await db.execute(update(DebtEntry).where(DebtEntry.user_id == user_id, DebtEntry.currency == old).values(currency=new))
+    await db.execute(update(Settlement).where(Settlement.user_id == user_id, Settlement.currency == old).values(currency=new))
 
 
 async def currencies_in_use(db, user_id: str) -> List[str]:

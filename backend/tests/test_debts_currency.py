@@ -117,3 +117,27 @@ def test_a_single_currency_user_sees_the_same_shapes_as_before():
     listed = next(x for x in ok(me, "get", "/people") if x["id"] == p["id"])
     assert "other_currencies" not in listed and listed["owes_me"] == 7
     assert ok(me, "get", "/debts/overview")["other_currencies"] == []
+
+
+def test_changing_the_banks_currency_moves_the_main_debts_with_it(me):
+    p = person(me)
+    debt(me, p, "add", amount=20)                                   # kept in the main currency (EUR)
+    debt(me, p, "add", amount=30, currency="USD")                   # a separate ledger: it stays
+    ok(me, "post", f"/debts/people/{p['id']}/payments", json={"direction": "in", "amount": 5, "currency": "EUR"})   # an account-less payment, main ledger
+    _put(me["u"], f"/accounts/{me['bank']}", {"currency": "GBP"})
+    d = detail(me, p)
+    assert d["main_currency"] == "GBP" and d["currency"] == "GBP" and d["balances"]["they_owe"] == 15     # 20 - 5, now in GBP
+    assert {c["currency"]: c["they_owe"] for c in d["currencies"]} == {"GBP": 15, "USD": 30}              # no leftover EUR list
+    listed = next(x for x in ok(me, "get", "/people") if x["id"] == p["id"])
+    assert listed["owes_me"] == 15 and listed["other_currencies"] == [{"currency": "USD", "owes_me": 30, "i_owe": 0}]
+    assert ok(me, "get", f"/debts/people/{p['id']}?currency=EUR")["balances"]["they_owe"] == 0
+
+
+def test_changing_another_accounts_currency_leaves_the_main_debts_alone(me):
+    p = person(me)
+    debt(me, p, "add", amount=20)
+    debt(me, p, "add", amount=30, currency="USD")
+    _put(me["u"], f"/accounts/{me['revolut']}", {"currency": "CHF"})   # not the account that defines the main currency
+    d = detail(me, p)
+    assert d["main_currency"] == "EUR" and d["balances"]["they_owe"] == 20
+    assert {c["currency"]: c["they_owe"] for c in d["currencies"]}["USD"] == 30

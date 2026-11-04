@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
 import { openAI } from "@/components/AppShell";
 import { FoodDialog } from "./nutrition/FoodDialog";
-import { TodayTab } from "./nutrition/TodayTab";
+import { TodayTab, PLACEHOLDER_DAY } from "./nutrition/TodayTab";
 import { PlanTab } from "./nutrition/PlanTab";
 import { NutrientsTab } from "./nutrition/NutrientsTab";
 import { TrendsTab } from "./nutrition/TrendsTab";
@@ -41,7 +41,7 @@ export default function Nutrition() {
   if (day?.today) todayRef.current = day.today;
   const today = todayRef.current;
   const date = pickedDate || day?.today || todayRef.current || null;
-  const { data: insights } = useFetch(date && tab === "today" ? `/nutrition/insights?date=${date}` : null);
+  const { data: insights, loading: insightsLoading } = useFetch(date && tab === "today" ? `/nutrition/insights?date=${date}` : null);
 
   const openAdd = (meal, foodId, query) => setDialog({ open: true, meal, foodId, initialQuery: query, entry: null, planning: false });
   const openPlan = (planDate, foodId, recipeId) => setDialog({ open: true, planning: true, date: planDate, foodId, recipeId, entry: null });
@@ -80,12 +80,13 @@ export default function Nutrition() {
         )}
 
         <div className="mt-5">
-          {!day && DAY_TABS.has(tab) && (
-            <div className="grid gap-6 lg:grid-cols-3" aria-busy="true"><div className="skeleton h-64 rounded-2xl lg:col-span-2" /><div className="skeleton h-64 rounded-2xl" /></div>
+          {!day && DAY_TABS.has(tab) && tab !== "today" && (
+            <div className="grid gap-6 lg:grid-cols-3" role="status" aria-busy="true" aria-label="Loading the day"><div className="skeleton h-64 rounded-2xl lg:col-span-2" /><div className="skeleton h-64 rounded-2xl" /></div>
           )}
           <TabsContent value="today" className="mt-0 space-y-6">
             {(!pickedDate || pickedDate === today) && <ReminderBanner onLogMeal={(meal) => openAdd(meal)} />}
-            {day && <TodayTab day={day} insights={insights} date={date} onAdd={openAdd} onEdit={(entry) => setDialog({ open: true, entry, planning: false })} />}
+            {day ? <TodayTab day={day} insights={insights} insightsLoading={insightsLoading && !insights} date={date} onAdd={openAdd} onEdit={(entry) => setDialog({ open: true, entry, planning: false })} />
+              : <div role="status" aria-busy="true" aria-label="Loading the day"><TodayTab loading day={PLACEHOLDER_DAY} date={date} onAdd={() => {}} onEdit={() => {}} /></div>}
           </TabsContent>
           <TabsContent value="plan" className="mt-0">{today && <PlanTab anchor={pickedDate || today} today={today} onAdd={(d) => openPlan(d)} onEdit={(item) => setDialog({ open: true, planning: true, entry: item })} />}</TabsContent>
           <TabsContent value="nutrients" className="mt-0">{day && <NutrientsTab day={day} />}</TabsContent>

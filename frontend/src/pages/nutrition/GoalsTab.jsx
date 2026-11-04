@@ -148,7 +148,7 @@ export function GoalsTab() {
       <Card className="overflow-hidden">
         <div className="border-b border-border px-4 py-3 sm:px-5">
           <h3 className="font-semibold">Targets</h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{!t ? "Loading…" : t.supported === false ? "" : t.personalised ? "Suggested for your details, from EFSA's dietary reference values." : "General adult values. Add your birth year and sex above for personalised ones."}</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{!t ? <><span className="sr-only">Loading the targets</span><Sk className="h-4 w-72 max-w-full" /></> : t.supported === false ? "" : t.personalised ? "Suggested for your details, from EFSA's dietary reference values." : "General adult values. Add your birth year and sex above for personalised ones."}</p>
         </div>
         {t && t.supported === false ? (
           <div className="flex gap-3 p-5 text-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" /><p>{t.notes[0]}</p></div>

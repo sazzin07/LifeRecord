@@ -4,23 +4,25 @@ import { cacheAge, readCache, writeCache } from "@/lib/swrCache";
 
 export const GROCERIES_CACHE_KEY = "groceries";
 
+/** Each piece of the Groceries page, by the name the page's state uses: its request and how it is shaped. A section asks for the pieces it
+ *  needs, so one slow request never holds back the others. */
+export const GROCERY_PARTS = {
+  inventory: () => api.get("/groceries").then((r) => r.data),
+  shopping: (listId) => api.get("/shopping", { params: listId ? { list_id: listId } : {} }).then((r) => r.data),
+  lowStock: () => api.get("/groceries/low-stock").then((r) => r.data),
+  suggestions: () => api.get("/groceries/suggestions").then((r) => r.data),
+  recurring: () => api.get("/shopping/recurring").then((r) => r.data),
+  locations: () => api.get("/storage-locations").then((r) => r.data),
+  products: () => api.get("/products").then((r) => r.data),
+  recipeIdeas: () => api.get("/recipes/suggestions").then((r) => r.data),
+  appliances: () => api.get("/appliances").then((r) => r.data),
+};
+
 /** Everything the Groceries page shows, fetched in parallel and shaped for the page's state. */
 export async function fetchGroceries(listId) {
-  const [inv, shop, low, sugg, rec, locs, prods, ideas, apps] = await Promise.all([
-    api.get("/groceries"),
-    api.get("/shopping", { params: listId ? { list_id: listId } : {} }),
-    api.get("/groceries/low-stock"),
-    api.get("/groceries/suggestions"),
-    api.get("/shopping/recurring"),
-    api.get("/storage-locations"),
-    api.get("/products"),
-    api.get("/recipes/suggestions"),
-    api.get("/appliances"),
-  ]);
-  return {
-    inventory: inv.data, shopping: shop.data, lowStock: low.data, suggestions: sugg.data, recurring: rec.data,
-    locations: locs.data, products: prods.data, recipeIdeas: ideas.data, appliances: apps.data,
-  };
+  const keys = Object.keys(GROCERY_PARTS);
+  const values = await Promise.all(keys.map((k) => GROCERY_PARTS[k](listId)));
+  return Object.fromEntries(keys.map((k, i) => [k, values[i]]));
 }
 
 const inFlight = new Map();

@@ -21,7 +21,6 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
 import { FirstAccounts } from "@/components/FirstAccounts";
 import { ErrorBlock, Resolve, Sk, SkChart } from "@/components/skeletons";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -412,10 +411,10 @@ export default function Money() {
           <p className="mny-muted mt-0.5 text-sm">Bank, cash, Revolut and actual spending</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="mny-pill hidden sm:inline-flex" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }}>
+          <button type="button" className="mny-pill" onClick={() => { setTransferDefaults({ to: "" }); setTransferOpen(true); }}>
             <ArrowRightLeft className="h-4 w-4" aria-hidden="true" /> Transfer
           </button>
-          <button type="button" className="mny-pill hidden sm:inline-flex" onClick={openBudgets}>
+          <button type="button" className="mny-pill" onClick={openBudgets}>
             <Target className="h-4 w-4" aria-hidden="true" /> Budgets
           </button>
           <button type="button" className="mny-pill" onClick={onExport}>
@@ -797,7 +796,7 @@ export default function Money() {
 
       {/* Transfer dialog */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="mny-dialog max-w-md">
           <DialogHeader>
             <DialogTitle>Transfer money</DialogTitle>
             <DialogDescription>Move money from one location to another.</DialogDescription>
@@ -808,7 +807,7 @@ export default function Money() {
 
       {/* Budget dialog */}
       <Dialog open={budgetOpen} onOpenChange={setBudgetOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="mny-dialog max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Category budgets</DialogTitle>
             <DialogDescription>Set a monthly spending target for each category. Leave empty to disable.</DialogDescription>
@@ -816,18 +815,18 @@ export default function Money() {
           <div className="space-y-3 mt-2">
             {categories.map((c) => (
               <div key={c.id} className="flex items-center gap-3">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c.color || CATEGORY_COLORS[c.name] || "#94A3B8" }} />
-                <span className="flex-1 text-sm">{c.name}</span>
-                <Input type="number" min={0} step="0.01" placeholder="€"
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c.color || CATEGORY_COLORS[c.name] || "#94A3B8" }} aria-hidden="true" />
+                <span className="mny-title flex-1 text-sm">{c.name}</span>
+                <Input type="number" min={0} step="0.01" placeholder="€" aria-label={`${c.name} monthly budget`}
                   value={budgetForm[c.id] || ""}
                   onChange={(e) => setBudgetForm((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                  className="h-9 w-28" />
+                  className="mny-field h-9 w-28 text-right" />
               </div>
             ))}
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setBudgetOpen(false)}>Cancel</Button>
-            <Button onClick={saveBudgets} className="bg-emerald-700 hover:bg-emerald-800 text-white">Save budgets</Button>
+            <button type="button" className="mny-pill" onClick={() => setBudgetOpen(false)}>Cancel</button>
+            <button type="button" className="mny-pill mny-cta" onClick={saveBudgets}>Save budgets</button>
           </div>
         </DialogContent>
       </Dialog>
@@ -871,38 +870,38 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
   return (
     <div className="space-y-3 mt-2">
       <div>
-        <Label className="text-xs">From</Label>
+        <Label className="mny-muted text-xs">From</Label>
         <Select value={from} onValueChange={setFrom}>
-          <SelectTrigger aria-label="Move money from"><SelectValue placeholder="Select source" /></SelectTrigger>
+          <SelectTrigger className="mny-field" aria-label="Move money from"><SelectValue placeholder="Select source" /></SelectTrigger>
           <SelectContent>
             {accounts.map((a) => option(a, true))}
           </SelectContent>
         </Select>
       </div>
       <div>
-        <Label className="text-xs">To</Label>
+        <Label className="mny-muted text-xs">To</Label>
         <Select value={to} onValueChange={setTo}>
-          <SelectTrigger aria-label="Move money to"><SelectValue placeholder="Select destination" /></SelectTrigger>
+          <SelectTrigger className="mny-field" aria-label="Move money to"><SelectValue placeholder="Select destination" /></SelectTrigger>
           <SelectContent>
             {accounts.filter((a) => a.id !== from).map((a) => option(a, false))}
           </SelectContent>
         </Select>
       </div>
       <div>
-        <Label className="text-xs" htmlFor="transfer-amount">Amount (€)</Label>
-        <Input id="transfer-amount" type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" aria-describedby="transfer-note" data-testid="transfer-amount" />
+        <Label className="mny-muted text-xs" htmlFor="transfer-amount">Amount (€)</Label>
+        <Input id="transfer-amount" type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" aria-describedby="transfer-note" data-testid="transfer-amount" className="mny-field" />
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <p id="transfer-note" data-testid="transfer-note" role={tooMuch ? "alert" : undefined} className={cn("text-xs", tooMuch ? "text-red-700 dark:text-red-400" : "text-slate-600 dark:text-slate-400")}>
+          <p id="transfer-note" data-testid="transfer-note" role={tooMuch ? "alert" : undefined} className={cn("text-xs", tooMuch ? "mny-neg" : "mny-muted")}>
             {tooMuch || (source ? `Available to move from ${source.name}: ${eur(spendable(source))}.` : "")}
           </p>
           {source && spendable(source) > 0 && (
-            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAmount(String(spendable(source)))}>All of it</Button>
+            <button type="button" className="mny-pill sm" onClick={() => setAmount(String(spendable(source)))}>All of it</button>
           )}
         </div>
       </div>
       <div className="flex justify-end gap-2 mt-4">
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to || !!tooMuch} className="bg-emerald-700 hover:bg-emerald-800 text-white">Transfer</Button>
+        <button type="button" className="mny-pill" onClick={onCancel}>Cancel</button>
+        <button type="button" className="mny-pill mny-cta" onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to || !!tooMuch}>Transfer</button>
       </div>
     </div>
   );

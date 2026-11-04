@@ -25,7 +25,7 @@ import isolated_env as ie  # noqa: E402
 
 
 def newest(dest: Path) -> Path:
-    found = sorted((p for p in dest.glob("liferecord-*.zip") if backup.NAME_RE.match(p.name)), key=lambda p: p.name)
+    found = sorted((p for p in dest.glob("liferecord-*.zip*") if backup.NAME_RE.match(p.name)), key=lambda p: p.name)
     if not found:
         raise SystemExit(f"no backup found in {dest}")
     return found[-1]
@@ -54,12 +54,20 @@ def main(argv) -> int:
     archive = Path(args.backup) if args.backup else newest(Path(args.dest))
     print(f"Backup: {archive}")
 
-    with zipfile.ZipFile(archive) as zf:
+    plain = None
+    if archive.name.endswith(".dpapi"):
+        import local_secrets
+        plain = Path(tempfile.mkdtemp(prefix="lr-decrypt-")) / archive.name[:-len(".dpapi")]
+        local_secrets.decrypt_file(archive, plain)   # only the Windows account that made the backup can do this
+    with zipfile.ZipFile(plain or archive) as zf:
         manifest = json.loads(zf.read("MANIFEST.json"))
         upload_files = sum(1 for n in zf.namelist() if n.startswith("storage/") and not n.endswith("/"))
         tmp = tempfile.mkdtemp(prefix="lr-restore-")
         sql_path = Path(tmp) / "liferecord.sql"
         sql_path.write_bytes(zf.read("liferecord.sql"))
+    if plain:
+        plain.unlink(missing_ok=True)
+        plain.parent.rmdir()
 
     user, password = backup.admin_login()
     schema = f"liferecord_test_{os.getpid()}_{700 + next(ie._counter)}"

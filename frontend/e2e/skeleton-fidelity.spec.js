@@ -12,7 +12,7 @@ const cards = (page, selector) => page.evaluate((sel) => [...document.querySelec
   .filter((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 40)
   .map((e) => { const r = e.getBoundingClientRect(); return { id: e.getAttribute("data-fid") || e.getAttribute("aria-labelledby") || e.getAttribute("data-testid") || "", x: Math.round(r.x), y: Math.round(r.y + scrollY), w: Math.round(r.width), h: Math.round(r.height) }; }), selector);
 
-async function compare(page, path, selector, { release, flexible = [], yTolerance = 20 }) {
+async function compare(page, path, selector, { release, flexible = [], yTolerance = 20, hTolerance = 20, window = 70 }) {
   await cold(page);
   let open;
   const gate = new Promise((resolve) => { open = resolve; });
@@ -31,9 +31,9 @@ async function compare(page, path, selector, { release, flexible = [], yToleranc
   // both states must be a real layout, not just the same layout: a card squeezed into a sliver in both would otherwise "match"
   for (const r of [...loading, ...loaded]) if (r.w < 230) problems.push(`a card only ${r.w}px wide at x=${r.x}: ${r.id || "card"}`);
   for (const sk of loading) {
-    const match = (sk.id && loaded.find((r) => r.id === sk.id)) || loaded.find((r) => Math.abs(r.x - sk.x) <= 6 && Math.abs(r.w - sk.w) <= 8 && Math.abs(r.y - sk.y) <= 70);
+    const match = (sk.id && loaded.find((r) => r.id === sk.id)) || loaded.find((r) => Math.abs(r.x - sk.x) <= 6 && Math.abs(r.w - sk.w) <= 8 && Math.abs(r.y - sk.y) <= window);
     if (!match) { problems.push(`no real card in the place of ${sk.id || "a card"} ${JSON.stringify(sk)}`); continue; }
-    if (!flexible.includes(match.id) && Math.abs(match.h - sk.h) > 20) problems.push(`${match.id || "card"}: ${match.h}px tall, placeholder ${sk.h}px`);
+    if (!flexible.includes(match.id) && Math.abs(match.h - sk.h) > hTolerance) problems.push(`${match.id || "card"}: ${match.h}px tall, placeholder ${sk.h}px`);
     if (!flexible.includes(match.id) && Math.abs(match.y - sk.y) > yTolerance) problems.push(`${match.id || "card"}: at y=${match.y}, placeholder at y=${sk.y}`);
   }
   expect(problems, [path, ...problems, `real: ${JSON.stringify(loaded)}`].join("\n  ")).toEqual([]);
@@ -52,4 +52,18 @@ test("Home: the hero, the cards and the widgets match their placeholders", async
 
 test("Profile: password, two-step, devices and your data keep their size while loading", async ({ freshUserPage: { page } }) => {
   await compare(page, "/profile", "main section.mny-card", { release: (p) => expect(p.getByTestId("sessions-list")).toBeVisible({ timeout: 15000 }) });
+});
+
+test("Groceries overview: each section's placeholder is the size and place of the real one", async ({ authenticatedPage: page }) => {
+  await compare(page, "/groceries", 'main [role="tabpanel"] .card-ambient, main [role="tabpanel"] button.rounded-2xl', {
+    release: (p) => expect(p.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 }),
+    flexible: [], yTolerance: 140, hTolerance: 140, window: 200,   // the lists of what to use soon / what is running low are as tall as the stock
+  });
+});
+
+test("Nutrition day view: the ledger, the meals and the side cards match their placeholders", async ({ authenticatedPage: page }) => {
+  await compare(page, "/nutrition", "main .card-ambient", {
+    release: (p) => expect(p.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 }),
+    flexible: ["day-ledger", "sug-title", "meal-breakfast", "meal-lunch", "meal-dinner", "meal-snack", "meal-other"], yTolerance: 60,   // as tall as the day's entries
+  });
 });

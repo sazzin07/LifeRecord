@@ -50,7 +50,7 @@ function EntryRow({ entry, date, onEdit, onDelete }) {
   );
 }
 
-function Hydration({ day, date }) {
+function Hydration({ day, date, loading }) {
   const h = day.hydration;
   const [custom, setCustom] = useState("");
   const add = async (ml, beverage = "water") => {
@@ -71,11 +71,11 @@ function Hydration({ day, date }) {
   return (
     <Card className="p-5" data-testid="hydration-card">
       <div className="flex items-center gap-2"><Droplets className="h-4 w-4 text-sky-500" aria-hidden="true" /><h3 className="font-semibold">Hydration</h3></div>
-      <p className="mt-3 text-sm"><span className="stat-num text-2xl font-semibold" data-testid="water-total">{fmt(h.total_ml / 1000, 2)}</span> <span className="text-slate-500 dark:text-slate-400">of {h.target_ml ? fmt(h.target_ml / 1000, 1) : "–"} L total water</span></p>
+      <p className="mt-3 text-sm"><span className="stat-num text-2xl font-semibold" data-testid="water-total">{fmt(h.total_ml / 1000, 2)}</span> <span className="text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">of 0.0 L total water</span> : <>of {h.target_ml ? fmt(h.target_ml / 1000, 1) : "–"} L total water</>}</span></p>
       <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="progressbar" aria-label="Total water" aria-valuemin={0} aria-valuemax={h.target_ml || 0} aria-valuenow={h.total_ml}>
         <div className="h-full rounded-full bg-sky-500 motion-safe:transition-[width] motion-safe:duration-500" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Drinks {fmt(h.drinks_ml)} ml + water in food {fmt(h.food_water_ml)} ml. EFSA's reference counts both.</p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">Drinks 000 ml + water in food 000 ml. EFSA's reference counts both.</span> : <>Drinks {fmt(h.drinks_ml)} ml + water in food {fmt(h.food_water_ml)} ml. EFSA's reference counts both.</>}</p>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {[[150, "Cup"], [250, "Glass"], [500, "Bottle"]].map(([ml, label]) => (
           <Button key={ml} type="button" variant="outline" className="h-auto flex-col gap-0.5 py-2" onClick={() => add(ml)} data-testid={`water-add-${ml}`}>
@@ -115,8 +115,16 @@ function Hydration({ day, date }) {
   );
 }
 
-function Insights({ insights, onLog }) {
+function Insights({ insights, onLog, loading }) {
   const [all, setAll] = useState(false);
+  if (loading) {
+    return (
+      <Card className="p-5">
+        <div className="flex items-center gap-2"><Lightbulb className="h-4 w-4 text-amber-500" aria-hidden="true" /><h3 className="font-semibold">Insights</h3></div>
+        <p className="mt-3 text-sm"><span className="sk-ph">Nothing stands out today. Insights appear when something you have logged is well below its reference or above a guideline limit.</span></p>
+      </Card>
+    );
+  }
   if (!insights?.insights?.length) {
     return (
       <Card className="p-5">
@@ -158,7 +166,14 @@ function Insights({ insights, onLog }) {
   );
 }
 
-export function TodayTab({ day, insights, date, onAdd, onEdit }) {
+/** What the day view is drawn from while the real day is on its way: the same components with nothing in them, so the loading page is the loaded page. */
+export const PLACEHOLDER_DAY = {
+  entries: 1, totals: { energy_kcal: 0 }, energy_target: 2000, meals: [], upper_exceeded: [], quality: null, energy_check: null, reference: null,
+  progress: { protein_g: { intake: 0, target: 1, status: "ok" }, carbs_available_g: { intake: 0, target: 1, status: "ok" }, fat_g: { intake: 0, target: 1, status: "ok" } },
+  hydration: { total_ml: 0, target_ml: 2500, drinks_ml: 0, food_water_ml: 0, entries: [] },
+};
+
+export function TodayTab({ day, insights, date, onAdd, onEdit, loading = false, insightsLoading = false }) {
   const [toDelete, setToDelete] = useState(null);
   const ref = day.progress || {};
   const { byKey } = useNutrientMeta();
@@ -179,7 +194,7 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
+    <div className="grid gap-6 lg:grid-cols-3" {...(loading ? { "data-skeleton": "", inert: "true", "aria-hidden": "true" } : {})}>
       <div className="min-w-0 space-y-6 lg:col-span-2">
         <QuickAdd date={date} onMore={(foodId, query) => onAdd(undefined, foodId, query)} />
         <Card className="p-5 sm:p-6" data-testid="day-ledger">
@@ -193,7 +208,7 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
                 <div>
                   <p className="stat-num text-4xl font-semibold tracking-tight" data-testid="energy-total">{fmt(total ?? 0)}<span className="ml-1.5 text-base font-normal text-slate-500 dark:text-slate-400">kcal</span></p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400" data-testid="energy-left">
-                    {target ? (left >= 0 ? `${fmt(left)} left of ${fmt(target)} kcal` : `${fmt(-left)} over ${fmt(target)} kcal`) : "No energy target set"}
+                    {loading ? <span className="sk-ph">0000 left of 0000 kcal</span> : target ? (left >= 0 ? `${fmt(left)} left of ${fmt(target)} kcal` : `${fmt(-left)} over ${fmt(target)} kcal`) : "No energy target set"}
                   </p>
                 </div>
                 <Button onClick={() => onAdd()} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="add-food"><Plus className="mr-1 h-4 w-4" />Add food</Button>
@@ -202,7 +217,7 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
               <div className="mt-6 grid gap-5 sm:grid-cols-3">
                 {[["protein_g", "Protein"], ["carbs_available_g", "Carbohydrate"], ["fat_g", "Fat"]].map(([k, label]) => {
                   const p = ref[k];
-                  return p ? <RangeGauge key={k} testid={`gauge-${k}`} label={label} color={MACRO_COLORS[k]} intake={p.intake || 0} min={p.min} max={p.max} target={p.target} unit="g" missing={p.status === "no_data"} /> : null;
+                  return p ? <RangeGauge key={k} testid={`gauge-${k}`} label={label} color={MACRO_COLORS[k]} intake={p.intake || 0} min={p.min} max={p.max} target={p.target} unit="g" missing={!loading && p.status === "no_data"} loading={loading} /> : null;
                 })}
               </div>
               {day.energy_check && Math.abs(day.energy_check.difference_pct) > 10 && (
@@ -235,15 +250,15 @@ export function TodayTab({ day, insights, date, onAdd, onEdit }) {
                 </div>
               </div>
               {g ? <div className="divide-y divide-border">{g.entries.map((e) => <EntryRow key={e.id} entry={e} date={date} onEdit={onEdit} onDelete={setToDelete} />)}</div>
-                : <p className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">Nothing logged.</p>}
+                : <p className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">Nothing logged.</span> : "Nothing logged."}</p>}
             </Card>
           );
         })}
       </div>
 
       <div className="min-w-0 space-y-6">
-        <Hydration day={day} date={date} />
-        <Insights insights={insights} onLog={(id) => onAdd(undefined, id)} />
+        <Hydration day={day} date={date} loading={loading} />
+        <Insights insights={insights} onLog={(id) => onAdd(undefined, id)} loading={loading || insightsLoading} />
         {day.quality && Object.keys(day.quality).length > 0 && (
           <Card className="p-5">
             <h3 className="font-semibold">Where today's numbers come from</h3>

@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Camera, Loader2, Search, Star, ScanBarcode, ChefHat, Pencil, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
+import { Busy, Sk, SkLines } from "@/components/skeletons";
 import { useFetch } from "@/lib/useFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -314,7 +315,7 @@ export function FoodDialog({ open, onOpenChange, date, defaultMealType, entry, i
             </div>
           </div>
         )}
-        {editing && mode === "find" && !food && !error && !entry.recipe_id && entry.food_id && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+        {editing && mode === "find" && !food && !error && !entry.recipe_id && entry.food_id && <Busy label="Loading the food" className="space-y-3"><Sk className="h-10 w-full !rounded-xl" /><SkLines n={3} line="h-3.5" /></Busy>}
 
         {/* ---- recipe */}
         {(mode === "recipe" || (editing && entry?.recipe_id)) && (

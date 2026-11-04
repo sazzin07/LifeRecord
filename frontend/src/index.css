@@ -263,7 +263,7 @@ html { overflow-anchor: auto; }
    the main action. Scoped as .mny-theme, which also remaps the shared component tokens so inputs, selects and buttons inside take
    the palette. Colour never carries a meaning alone: signs, arrows and words say gain / spend / locked.
    ------------------------------------------------------------------------------------------------------------------------------ */
-.mny-theme {
+.mny-theme, .mny-dialog {
   --background: 150 28% 94%; --foreground: 160 55% 10%; --card: 0 0% 100%; --card-foreground: 160 55% 10%;
   --popover: 0 0% 100%; --popover-foreground: 160 55% 10%; --muted: 150 22% 90%; --muted-foreground: 156 16% 32%;
   --border: 152 18% 80%; --input: 152 18% 72%; --ring: 160 80% 24%; --accent: 150 28% 90%; --accent-foreground: 160 55% 10%;
@@ -279,7 +279,7 @@ html { overflow-anchor: auto; }
   --mny-amber: #8a3b0a; --mny-amber-tint: rgba(245, 158, 11, 0.16);
   color: var(--mny-text); caret-color: var(--mny-green); scrollbar-color: rgba(8, 90, 56, 0.35) transparent;
 }
-.dark .mny-theme {
+.dark .mny-theme, .dark .mny-dialog {
   --background: 156 60% 5%; --foreground: 150 35% 92%; --card: 158 45% 9%; --card-foreground: 150 35% 92%;
   --popover: 158 48% 8%; --popover-foreground: 150 35% 92%; --muted: 158 32% 14%; --muted-foreground: 152 16% 68%;
   --border: 154 26% 22%; --input: 154 26% 28%; --ring: 156 70% 52%; --accent: 158 34% 15%; --accent-foreground: 150 35% 92%;
@@ -295,8 +295,11 @@ html { overflow-anchor: auto; }
   --mny-amber: #f6b94b; --mny-amber-tint: rgba(246, 185, 75, 0.14);
   scrollbar-color: rgba(167, 243, 208, 0.26) transparent;
 }
-.mny-theme ::selection { background: var(--mny-green-tint); color: inherit; }
-.mny-theme :focus-visible { outline: 2px solid var(--mny-green); outline-offset: 2px; }
+.mny-theme ::selection, .mny-dialog ::selection { background: var(--mny-green-tint); color: inherit; }
+.mny-theme :focus-visible, .mny-dialog :focus-visible { outline: 2px solid var(--mny-green); outline-offset: 2px; }
+/* A Money dialog (transfer, budgets, a place): it renders in a portal outside .mny-theme, so it takes the same tokens itself. */
+.mny-dialog { background: var(--mny-surface); border: 1px solid var(--mny-line); border-radius: 1.5rem; box-shadow: var(--mny-shadow), 0 30px 60px -30px rgba(0, 0, 0, 0.5); }
+.mny-dialog [data-radix-dialog-title], .mny-dialog h2 { color: var(--mny-text); }
 .mny-stage { position: relative; isolation: isolate; background: var(--mny-lights), var(--mny-bg); border: 1px solid var(--mny-line); border-radius: 1.75rem; padding: 0.75rem; }
 @media (min-width: 640px) { .mny-stage { padding: 1.25rem; } }
 @media (min-width: 1024px) { .mny-stage { padding: 1.5rem; } }
@@ -321,7 +324,7 @@ html { overflow-anchor: auto; }
 .mny-pill.sm { height: 1.9rem; padding: 0 0.8rem; font-size: 0.75rem; }
 .mny-cta, .mny-cta:hover:not(:disabled) { background: var(--mny-grad); color: var(--mny-on-grad); border-color: transparent; font-weight: 600; }
 .mny-cta:hover:not(:disabled) { filter: brightness(1.06); }
-.mny-theme .mny-field { border-radius: 9999px; background: var(--mny-surface-2); border-color: var(--mny-line); }
+.mny-theme .mny-field, .mny-dialog .mny-field { border-radius: 9999px; background: var(--mny-surface-2); border-color: var(--mny-line); }
 .mny-icon-btn { display: inline-grid; place-items: center; height: 2rem; width: 2rem; border-radius: 9999px; color: var(--mny-muted); transition: background-color 160ms, color 160ms; }
 .mny-icon-btn:hover { background: var(--mny-surface-2); color: var(--mny-text); }
 .mny-icon-btn.danger:hover { color: var(--mny-neg); }
@@ -353,14 +356,15 @@ html { overflow-anchor: auto; }
 /* Skeleton by the real markup. A part of the page whose data is on its way is drawn exactly as it will be (same elements, same text size), inside a
    [data-skeleton] wrapper; the figures and lines that depend on data (.mny-num, .sk-ph) keep their box and lose their ink, and a sweep runs over them.
    The text in them is a stand-in of the right length, never real: the wrapper is also `inert` and its status is announced once. */
-[data-skeleton] .mny-num, [data-skeleton] .sk-ph {
+[data-skeleton] { --sk-ink: currentColor; }
+[data-skeleton] .mny-num, [data-skeleton] .stat-num, [data-skeleton] .sk-ph {
   position: relative; display: inline-block; max-width: 100%; overflow: hidden; vertical-align: top; border-radius: 0.375rem; user-select: none;
   color: transparent !important; background: color-mix(in srgb, var(--mny-text) 9%, transparent);
 }
-[data-skeleton] .mny-num::after, [data-skeleton] .sk-ph::after {
+[data-skeleton] .mny-num::after, [data-skeleton] .stat-num::after, [data-skeleton] .sk-ph::after {
   content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sk-sweep 1.5s ease-in-out infinite;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
 }
-.dark [data-skeleton] .mny-num::after, .dark [data-skeleton] .sk-ph::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent); }
-@media (prefers-reduced-motion: reduce) { [data-skeleton] .mny-num::after, [data-skeleton] .sk-ph::after { animation: none; display: none; } }
-.no-anim [data-skeleton] .mny-num::after, .no-anim [data-skeleton] .sk-ph::after { animation: none; display: none; }
+.dark [data-skeleton] .mny-num::after, .dark [data-skeleton] .stat-num::after, .dark [data-skeleton] .sk-ph::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent); }
+@media (prefers-reduced-motion: reduce) { [data-skeleton] .mny-num::after, [data-skeleton] .stat-num::after, [data-skeleton] .sk-ph::after { animation: none; display: none; } }
+.no-anim [data-skeleton] .mny-num::after, .no-anim [data-skeleton] .stat-num::after, .no-anim [data-skeleton] .sk-ph::after { animation: none; display: none; }

@@ -333,8 +333,9 @@ test.describe("Groceries kitchen", () => {
     // Clear before the app boots on every load, so a warm-up from the previous page cannot refill it
     await page.addInitScript(() => Object.keys(localStorage).filter((k) => k.startsWith("lm_cache:")).forEach((k) => localStorage.removeItem(k)));
     await page.goto("/groceries");
-    await expect(page.getByLabel("Loading groceries")).toBeVisible();
-    await expect(page.getByText("Items in stock")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Loading what to use soon")).toBeAttached();   // each section has its own placeholder
+    await expect(page.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 });
+    await expect(page.getByText("Items in stock")).toBeVisible();
 
     // Leave and come back: the last-seen data is there immediately, long before the 1.5s responses arrive
     await page.getByTestId("nav-tasks").click();
@@ -351,7 +352,8 @@ test.describe("Groceries kitchen", () => {
   test("signing out clears the cached page data", async ({ authenticatedPage: page }) => {
     await page.goto("/groceries");
     await expect(page.getByText("Items in stock")).toBeVisible();
-    expect(await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")))).toBe(true);
+    await expect(page.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 });   // the cache is written when every section has its data
+    await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")))).toBe(true);
     await page.getByTestId("logout-btn").click();
     await page.waitForURL(/login/);
     // the page may still be settling after the redirect, so retry until the cache is gone

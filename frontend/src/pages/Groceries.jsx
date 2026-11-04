@@ -23,7 +23,8 @@ import { BudgetField } from "./groceries/BudgetField";
 import { CatalogTab } from "./groceries/CatalogTab";
 import { useAuth } from "@/context/AuthContext";
 import { readCache, writeCache } from "@/lib/swrCache";
-import { fetchGroceries, GROCERIES_CACHE_KEY, watchGroceries } from "@/lib/groceriesData";
+import { GROCERY_PARTS, GROCERIES_CACHE_KEY, watchGroceries } from "@/lib/groceriesData";
+import { Busy, ErrorBlock, Sk, SkChart, SkLines, SkRows } from "@/components/skeletons";
 import { KitchenTab } from "./groceries/KitchenTab";
 import { toast } from "sonner";
 import {
@@ -261,7 +262,7 @@ function PriceHistoryDialog({ item, open, setOpen }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Price history: {item?.name}</DialogTitle>
         </DialogHeader>
-        {loading ? <p className="text-sm text-slate-500 py-8 text-center">Loading...</p> : (
+        {loading ? <Busy label="Loading the price history" className="mt-2 space-y-3"><Sk className="h-4 w-56" /><SkChart height={220} /><SkLines n={3} line="h-3" /></Busy> : (
           <div className="mt-2">
             {history?.cheapest ? (
               <p className="text-sm text-slate-500 mb-3">Cheapest recently: <span className="font-semibold text-slate-700 dark:text-slate-200">{history.cheapest.store}</span> at {eur(history.cheapest.price)}</p>
@@ -359,11 +360,30 @@ function RecurringDialog({ open, setOpen, onSave, editing }) {
   );
 }
 
-function TabSkeleton() {
+/** What each tab needs before it can draw: a section shows its placeholder only until ITS requests are back. */
+const TAB_NEEDS = {
+  storage: ["locations", "inventory"],
+  shopping: ["shopping", "suggestions", "recurring"],
+  catalog: ["products", "inventory", "shopping"],
+  kitchen: ["recipeIdeas", "appliances", "shopping"],
+};
+
+/** A tab's placeholder, with the same grid and card sizes as the tab itself. */
+function TabSkeleton({ tab }) {
+  const tiles = <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <Sk key={i} className="h-[68px] !rounded-2xl" />)}</div>;
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading groceries">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-[68px] rounded-2xl" />)}</div>
-      <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <div key={i} className="skeleton h-72 rounded-2xl" />)}</div>
+    <div className="space-y-4" role="status" aria-busy="true" aria-label={`Loading ${tab}`}>
+      {tab === "shopping" ? (
+        <div className="flex flex-col gap-5 lg:flex-row">
+          <div className="space-y-4 lg:w-64"><Sk className="h-40 !rounded-2xl" /><Sk className="h-28 !rounded-2xl" /></div>
+          <div className="min-w-0 flex-1"><Card className="p-4"><SkRows n={6} lead="square" /></Card></div>
+        </div>
+      ) : (
+        <>
+          {tiles}
+          <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <Card key={i} className="p-5"><Sk className="mb-4 h-4 w-40" /><SkRows n={4} lead="square" /></Card>)}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -384,7 +404,9 @@ export default function Groceries() {
   const [inventory, setInventory] = useState(cached?.inventory ?? []);
   const [shopping, setShopping] = useState(cached?.shopping ?? null);
   const [loading, setLoading] = useState(!cached);
-  const [ready, setReady] = useState(!!cached);
+  // Which pieces of the page have arrived (all of them when the last-seen copy is on screen) and which failed to.
+  const [have, setHave] = useState(() => (cached ? Object.fromEntries(Object.keys(GROCERY_PARTS).map((k) => [k, true])) : {}));
+  const [failed, setFailed] = useState({});
   const [selectedListId, setSelectedListId] = useState(cached?.selectedListId ?? "");
   const [suggestions, setSuggestions] = useState(cached?.suggestions ?? []);
   const [recurring, setRecurring] = useState(cached?.recurring ?? []);
@@ -409,29 +431,35 @@ export default function Groceries() {
   const [editingRecurring, setEditingRecurring] = useState(null);
   const [deleteRecurringId, setDeleteRecurringId] = useState(null);
 
+  const setters = useMemo(() => ({
+    inventory: setInventory, shopping: setShopping, lowStock: setLowStock, suggestions: setSuggestions, recurring: setRecurring,
+    locations: setLocations, products: setProducts, recipeIdeas: setRecipeIdeas, appliances: setAppliances,
+  }), []);
+  // Every piece is its own request: each one lands in the page the moment it is back, so a slow one never holds the others.
   const load = useCallback(async () => {
+    const fresh = {};
+    let listId = selectedListId;
     try {
-      const data = await fetchGroceries(selectedListId);
-      setProducts(data.products);
-      setRecipeIdeas(data.recipeIdeas);
-      setAppliances(data.appliances);
-      setLocations(data.locations);
-      setInventory(data.inventory);
-      setShopping(data.shopping);
-      setLowStock(data.lowStock);
-      setSuggestions(data.suggestions);
-      setRecurring(data.recurring);
-      let listId = selectedListId;
-      if (data.shopping?.lists?.length && !listId) {
-        const active = data.shopping.lists.find((l) => !l.archived);
-        listId = active?.id || data.shopping.lists[0].id;
-        setSelectedListId(listId);
-      }
-      setSelectedIds(new Set((data.shopping?.items || []).filter((i) => i.selected).map((i) => i.id)));
-      writeCache(user?.id, GROCERIES_CACHE_KEY, { ...data, selectedListId: listId });
-      setReady(true);
+      await Promise.all(Object.keys(GROCERY_PARTS).map(async (k) => {
+        try {
+          const data = await GROCERY_PARTS[k](selectedListId);
+          fresh[k] = data;
+          setters[k](data);
+          setHave((h) => (h[k] ? h : { ...h, [k]: true }));
+          setFailed((f) => (f[k] ? { ...f, [k]: false } : f));
+          if (k === "shopping") {
+            if (data?.lists?.length && !listId) {
+              const active = data.lists.find((l) => !l.archived);
+              listId = active?.id || data.lists[0].id;
+              setSelectedListId(listId);
+            }
+            setSelectedIds(new Set((data?.items || []).filter((i) => i.selected).map((i) => i.id)));
+          }
+        } catch { setFailed((f) => ({ ...f, [k]: true })); }
+      }));
+      if (Object.keys(GROCERY_PARTS).every((k) => k in fresh)) writeCache(user?.id, GROCERIES_CACHE_KEY, { ...fresh, selectedListId: listId });
     } finally { setLoading(false); }
-  }, [selectedListId, user?.id]);
+  }, [selectedListId, user?.id, setters]);
 
   useEffect(() => {
     // With cached data on screen the refresh is silent; only a cold start shows the loading state.
@@ -644,10 +672,12 @@ export default function Groceries() {
           <TabsTrigger value="kitchen" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ChefHat className="h-4 w-4" />Kitchen</TabsTrigger>
         </TabsList>
         <TabsContent value={tab} className="mt-6">
-          {!ready ? (
-            <TabSkeleton />
+          {tab !== "overview" && tab !== "shopping" && !TAB_NEEDS[tab].every((k) => have[k]) ? (
+            TAB_NEEDS[tab].some((k) => failed[k] && !have[k]) ? <ErrorBlock what={tab} onRetry={load} /> : <TabSkeleton tab={tab} />
+          ) : tab === "shopping" && !TAB_NEEDS.shopping.every((k) => have[k]) ? (
+            TAB_NEEDS.shopping.some((k) => failed[k] && !have[k]) ? <ErrorBlock what="the shopping lists" onRetry={load} /> : <TabSkeleton tab="shopping" />
           ) : tab === "overview" ? (
-            <OverviewTab lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
+            <OverviewTab have={have} failed={failed} onRetry={load} lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
               onOpenSpace={(id) => { if (id) { setSelectedSpaceId(id); setTab("storage"); } }}
               onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
           ) : tab === "catalog" ? (

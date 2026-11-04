@@ -3,8 +3,10 @@
     python tools/backup.py --dest D:\\Backups\\LifeRecord            # one backup now, then prune old ones
     python tools/backup.py --dest ... --daily 14 --weekly 8         # retention (these are the defaults)
     python tools/backup.py --dest ... --no-uploads                  # database only
+    python tools/backup.py --dest ... --encrypt none                # a plain .zip (default: encrypted with Windows DPAPI)
 
-What goes into liferecord-YYYYMMDD-HHMMSS.zip:
+What goes into liferecord-YYYYMMDD-HHMMSS.zip (by default the whole archive is then encrypted with Windows DPAPI into
+liferecord-YYYYMMDD-HHMMSS.zip.dpapi: only this Windows account on this PC can open it; tools/restore_check.py does that itself):
   liferecord.sql   a consistent dump (mysqldump --single-transaction) of the database named by DATABASE_NAME
   storage/...      the uploaded files exactly as stored, so still encrypted: useless without UPLOAD_ENCRYPTION_KEY
   MANIFEST.json    when, which database, row counts per table taken in the same snapshot, a hash of the dump
@@ -33,7 +35,7 @@ HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parent / "backend"
 sys.path.insert(0, str(BACKEND))
 
-NAME_RE = re.compile(r"^liferecord-(\d{8})-(\d{6})\.zip$")
+NAME_RE = re.compile(r"^liferecord-(\d{8})-(\d{6})\.zip(\.dpapi)?$")
 MYSQL_BIN = Path(r"C:\Program Files\MySQL\MySQL Server 8.4\bin")
 
 
@@ -94,12 +96,23 @@ def snapshot_counts(user: str, password: str, database: str):
     return conn, counts
 
 
+def log_line(dest: Path, ok: bool, message: str) -> None:
+    """One line per run in <dest>/backup.log, so a scheduled run that failed in the night leaves a trace (never a secret)."""
+    try:
+        stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(dest / "backup.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{stamp} {'OK  ' if ok else 'FAIL'} {message.strip().splitlines()[-1] if message.strip() else ''}\n")
+    except OSError:
+        pass
+
+
 def main(argv) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dest", required=True, help="folder for the backups (outside the project, ideally another drive)")
     ap.add_argument("--daily", type=int, default=14, help="keep the latest backup of each of the last N days")
     ap.add_argument("--weekly", type=int, default=8, help="then the latest of each week for N weeks")
     ap.add_argument("--no-uploads", action="store_true", help="database only")
+    ap.add_argument("--encrypt", choices=["dpapi", "none"], default="dpapi", help="dpapi (default): only this Windows account can open the backup; none: a plain zip")
     args = ap.parse_args(argv)
 
     dest = Path(args.dest).resolve()
@@ -108,7 +121,16 @@ def main(argv) -> int:
         print("Refusing to write backups inside the project folder (they would be committed or lost with it).", file=sys.stderr)
         return 2
     dest.mkdir(parents=True, exist_ok=True)
+    try:
+        code, message = make_backup(args, dest)
+    except Exception as exc:  # noqa: BLE001 - the scheduler must get a log line whatever went wrong
+        code, message = 1, f"{type(exc).__name__}: {exc}"
+    print(message, file=sys.stderr if code else sys.stdout)
+    log_line(dest, code == 0, message)
+    return code
 
+
+def make_backup(args, dest: Path):
     user, password = admin_login()
     database = os.environ.get("DATABASE_NAME", "liferecord")
     storage = Path(os.environ.get("STORAGE_DIR", str(BACKEND / "storage")))
@@ -128,8 +150,7 @@ def main(argv) -> int:
             conn.rollback()
             conn.close()
         if run.returncode != 0 or not sql_path.exists():
-            print("mysqldump failed:\n" + (run.stderr or "")[-1500:], file=sys.stderr)
-            return 1
+            return 1, "mysqldump failed:\n" + (run.stderr or "")[-1500:]
         digest = hashlib.sha256(sql_path.read_bytes()).hexdigest()
 
         files = []
@@ -138,20 +159,28 @@ def main(argv) -> int:
         manifest = {"tool": "backup.py", "format": 1, "created_at": now.isoformat(), "database": database,
                     "tables": counts, "rows": sum(counts.values()), "sql_sha256": digest, "files": len(files)}
 
-        partial = dest / f".{name}.partial"
-        with zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED) as zf:
+        built = Path(tmp) / name
+        with zipfile.ZipFile(built, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(sql_path, "liferecord.sql")
             for f in files:
                 zf.write(f, "storage/" + f.relative_to(storage).as_posix())
             zf.writestr("MANIFEST.json", json.dumps(manifest, indent=1))
+        if args.encrypt == "dpapi":
+            import local_secrets
+            name += ".dpapi"
+            partial = dest / f".{name}.partial"
+            local_secrets.encrypt_file(built, partial)
+        else:
+            partial = dest / f".{name}.partial"
+            shutil.copyfile(built, partial)
         partial.replace(dest / name)  # a half-written archive never carries a final name
 
     for old in plan_retention([p.name for p in dest.iterdir()], now, args.daily, args.weekly):
         (dest / old).unlink()
         print(f"pruned {old}")
     size = (dest / name).stat().st_size
-    print(f"Backup written: {dest / name} ({size / 1024 / 1024:.1f} MB; {len(counts)} tables, {manifest['rows']} rows, {len(files)} files)")
-    return 0
+    enc = "encrypted with Windows DPAPI" if args.encrypt == "dpapi" else "NOT encrypted"
+    return 0, f"Backup written: {dest / name} ({size / 1024 / 1024:.1f} MB, {enc}; {len(counts)} tables, {manifest['rows']} rows, {len(files)} files)"
 
 
 if __name__ == "__main__":

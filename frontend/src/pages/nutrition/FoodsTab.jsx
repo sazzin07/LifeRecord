@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Busy, SkRows } from "@/components/skeletons";
+import { Busy, Sk, SkLines, SkRows } from "@/components/skeletons";
 import { ArrowLeftRight, CalendarPlus, ChefHat, Flame, Loader2, Pencil, Plus, Search, ShoppingCart, Star, Trash2, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -74,9 +74,10 @@ function FoodDetail({ id, onClose, onLog, onPlan }) {
     <Dialog open={!!id} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-h-[88vh] max-w-xl overflow-y-auto" data-testid="food-detail">
         <DialogHeader>
-          <DialogTitle className="pr-6 leading-snug">{food ? food.name : "Loading…"}</DialogTitle>
+          <DialogTitle className="pr-6 leading-snug">{food ? food.name : <><span className="sr-only">Loading the food</span><Sk className="h-5 w-48 max-w-full" /></>}</DialogTitle>
           <DialogDescription>{food ? <span className="flex flex-wrap items-center gap-2"><QualityBadge quality={food.quality} /><span>{food.brand ? `${food.brand} · ` : ""}{food.data_version}</span></span> : "Nutrition per 100 g"}</DialogDescription>
         </DialogHeader>
+        {!food && <Busy label="Loading the nutrients" className="space-y-4"><SkLines n={2} line="h-3" />{[0, 1].map((i) => <div key={i} className="space-y-2"><Sk className="h-4 w-40" /><SkLines n={4} line="h-3.5" /></div>)}</Busy>}
         {food && (
           <div className="space-y-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">Values per 100 g. {food.completeness.reported} of {food.completeness.of} tracked nutrients are reported by this source; the rest show "not reported", which is not the same as zero.</p>

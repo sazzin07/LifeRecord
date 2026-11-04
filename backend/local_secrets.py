@@ -55,11 +55,11 @@ def _blob(data: bytes) -> _Blob:
     return _Blob(len(data), ctypes.cast(ctypes.create_string_buffer(data, len(data)), ctypes.POINTER(ctypes.c_char)))
 
 
-def _dpapi(fn_name: str, data: bytes) -> bytes:
+def _dpapi(fn_name: str, data: bytes, entropy: bytes = _ENTROPY) -> bytes:
     if sys.platform != "win32":
         raise SecretsError("The encrypted secrets store needs Windows DPAPI; use environment variables on this system.")
     crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
-    src, entropy, out = _blob(data), _blob(_ENTROPY), _Blob()
+    src, entropy, out = _blob(data), _blob(entropy), _Blob()
     fn = getattr(crypt32, fn_name)
     ok = fn(ctypes.byref(src), None, ctypes.byref(entropy), None, None, 0, ctypes.byref(out))
     if not ok:
@@ -68,6 +68,41 @@ def _dpapi(fn_name: str, data: bytes) -> bytes:
         return ctypes.string_at(out.pbData, out.cbData)
     finally:
         kernel32.LocalFree(out.pbData)
+
+
+_BACKUP_ENTROPY = b"LifeRecord/backup/v1"
+_BACKUP_MAGIC = b"LRBK1\n"
+_CHUNK = 8 * 1024 * 1024
+
+
+def encrypt_file(src: Path, dest: Path) -> None:
+    """Encrypt a file with DPAPI, 8 MiB at a time, so a large backup never has to fit in memory. Only this Windows account on this
+    machine can open the result (the same protection as the secrets store, with its own entropy)."""
+    with open(src, "rb") as fin, open(dest, "wb") as fout:
+        fout.write(_BACKUP_MAGIC)
+        while True:
+            chunk = fin.read(_CHUNK)
+            if not chunk:
+                break
+            blob = _dpapi("CryptProtectData", chunk, _BACKUP_ENTROPY)
+            fout.write(len(blob).to_bytes(8, "big"))
+            fout.write(blob)
+
+
+def decrypt_file(src: Path, dest: Path) -> None:
+    """The reverse of encrypt_file. Raises SecretsError when the file is not one of ours, is damaged, or belongs to another Windows user."""
+    with open(src, "rb") as fin, open(dest, "wb") as fout:
+        if fin.read(len(_BACKUP_MAGIC)) != _BACKUP_MAGIC:
+            raise SecretsError("This is not an encrypted Life Record backup.")
+        while True:
+            head = fin.read(8)
+            if not head:
+                break
+            size = int.from_bytes(head, "big")
+            blob = fin.read(size)
+            if len(head) != 8 or len(blob) != size:
+                raise SecretsError("The encrypted backup is damaged (it ends too early).")
+            fout.write(_dpapi("CryptUnprotectData", blob, _BACKUP_ENTROPY))
 
 
 def read_store(path: Optional[Path] = None) -> dict:

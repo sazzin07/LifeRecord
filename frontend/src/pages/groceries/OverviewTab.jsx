@@ -3,6 +3,7 @@ import { ArrowRight, Check, ChefHat, Clock, Plus, Refrigerator, ShoppingCart, Tr
 import { Card, EmptyState } from "@/components/common";
 import { eur } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Resolve, Sk, SkRows } from "@/components/skeletons";
 import { cn } from "@/lib/utils";
 import { CatIcon, daysUntil, expiryLabel, locationOf, quantityText } from "./shared";
 
@@ -12,13 +13,14 @@ const TONES = {
   slate: "bg-slate-100 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300",
 };
 
-function Stat({ icon: Icon, label, value, tone, onClick }) {
+function Stat({ icon: Icon, label, value, tone, onClick, loading }) {
+  // While its data is on the way the tile is the real one with a figure-sized placeholder, so nothing moves when the number arrives.
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" onClick={onClick} disabled={loading} aria-hidden={loading || undefined} tabIndex={loading ? -1 : undefined} data-skeleton={loading ? "" : undefined}
       className="group flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", tone || "bg-accent text-accent-foreground")}><Icon className="h-5 w-5" /></span>
       <span className="min-w-0">
-        <span className="block stat-num text-xl font-extrabold leading-none">{value}</span>
+        <span className="block stat-num text-xl font-extrabold leading-none">{loading ? <span className="sk-ph">00</span> : value}</span>
         <span className="mt-1 block truncate text-xs text-muted-foreground">{label}</span>
       </span>
     </button>
@@ -40,7 +42,10 @@ function Section({ title, sub, children, action }) {
   );
 }
 
-export function OverviewTab({ inventory, locations, lowStock, shopping, recipeIdeas = [], onOpenSpace, onAddToList, setTab }) {
+export function OverviewTab({ inventory, locations, lowStock, shopping, recipeIdeas = [], onOpenSpace, onAddToList, setTab, have = {}, failed = {}, onRetry }) {
+  // Each section waits only for the data it shows.
+  const wait = (...keys) => !keys.every((k) => have[k]);
+  const broke = (...keys) => keys.some((k) => failed[k] && !have[k]);
   const useSoon = useMemo(
     () => inventory
       .filter((g) => Number(g.quantity) > 0 && (daysUntil(g.expiration) ?? 99) <= 7)
@@ -67,15 +72,28 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={Refrigerator} label="Items in stock" value={inventory.length} onClick={() => setTab("storage")} />
-        <Stat icon={Clock} label="Use soon" value={useSoon.length}
+        <Stat icon={Refrigerator} label="Items in stock" value={inventory.length} loading={wait("inventory")} onClick={() => setTab("storage")} />
+        <Stat icon={Clock} label="Use soon" value={useSoon.length} loading={wait("inventory")}
           tone={urgent ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300" : undefined} onClick={() => setTab("storage")} />
-        <Stat icon={TrendingDown} label="Running low" value={lowStock.length}
+        <Stat icon={TrendingDown} label="Running low" value={lowStock.length} loading={wait("lowStock")}
           tone={lowStock.length ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200" : undefined} onClick={() => setTab("shopping")} />
-        <Stat icon={ShoppingCart} label="Active lists" value={activeLists} onClick={() => setTab("shopping")} />
+        <Stat icon={ShoppingCart} label="Active lists" value={activeLists} loading={wait("shopping")} onClick={() => setTab("shopping")} />
       </div>
 
-      {money.reliable && (
+      {wait("inventory") && (
+        <div className="grid gap-3 sm:grid-cols-2" data-skeleton="" aria-hidden="true">
+          {[0, 1].map((i) => (
+            <Card key={i} className="flex items-center gap-3 p-4">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><Wallet className="h-5 w-5" /></span>
+              <div className="min-w-0">
+                <p className="stat-num text-xl font-extrabold leading-none">0000</p>
+                <p className="mt-1 text-xs text-muted-foreground"><span className="sk-ph">Food in stock, from 00 of 00 items with a price</span></p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {!wait("inventory") && money.reliable && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Card className="flex items-center gap-3 p-4">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><Wallet className="h-5 w-5" /></span>
@@ -94,7 +112,23 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
         </div>
       )}
 
-      {ideas.length > 0 && (
+      {wait("recipeIdeas") && (
+        <Section title="Cook with what you have" sub="Best matches for your stock, favouring food that is about to expire.">
+          <div className="grid gap-3 md:grid-cols-3" data-skeleton="" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-2xl border border-border p-3">
+                <span className="flex items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground"><ChefHat className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold"><span className="sk-ph">Recipe name here</span></span>
+                </span>
+                <span className="text-xs"><span className="sk-ph">Missing an ingredient or two</span></span>
+                <span className="text-xs"><span className="sk-ph">Uses up something</span></span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {!wait("recipeIdeas") && ideas.length > 0 && (
         <Section title="Cook with what you have" sub="Best matches for your stock, favouring food that is about to expire."
           action={<Button variant="ghost" size="sm" onClick={() => setTab("kitchen")}>All recipes</Button>}>
           <div className="grid gap-3 md:grid-cols-3">
@@ -117,6 +151,7 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section title="Use these soon" sub="Soonest first. Tap one to open the space it is in.">
+          <Resolve loading={wait("inventory", "locations")} error={broke("inventory", "locations")} onRetry={onRetry} label="Loading what to use soon" what="what to use soon" skeleton={<SkRows n={3} lead="square" rowClass="py-2" />}>
           {useSoon.length === 0 ? (
             <EmptyState icon={Check} title="Nothing about to expire" sub="Everything has at least a week left." />
           ) : (
@@ -141,10 +176,12 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
               })}
             </ul>
           )}
+          </Resolve>
         </Section>
 
         <Section title="Running low" sub="Add what you need to the selected shopping list."
           action={<Button variant="ghost" size="sm" onClick={() => setTab("shopping")}>Open lists</Button>}>
+          <Resolve loading={wait("lowStock")} error={broke("lowStock")} onRetry={onRetry} label="Loading what is running low" what="what is running low" skeleton={<SkRows n={3} lead="square" rowClass="py-2" />}>
           {lowStock.length === 0 ? (
             <EmptyState icon={Check} title="Stocked up" sub="Nothing is below its low-stock threshold." />
           ) : (
@@ -168,10 +205,12 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
               })}
             </ul>
           )}
+          </Resolve>
         </Section>
       </div>
 
       <Section title="Your spaces" sub="Jump straight into the kitchen.">
+        <Resolve loading={wait("locations", "inventory")} error={broke("locations", "inventory")} onRetry={onRetry} label="Loading your spaces" what="your spaces" skeleton={<div className="flex flex-wrap gap-2">{[0, 1, 2, 3].map((i) => <Sk key={i} className="h-10 w-28 !rounded-full" />)}</div>}>
         <div className="flex flex-wrap gap-2">
           {locations.map((l) => {
             const count = inventory.filter((g) => locationOf(locations, g)?.id === l.id).length;
@@ -185,6 +224,7 @@ export function OverviewTab({ inventory, locations, lowStock, shopping, recipeId
             <Refrigerator className="mr-1.5 h-4 w-4" />Open the kitchen
           </Button>
         </div>
+        </Resolve>
       </Section>
     </div>
   );

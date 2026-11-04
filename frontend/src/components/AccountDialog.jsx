@@ -6,7 +6,6 @@ import { refreshAll } from "@/lib/useFetch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -101,45 +100,45 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-md" data-testid="account-dialog">
+      <DialogContent className="mny-dialog max-w-md" data-testid="account-dialog">
         <DialogHeader>
           <DialogTitle>{account ? "Edit place" : "Add place"}</DialogTitle>
           <DialogDescription>{account ? "Update the name and balance." : "Set money aside in a new place under the selected location."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3 mt-2">
           <div>
-            <Label className="text-xs" htmlFor="account-name">Name</Label>
-            <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" data-testid="account-name" />
+            <Label className="mny-muted text-xs" htmlFor="account-name">Name</Label>
+            <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" data-testid="account-name" className="mny-field" />
           </div>
           <div>
-            <Label className="text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? "Total balance, including sub-accounts (€)" : host ? (account ? "Balance (€)" : "Amount to set aside (€)") : "Current balance (€)"}</Label>
-            <Input id="account-balance" type="number" min={0} step="0.01" value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" />
+            <Label className="mny-muted text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? "Total balance, including sub-accounts (€)" : host ? (account ? "Balance (€)" : "Amount to set aside (€)") : "Current balance (€)"}</Label>
+            <Input id="account-balance" type="number" min={0} step="0.01" value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" className="mny-field" />
           </div>
           {host && plan.showNewMoney && (
             <div className="flex items-center gap-2">
               <Checkbox id="add-new-money" checked={!!form.add_as_new_money} onCheckedChange={(c) => setForm((f) => ({ ...f, add_as_new_money: c === true }))} data-testid="account-new-money" />
-              <Label htmlFor="add-new-money" className="text-xs">{NEW_MONEY_LABEL}</Label>
+              <Label htmlFor="add-new-money" className="mny-title text-xs">{NEW_MONEY_LABEL}</Label>
             </div>
           )}
           <p id="account-allocation" role={plan.error ? "alert" : undefined} aria-live={plan.error ? undefined : "polite"} data-testid="account-allocation"
-            className={plan.error ? "text-xs text-red-700 dark:text-red-400" : "text-xs text-slate-600 dark:text-slate-400"}>
+            className={plan.error ? "mny-neg text-xs" : "mny-muted text-xs"}>
             {plan.text || (host && !account ? `Unchecked: the money comes out of ${host.name} › ${host.favorite_place_name || "its favorite place"} (${eur(host.favorite_place_balance ?? host.unallocated_balance ?? 0)}), so its total does not change.` : "")}
           </p>
           {account?.type === "bank" && (
             <div>
-              <Label className="text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
-              <Input type="number" min={0} step="0.01" value={form.initial_balance} onChange={(e) => setForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" />
+              <Label className="mny-muted text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
+              <Input type="number" min={0} step="0.01" value={form.initial_balance} onChange={(e) => setForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" className="mny-field" />
             </div>
           )}
           <div className="flex items-center gap-2">
             <Checkbox id="is-locked" checked={!!form.is_locked} onCheckedChange={(c) => setForm((f) => ({ ...f, is_locked: c === true }))} />
-            <Label htmlFor="is-locked" className="text-xs">Locked / not freely available</Label>
+            <Label htmlFor="is-locked" className="mny-title text-xs">Locked / not freely available</Label>
           </div>
           {!account && (
             <div>
-              <Label className="text-xs">Parent location</Label>
+              <Label className="mny-muted text-xs">Parent location</Label>
               <Select value={form.parent_id} onValueChange={(v) => setForm((f) => ({ ...f, parent_id: v }))}>
-                <SelectTrigger aria-label="Parent location" data-testid="account-parent"><SelectValue placeholder="Select parent" /></SelectTrigger>
+                <SelectTrigger className="mny-field" aria-label="Parent location" data-testid="account-parent"><SelectValue placeholder="Select parent" /></SelectTrigger>
                 <SelectContent>
                   {parents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                 </SelectContent>
@@ -148,8 +147,8 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
           )}
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving || plan.error} className="bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="account-save">Save</Button>
+          <button type="button" className="mny-pill" onClick={() => setOpen(false)}>Cancel</button>
+          <button type="button" className="mny-pill mny-cta" onClick={save} disabled={saving || plan.error} data-testid="account-save">Save</button>
         </div>
       </DialogContent>
     </Dialog>

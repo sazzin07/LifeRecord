@@ -73,7 +73,7 @@ export function Coverage({ reporting, entries }) {
  * A reference RANGE drawn as a band with the intake as a marker (EFSA gives macronutrients as ranges, e.g. 20-35% of energy
  * from fat). Without a range it falls back to a bar towards the target.
  */
-export function RangeGauge({ label, color, intake, min, max, target, unit, missing, testid }) {
+export function RangeGauge({ label, color, intake, min, max, target, unit, missing, testid, loading }) {
   const hi = max ?? target ?? 0;
   const scale = Math.max(hi * 1.3, (intake || 0) * 1.08, 1);
   const pos = (v) => `${Math.min(Math.max(v / scale, 0), 1) * 100}%`;
@@ -100,8 +100,8 @@ export function RangeGauge({ label, color, intake, min, max, target, unit, missi
         )}
       </div>
       <div className="mt-1.5 flex items-center justify-between text-xs">
-        <span className={tone}>{state}</span>
-        <span className="text-slate-500 dark:text-slate-400">{hasRange ? `${fmt(min)}–${fmt(max)} ${unit}` : target ? `target ${fmt(target)} ${unit}` : ""}</span>
+        <span className={tone}>{loading ? <span className="sk-ph">In range</span> : state}</span>
+        <span className="text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">target 000 g</span> : hasRange ? `${fmt(min)}–${fmt(max)} ${unit}` : target ? `target ${fmt(target)} ${unit}` : ""}</span>
       </div>
     </div>
   );

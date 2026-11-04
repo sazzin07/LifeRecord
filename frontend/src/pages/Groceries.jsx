@@ -7,6 +7,7 @@ import {
   History, Repeat, Lightbulb, TrendingUp, Minus, LayoutDashboard, Refrigerator, BookMarked, ChefHat
 } from "lucide-react";
 import { api, eur } from "@/lib/api";
+import { currencySymbol } from "@/lib/money";
 import { refreshAll } from "@/lib/useFetch";
 import { Card, SectionHeading, EmptyState, Label, ConfidenceBadge } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -107,7 +108,7 @@ function GroceryDialog({ item, prefill, locations, defaultLocation, open, setOpe
             </Select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Price per unit (€)">
+            <Field label={`Price per unit (${currencySymbol()})`}>
               <Input type="number" inputMode="decimal" min={0} step="0.01" placeholder="Optional" value={f.price ?? ""} onChange={(e) => setF((x) => ({ ...x, price: e.target.value }))} />
             </Field>
             <Field label="Store">
@@ -167,7 +168,7 @@ function ShoppingItemDialog({ item, listId, open, setOpen, onSave }) {
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Input type="number" min={0} step="0.01" placeholder="Estimated price (€)" value={f.estimated_price} onChange={(e) => setF((x) => ({ ...x, estimated_price: e.target.value }))} />
+            <Input type="number" min={0} step="0.01" placeholder={`Estimated price (${currencySymbol()})`} value={f.estimated_price} onChange={(e) => setF((x) => ({ ...x, estimated_price: e.target.value }))} />
             <Input placeholder="Store" value={f.store || ""} onChange={(e) => setF((x) => ({ ...x, store: e.target.value }))} />
           </div>
           <Select value={f.category || "Other"} onValueChange={(v) => setF((x) => ({ ...x, category: v }))}>

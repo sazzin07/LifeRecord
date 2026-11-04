@@ -4,7 +4,8 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { SettingsProvider } from "@/context/SettingsContext";
+import { SettingsProvider, useSettings } from "@/context/SettingsContext";
+import { MotionConfig } from "framer-motion";
 import { AppShell } from "@/components/AppShell";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -59,9 +60,16 @@ function PublicOnly() {
   return <Outlet />;
 }
 
+/** One rule for every framer-motion animation in the app (D-06): they follow the system's "reduce motion" and the Animations choice in Settings. */
+function MotionRoot({ children }) {
+  const { animations } = useSettings();
+  return <MotionConfig reducedMotion={animations ? "user" : "always"}>{children}</MotionConfig>;
+}
+
 export default function App() {
   return (
     <SettingsProvider>
+      <MotionRoot>
       <AuthProvider>
         <TooltipProvider delayDuration={250}>
         <Toaster />
@@ -93,6 +101,7 @@ export default function App() {
         </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
+      </MotionRoot>
     </SettingsProvider>
   );
 }

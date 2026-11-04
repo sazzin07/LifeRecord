@@ -3,6 +3,7 @@ import { BadgeInfo } from "lucide-react";
 import { api, errorMessage, eur } from "@/lib/api";
 import { planAllocation, NEW_MONEY_LABEL } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
+import { currencyOptions, currencyStep, currencySymbol } from "@/lib/money";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +60,10 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
   // The main account whose money this place is a part of, and what saving would do to it.
   const host = account ? (account.parent_id ? parents.find((p) => p.id === account.parent_id) : null) : (parents.find((p) => p.id === form.parent_id) || parent);
   const isMain = !!account && !account.parent_id;
+  // A place always uses its main account's currency; only a main account's own currency can be chosen here.
+  const cur = (host && host.currency) || form.currency || "EUR";
+  const sym = currencySymbol(cur);
+  const step = currencyStep(cur);
   const plan = planAllocation({ account, host, amount: form.opening_balance, newMoney: form.add_as_new_money });
 
   const save = async () => {
@@ -111,9 +116,21 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
             <Input id="account-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Wallet" data-testid="account-name" className="mny-field" />
           </div>
           <div>
-            <Label className="mny-muted text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? "Total balance, including sub-accounts (€)" : host ? (account ? "Balance (€)" : "Amount to set aside (€)") : "Current balance (€)"}</Label>
-            <Input id="account-balance" type="number" min={0} step="0.01" value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" className="mny-field" />
+            <Label className="mny-muted text-xs" htmlFor="account-balance">{isMain && account.allocated_balance > 0 ? `Total balance, including sub-accounts (${sym})` : host ? (account ? `Balance (${sym})` : `Amount to set aside (${sym})`) : `Current balance (${sym})`}</Label>
+            <Input id="account-balance" type="number" min={0} step={step} value={form.opening_balance} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} placeholder="0.00" data-testid="account-balance" aria-describedby="account-allocation" className="mny-field" />
           </div>
+          {isMain && (
+            <div>
+              <Label className="mny-muted text-xs">Currency</Label>
+              <Select value={form.currency} onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}>
+                <SelectTrigger className="mny-field" aria-label="Currency" data-testid="account-currency"><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {currencyOptions().map((c) => <SelectItem key={c.code} value={c.code}>{c.code} · {c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="mny-muted mt-1 text-xs">Its places use the same one. Amounts are not converted: only how they are shown changes.</p>
+            </div>
+          )}
           {host && plan.showNewMoney && (
             <div className="flex items-center gap-2">
               <Checkbox id="add-new-money" checked={!!form.add_as_new_money} onCheckedChange={(c) => setForm((f) => ({ ...f, add_as_new_money: c === true }))} data-testid="account-new-money" />
@@ -126,7 +143,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
           </p>
           {account?.type === "bank" && (
             <div>
-              <Label className="mny-muted text-xs flex items-center gap-1">Initial bank balance (€) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
+              <Label className="mny-muted text-xs flex items-center gap-1">Initial bank balance ({sym}) <Hint label="Used to calculate money that left the bank"><span className="inline-flex"><BadgeInfo className="h-3 w-3" aria-label="More info" /></span></Hint></Label>
               <Input type="number" min={0} step="0.01" value={form.initial_balance} onChange={(e) => setForm((f) => ({ ...f, initial_balance: e.target.value }))} placeholder="0.00" className="mny-field" />
             </div>
           )}

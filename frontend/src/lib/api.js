@@ -1,3 +1,4 @@
+import { money } from "./money";
 import axios from "axios";
 import { noteServerTime, sessionKeyHeader, signProof } from "./sessionKey";
 
@@ -183,8 +184,8 @@ export function errorMessage(err, fallback) {
   return typeof detail === "string" && detail.trim() ? detail : fallback;
 }
 
-export const eur = (n) =>
-  new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" }).format(Number(n || 0));
+// Amounts in the person's main currency (the bank account's), or in the one given when the amount belongs to a particular account (F-09).
+export const eur = (n, currency) => money(n, currency);
 
 export const CATEGORY_COLORS = {
   Groceries: "#10B981", "Eating Out": "#F59E0B", Transport: "#6366F1", Shopping: "#EC4899",

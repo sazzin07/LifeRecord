@@ -16,6 +16,8 @@ import { CommandBar } from "@/components/CommandBar";
 import { QuickAdd } from "@/components/QuickAdd";
 import { QuickAddFab } from "@/components/QuickAddFab";
 import { RecurringNotice } from "@/components/RecurringNotice";
+import { api } from "@/lib/api";
+import { mainCurrencyOf, setMainCurrency } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -70,6 +72,7 @@ export function AppShell({ children }) {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [currencyTick, setCurrencyTick] = useState(0);   // bumped when the main currency changes, so every amount is drawn again
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButton = useRef(null);
   // On a wide screen the side menu is a thin strip of icons that widens over the page while the pointer (or keyboard focus) is
@@ -110,6 +113,16 @@ export function AppShell({ children }) {
     return () => { window.removeEventListener("lm:refresh", again); document.removeEventListener("visibilitychange", visible); bindServer(false); };
   }, [user?.id, bindServer]);
   const inMore = MORE_NAV.some((n) => loc.pathname === n.to || loc.pathname.startsWith(n.to + "/"));
+
+  // The main currency is the bank account's. Asked for at sign-in and after anything that refreshes the data.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let off = false;
+    const sync = () => api.get("/accounts").then(({ data }) => { if (!off && setMainCurrency(mainCurrencyOf(data))) setCurrencyTick((t) => t + 1); }).catch(() => {});
+    sync();
+    window.addEventListener("lm:refresh", sync);
+    return () => { off = true; window.removeEventListener("lm:refresh", sync); };
+  }, [user?.id]);
 
   // Once things are quiet after sign-in, download every page and warm its data, one page at a time.
   useEffect(() => {
@@ -217,7 +230,7 @@ export function AppShell({ children }) {
             ⚠️ Offline / fallback mode — backend unavailable. Showing last known data; changes won't save until reconnected.
           </div>
         )}
-        <div key={loc.pathname} className="lm-page max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-40 lg:pb-24">{children}</div>
+        <div key={`${loc.pathname}:${currencyTick}`} className="lm-page max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-40 lg:pb-24">{children}</div>
       </main>
 
       {/* Mobile bottom nav */}

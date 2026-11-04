@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, eur, errorMessage } from "@/lib/api";
+import { currencySymbol } from "@/lib/money";
 import { refreshAll } from "@/lib/useFetch";
 import { orderAccounts } from "@/lib/allocation";
 import { HandCoins, Trash2, Loader2 } from "lucide-react";
@@ -99,11 +100,11 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total (€)</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total ({currencySymbol(txn?.currency)})</label>
                 <Input type="number" step="0.01" value={f.amount ?? ""} onChange={set("amount")} className="mt-1" data-testid="edit-amount" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Your personal cost (€)</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Your personal cost ({currencySymbol(txn?.currency)})</label>
                 <Input type="number" step="0.01" value={f.personal_amount ?? ""} onChange={set("personal_amount")} className="mt-1" data-testid="edit-personal" />
               </div>
             </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur } from "@/lib/api";
+import { currencySymbol } from "@/lib/money";
 import { orderAccounts, defaultSpendAccount } from "@/lib/allocation";
 import { changeDebt, errorMessage, I, newKey, THEY, undoChange } from "@/lib/debts";
 import { refreshAll } from "@/lib/useFetch";
@@ -107,7 +108,7 @@ export function DebtDialog({ state, onClose, onDone }) {
             {startDirection && <p className="text-sm font-medium" data-testid="debt-direction-label">{startDirection === THEY ? `${person?.name} owes you` : `You owe ${person?.name}`} {eur(owed || 0)}</p>}
             {!noAmount && (
               <div>
-                <Label htmlFor="debt-amount" className="text-xs">{kind === "correct" ? "What it should be now (€)" : "Amount (€)"}</Label>
+                <Label htmlFor="debt-amount" className="text-xs">{kind === "correct" ? `What it should be now (${currencySymbol()})` : `Amount (${currencySymbol()})`}</Label>
                 <Input id="debt-amount" inputMode="decimal" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus placeholder="0.00" data-testid="debt-amount" />
               </div>
             )}

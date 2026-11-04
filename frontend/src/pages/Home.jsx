@@ -122,6 +122,7 @@ export default function Home() {
         <div className="relative">
           <p className="text-slate-300 text-sm">Total available</p>
           <div className="stat-num text-4xl md:text-5xl font-extrabold tracking-tight mt-1">{sum ? eur(sum.total_available) : <HeroFigure className="h-10 w-56 md:h-12" label={sumError ? "—" : null} />}</div>
+          {sum?.by_currency && <p className="mt-1 text-sm text-slate-300" data-testid="home-by-currency">{sum.by_currency.filter((r) => r.currency !== sum.main_currency).map((r) => `+ ${eur(r.total_available, r.currency)} in ${r.currency}`).join("  ·  ")}</p>}
           <div className="flex flex-wrap gap-6 mt-5">
             <div><Label><span className="text-slate-400">Cash</span></Label><div className="stat-num font-bold text-lg">{sum ? eur(sum.cash_available) : <HeroFigure className="h-6 w-20" label={sumError ? "—" : null} />}</div></div>
             <div><Label><span className="text-slate-400">Revolut</span></Label><div className="stat-num font-bold text-lg">{sum ? eur(sum.revolut) : <HeroFigure className="h-6 w-20" label={sumError ? "—" : null} />}</div></div>

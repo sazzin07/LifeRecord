@@ -61,6 +61,7 @@ import account_favorites
 import ai_tools_people
 import ai_tools_settings
 import debts
+import currencies
 import debts_api
 import recurring_api
 import two_factor_api
@@ -514,6 +515,7 @@ class TransferBody(BaseModel):
     from_account: str = Field(..., max_length=50)
     to_account: str = Field(..., max_length=50)
     amount: float
+    to_amount: Optional[float] = Field(default=None, gt=0, le=10_000_000_000)
     date: Optional[str] = None
     notes: str = Field(default="", max_length=2000)
 
@@ -704,6 +706,7 @@ class AccountTransferBody(BaseModel):
     from_account_id: str = Field(..., min_length=1, max_length=36)
     to_account_id: str = Field(..., min_length=1, max_length=36)
     amount: float = Field(..., gt=0)
+    to_amount: Optional[float] = Field(default=None, gt=0, le=10_000_000_000)   # what arrives, when the two places are in different currencies
     date: Optional[str] = None
     note: Optional[str] = Field(default=None, max_length=500)
 
@@ -1069,16 +1072,17 @@ async def compute_balances(db: AsyncSession, user_id: str, account_ids: List[str
         select(Account.id, Account.opening_balance).where(Account.user_id == user_id, Account.id.in_(ids))
     )).all())
 
-    async def grouped(column, *conditions):
+    async def grouped(column, *conditions, amount=Transaction.gross_amount):
         rows = await db.execute(
-            select(column, func.coalesce(func.sum(Transaction.gross_amount), 0))
+            select(column, func.coalesce(func.sum(amount), 0))
             .where(Transaction.user_id == user_id, column.in_(ids), *conditions).group_by(column))
         return {k: float(v) for k, v in rows.all()}
 
     spent = await grouped(Transaction.account, Transaction.type == "expense", Transaction.paid_by == "me")
     income = await grouped(Transaction.account, Transaction.type == "income")
     moved_out = await grouped(Transaction.from_account, Transaction.type == "transfer")
-    moved_in = await grouped(Transaction.to_account, Transaction.type == "transfer")
+    # What arrived: for a transfer between two currencies that is `to_amount`, in the receiving place's own currency.
+    moved_in = await grouped(Transaction.to_account, Transaction.type == "transfer", amount=func.coalesce(Transaction.to_amount, Transaction.gross_amount))
     # Settlements that created their own income/expense transaction are already counted above.
     settled = {k: float(v) for k, v in (await db.execute(
         select(Settlement.account, func.coalesce(func.sum(case((Settlement.direction == "in", Settlement.amount), else_=-Settlement.amount)), 0))
@@ -1088,6 +1092,52 @@ async def compute_balances(db: AsyncSession, user_id: str, account_ids: List[str
 
     return {a: round(float(openings.get(a) or 0) + income.get(a, 0) + moved_in.get(a, 0) + settled.get(a, 0)
                      - spent.get(a, 0) - moved_out.get(a, 0), 2) for a in ids}
+
+
+def main_currency_of(accounts: list) -> str:
+    """The currency of the bank account (the first top-level one), else of the first top-level account, else EUR. It is where single figures,
+    budgets and short answers are quoted; every account may still be in its own currency."""
+    top = [a for a in accounts if not a.get("parent_id")]
+    bank = next((a for a in top if a.get("type") == "bank"), None) or (top[0] if top else None)
+    return (bank.get("currency") if bank else None) or "EUR"
+
+
+def currency_figures(accounts_all: list, cur: str) -> dict:
+    """The same bank / cash / Revolut / total figures the summary gives, for the accounts in one currency."""
+    accs = [a for a in accounts_all if (a.get("currency") or "EUR") == cur]
+
+    def top(*types):
+        return round(sum(a["balance"] for a in accs if a["type"] in types and not a.get("parent_id")), 2)
+
+    def locked(t):
+        return round(sum(a["balance"] for a in accs if a["type"] == t and a.get("is_locked")), 2)
+    bank = round(sum(a["balance"] for a in accs if a["type"] == "bank"), 2)
+    cash_available = round(top("cash", "cash_place") - locked("cash_place"), 2)
+    revolut = round(top("revolut", "revolut_space") - locked("revolut_space"), 2)
+    return {"currency": cur, "bank": bank, "cash_available": cash_available, "revolut": revolut, "total_available": round(bank + cash_available + revolut, 2)}
+
+
+def arrival_amount(from_acc: Account, to_acc: Account, to_amount: Optional[float]) -> Optional[float]:
+    """What a transfer stores as `to_amount`: nothing when both places use the same currency, the amount that arrived when they differ
+    (which the person must then give: nothing is ever converted for them)."""
+    if (from_acc.currency or "EUR") == (to_acc.currency or "EUR"):
+        return None
+    if not to_amount or to_amount <= 0:
+        raise HTTPException(422, f"{from_acc.name} is in {from_acc.currency} and {to_acc.name} in {to_acc.currency}: say how much arrived in {to_acc.currency}.")
+    return round(to_amount, 2)
+
+
+async def change_main_currency(db: AsyncSession, user_id: str, main: Account, code: str) -> None:
+    """A main account and its places share one currency. It cannot change once a transfer between two currencies touches the family: that
+    transfer's two amounts would stop making sense."""
+    family = [main.id] + [i for (i,) in (await db.execute(select(Account.id).where(Account.user_id == user_id, Account.parent_id == main.id))).all()]
+    crossed = (await db.execute(select(Transaction.id).where(
+        Transaction.user_id == user_id, Transaction.type == "transfer", Transaction.to_amount.is_not(None),
+        (Transaction.from_account.in_(family)) | (Transaction.to_account.in_(family))).limit(1))).first()
+    if crossed:
+        raise HTTPException(409, "A transfer between two currencies already involves this account, so its currency cannot change.")
+    for a in (await db.execute(select(Account).where(Account.id.in_(family)))).scalars().all():
+        a.currency = code
 
 
 async def compute_account_balance(db: AsyncSession, account: str, user_id: str) -> float:
@@ -2203,9 +2253,13 @@ async def create_account(body: AccountBody, user: dict = Depends(get_current_use
             raise _over_allocation("allocation", amount, available, f"{parent.name} › {source.name}", NEW_MONEY_HINT)
     elif parent is not None:
         await account_favorites.ensure_default_place(me, db, uid, parent)  # a main account always has its favourite place
+    try:
+        cur = parent.currency if parent is not None else currencies.normalize(body.currency)   # a place always uses its main account's currency
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
     acc = Account(
         id=new_id(), user_id=uid, name=body.name, type=body.type,
-        parent_id=body.parent_id, currency=body.currency,
+        parent_id=body.parent_id, currency=cur,
         opening_balance=0 if (carved_out or parent is None) else amount,
         initial_balance=round(body.initial_balance, 2) if body.initial_balance is not None else None,
         is_locked=body.is_locked,
@@ -2250,6 +2304,13 @@ async def update_account(aid: str, body: AccountUpdate, user: dict = Depends(get
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     target_balance = updates.pop("balance", None)
     new_money = updates.pop("add_as_new_money", False)
+    if "currency" in updates:
+        try:
+            new_cur = currencies.normalize(updates.pop("currency"))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        if not acc.parent_id and new_cur != acc.currency:       # a place keeps its main account's currency, whatever is asked
+            await change_main_currency(db, uid, acc, new_cur)
     parent = await _fetch_account(db, uid, acc.parent_id) if acc.parent_id else None
     extra = []  # transfers that carry the change between two places
     favourite = await account_favorites.place_of(db, uid, parent) if parent else None
@@ -2385,6 +2446,7 @@ async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_cur
         to_acc = await account_favorites.place_of(db, uid, to_acc) or to_acc
     if from_acc.id == to_acc.id:
         raise HTTPException(400, "Source and destination must differ")
+    arrived = arrival_amount(from_acc, to_acc, body.to_amount)
     bal = await compute_account_balance(db, from_acc.id, uid)
     if cents(bal) < cents(body.amount):
         where = f"{from_acc.name} (the part that is not in a place)" if from_acc.id in before and before[from_acc.id]["main"] else from_acc.name
@@ -2392,7 +2454,7 @@ async def transfer_money(body: AccountTransferBody, user: dict = Depends(get_cur
     date = body.date or now_iso()[:10]
     txn = Transaction(
         id=new_id(), user_id=user["_id"], type="transfer",
-        gross_amount=round(body.amount, 2), personal_amount=0, reimbursable_amount=0,
+        gross_amount=round(body.amount, 2), to_amount=arrived, personal_amount=0, reimbursable_amount=0,
         description=body.note or f"Transfer to {to_acc.name}", category="Transfer",
         account=from_acc.id, from_account=from_acc.id, to_account=to_acc.id,
         date=date, month=month_of(date), created_at=now_iso(),
@@ -2529,13 +2591,16 @@ async def get_transactions(month: Optional[str] = None, start: Optional[str] = N
     stmt = select(Transaction).where(*filters).order_by(desc(Transaction.date))
     rmap = await refund_map(db, user["_id"])
     rows = (await db.execute(stmt)).scalars().all()
-    accs = (await db.execute(select(Account.id, Account.type, Account.name).where(Account.user_id == user["_id"]))).all()
+    accs = (await db.execute(select(Account.id, Account.type, Account.name, Account.currency).where(Account.user_id == user["_id"]))).all()
     account_types = {a.id: a.type for a in accs}
     names = {a.id: a.name for a in accs}  # hidden (deleted) places included, so their history keeps its names
+    currency_of = {a.id: a.currency or "EUR" for a in accs}
     out = []
     for t in rows:
         d = txn_to_dict(t, rmap, account_types)
-        d.update(account_name=names.get(t.account), from_account_name=names.get(t.from_account), to_account_name=names.get(t.to_account))
+        d.update(account_name=names.get(t.account), from_account_name=names.get(t.from_account), to_account_name=names.get(t.to_account),
+                 currency=currency_of.get(t.from_account if t.type == "transfer" else t.account, "EUR"),
+                 to_currency=currency_of.get(t.to_account) if t.type == "transfer" else None)
         out.append(d)
     if payment_method in ("cash", "card"):
         out = [t for t in out if t.get("payment_method") == payment_method]
@@ -2670,8 +2735,9 @@ async def add_transfer(body: TransferBody, user: dict = Depends(get_current_user
     date = body.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     from_id = await require_account_id(db, body.from_account, user["_id"])
     to_id = await require_account_id(db, body.to_account, user["_id"])
+    arrived = arrival_amount(await _fetch_account(db, user["_id"], from_id), await _fetch_account(db, user["_id"], to_id), body.to_amount)
     t = Transaction(id=new_id(), user_id=user["_id"], type="transfer", from_account=from_id,
-                    to_account=to_id, gross_amount=round(body.amount, 2),
+                    to_account=to_id, gross_amount=round(body.amount, 2), to_amount=arrived,
                     description=body.notes or "Transfer", date=date, month=month_of(date),
                     account=from_id, created_at=now_iso())
     db.add(t)
@@ -2758,7 +2824,11 @@ def _account_type_lookup(accounts: list) -> dict:
 @api_router.get("/analytics/summary")
 async def analytics_summary(month: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
                             user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    accounts = await get_accounts(user, db)
+    accounts_all = await get_accounts(user, db)
+    main_cur = main_currency_of(accounts_all)
+    accounts = [a for a in accounts_all if (a.get("currency") or "EUR") == main_cur]   # the figures below are in the main currency only
+    main_ids = {a["id"] for a in accounts}
+    other_ids = {a["id"] for a in accounts_all} - main_ids
     type_by_id = _account_type_lookup(accounts)
 
     def sum_by_types(*types):
@@ -2791,6 +2861,12 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
     filters = [Transaction.user_id == user["_id"]] + _date_filter(month, start, end)
     stmt = select(Transaction).where(Transaction.type == "expense").where(*filters)
     rows = (await db.execute(stmt)).scalars().all()
+    spent_elsewhere = {}                                   # spending in the other currencies: shown apart, never added to the main one
+    for t in rows:
+        if t.account in other_ids:
+            cur = next(a.get("currency") for a in accounts_all if a["id"] == t.account)
+            spent_elsewhere[cur] = round(spent_elsewhere.get(cur, 0) + float(t.gross_amount), 2)
+    rows = [t for t in rows if t.account not in other_ids]
 
     gross = personal = cash_spent = card_spent = reimbursable = 0.0
     by_cat = {}
@@ -2956,10 +3032,13 @@ async def analytics_summary(month: Optional[str] = None, start: Optional[str] = 
         "cash_available": cash_available, "cash_locked": cash_locked,
         "revolut_locked": revolut_locked, "revolut_total": revolut_total,
         "total_available": total_available, "owed_to_me": owed_to_me,
-        "total_with_owed": total_with_owed,
+        "total_with_owed": total_with_owed, "main_currency": main_cur,
+        # Only when more than one currency is in use: one block of figures per currency (nothing is converted), and what was spent in the others.
+        **({"by_currency": [currency_figures(accounts_all, c) for c in [main_cur] + sorted({(a.get("currency") or "EUR") for a in accounts_all} - {main_cur})],
+            "spent_other_currencies": spent_elsewhere} if other_ids else {}),
         "bank_initial": bank_initial, "money_left_bank": money_left_bank,
         "in_hand": in_hand, "actual_spent": actual_spent,
-        "accounts": accounts,
+        "accounts": accounts_all,
         "gross": round(gross, 2), "personal": round(personal, 2),
         "reimbursable": round(reimbursable, 2),
         "cash_spent": round(cash_spent, 2), "card_spent": round(card_spent, 2),

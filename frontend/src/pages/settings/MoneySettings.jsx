@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Lock, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { api, CATEGORY_COLORS, eur, errorMessage } from "@/lib/api";
+import { currencySymbol } from "@/lib/money";
 import { useSettings } from "@/context/SettingsContext";
 import { refreshAll } from "@/lib/useFetch";
 import { AccountDialog, buildAccountTree, canHaveSubPlaces } from "@/components/AccountDialog";
@@ -156,7 +157,7 @@ function Categories({ cats }) {
                 <Input id="cat-name" autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} className="mt-1" maxLength={60} data-testid="category-edit-name" />
               </div>
               <div>
-                <label htmlFor="cat-budget" className="text-sm font-medium">Monthly budget (€)</label>
+                <label htmlFor="cat-budget" className="text-sm font-medium">Monthly budget ({currencySymbol()})</label>
                 <Input id="cat-budget" type="number" min={0} step="0.01" inputMode="decimal" placeholder="No budget" value={edit.budget} onChange={(e) => setEdit({ ...edit, budget: e.target.value })} className="mt-1" data-testid="category-edit-budget" />
               </div>
               <p role="alert" className="min-h-[1.25rem] text-sm text-red-700 dark:text-red-400">{editError}</p>

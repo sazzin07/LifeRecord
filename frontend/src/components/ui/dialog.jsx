@@ -23,11 +23,20 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
+const DialogContent = React.forwardRef(({ className, children, onOpenAutoFocus, onCloseAutoFocus, ...props }, ref) => {
+  // A dialog opened from state (not from a Trigger) has nothing for Radix to return the focus to: remember what had it as the dialog opens, and give it back on close.
+  const opener = React.useRef(null);
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onOpenAutoFocus={(e) => { opener.current = document.activeElement; onOpenAutoFocus?.(e); }}
+      onCloseAutoFocus={(e) => {
+        onCloseAutoFocus?.(e);
+        const back = opener.current;
+        if (!e.defaultPrevented && back && back !== document.body && document.contains(back)) { e.preventDefault(); back.focus(); }
+      }}
       className={cn(
         "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-1.5rem)] max-w-lg max-h-[92vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-2xl",
         className
@@ -41,7 +50,8 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+  );
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

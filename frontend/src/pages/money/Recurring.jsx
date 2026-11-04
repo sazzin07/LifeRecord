@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pause, Pencil, Play, Plus, Repeat, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur, errorMessage } from "@/lib/api";
+import { currencySymbol } from "@/lib/money";
 import { refreshAll, useFetch } from "@/lib/useFetch";
 import { Resolve, Sk } from "@/components/skeletons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -72,7 +73,7 @@ export function Recurring({ accounts, categories }) {
                     </p>
                     {r.note && <p role="status" className="mny-amber mt-0.5 text-xs">{r.note}</p>}
                   </div>
-                  <p className={cn("mny-num shrink-0 text-sm font-semibold", r.kind === "income" ? "mny-green" : "mny-title")}>{r.kind === "income" ? "+" : ""}{eur(r.amount)}</p>
+                  <p className={cn("mny-num shrink-0 text-sm font-semibold", r.kind === "income" ? "mny-green" : "mny-title")}>{r.kind === "income" ? "+" : ""}{eur(r.amount, accounts.find((a) => a.id === r.account)?.currency)}</p>
                   <div className="flex items-center gap-0.5">
                     {r.status === "active"
                       ? <button type="button" className="mny-icon-btn" aria-label={`Pause ${label}`} onClick={() => act(() => api.post(`/recurring/${r.id}/pause`), "Paused")}><Pause className="h-4 w-4" /></button>
@@ -102,7 +103,7 @@ export function Recurring({ accounts, categories }) {
               )}
               <div><Label className="mny-muted text-xs" htmlFor="rec-name">Name</Label><Input id="rec-name" className="mny-field" value={form.description} onChange={(e) => set("description")(e.target.value)} placeholder={form.kind === "income" ? "e.g. Salary" : "e.g. Rent"} data-testid="recurring-name" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label className="mny-muted text-xs" htmlFor="rec-amount">Amount (€)</Label><Input id="rec-amount" className="mny-field" type="number" min="0.01" step="0.01" value={form.amount} onChange={(e) => set("amount")(e.target.value)} data-testid="recurring-amount" /></div>
+                <div><Label className="mny-muted text-xs" htmlFor="rec-amount">Amount ({currencySymbol(accounts.find((a) => a.id === form.account)?.currency)})</Label><Input id="rec-amount" className="mny-field" type="number" min="0.01" step="0.01" value={form.amount} onChange={(e) => set("amount")(e.target.value)} data-testid="recurring-amount" /></div>
                 <div>
                   <Label className="mny-muted text-xs">Repeats</Label>
                   <Select value={form.repeat} onValueChange={set("repeat")}>

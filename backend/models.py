@@ -84,6 +84,7 @@ class Transaction(Base):
     items = Column(JSON, nullable=True)
     from_account = Column(String(50), nullable=True, index=True)
     to_account = Column(String(50), nullable=True, index=True)
+    to_amount = Column(DECIMAL(12, 2), nullable=True)  # a transfer between two currencies: what ARRIVED, in the receiving place's currency (F-09)
     recurring_id = Column(String(36), nullable=True)   # the recurring rule that created it (F-11); one transaction per rule and day
     created_at = Column(String(32), nullable=False)
 

@@ -11,6 +11,7 @@ import {
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
+import { currencyStep, currencySymbol } from "@/lib/money";
 import { useSettings } from "@/context/SettingsContext";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
@@ -257,9 +258,9 @@ export default function Money() {
     }
   };
 
-  const doTransfer = async (fromId, toId, amount) => {
+  const doTransfer = async (fromId, toId, amount, arrives) => {
     try {
-      await api.post("/accounts/transfer", { from_account_id: fromId, to_account_id: toId, amount: parseFloat(amount) });
+      await api.post("/accounts/transfer", { from_account_id: fromId, to_account_id: toId, amount: parseFloat(amount), ...(arrives ? { to_amount: parseFloat(arrives) } : {}) });
       toast.success("Transfer done");
       setTransferOpen(false);
       refreshAll();
@@ -308,7 +309,7 @@ export default function Money() {
       <div className="flex items-center gap-3">
         <span className="mny-badge"><Icon className="h-5 w-5" aria-hidden="true" /></span>
         <p className="mny-title flex min-w-0 flex-1 items-center gap-1 text-sm font-medium"><span className="truncate">{label}</span>{account && <FavoriteStar on={!!account.is_favorite} name={account.name} onSet={() => setFavorite(account)} />}</p>
-        <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(amount || 0)}</p>
+        <p className="mny-num mny-title shrink-0 text-lg font-semibold">{eur(amount || 0, account?.currency)}</p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="mny-muted min-w-0 space-y-0.5 text-xs">{meta}</div>
@@ -340,7 +341,7 @@ export default function Money() {
     const total = account.total_balance || 0;
     return (
       <p data-testid={`allocation-${account.type}`}>
-        Total {eur(total)} · {account.place_count} {account.place_count === 1 ? "place" : "places"}{account.favorite_place_name ? ` · favorite ${account.favorite_place_name}` : ""}
+        Total {eur(total, account.currency)} · {account.place_count} {account.place_count === 1 ? "place" : "places"}{account.favorite_place_name ? ` · favorite ${account.favorite_place_name}` : ""}
       </p>
     );
   };
@@ -362,7 +363,7 @@ export default function Money() {
           <div className="mt-2 space-y-1.5">
             {Math.abs(account.unplaced_balance || 0) > 0.005 && (
               <div className="mny-amber flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-current bg-[var(--mny-amber-tint)] px-2.5 py-1.5 text-sm" data-testid={`unplaced-${account.type}`}>
-                <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{eur(account.unplaced_balance)} is outside every place</span>
+                <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{eur(account.unplaced_balance, account.currency)} is outside every place</span>
                 <button type="button" className="mny-pill sm" onClick={() => placeUnplaced(account)} data-testid={`place-unplaced-${account.type}`}>
                   Move to {account.favorite_place_name || "Default"}
                 </button>
@@ -376,7 +377,7 @@ export default function Money() {
                   {child.is_locked && <Hint label="Locked / not available"><span className="inline-flex"><Lock className="mny-amber h-3 w-3" aria-label="Locked" /></span></Hint>}
                 </span>
                 <div className="flex shrink-0 items-center gap-1">
-                  <span className={cn("mny-num font-medium", child.is_locked && "mny-amber")}>{eur(child.balance || 0)}</span>
+                  <span className={cn("mny-num font-medium", child.is_locked && "mny-amber")}>{eur(child.balance || 0, child.currency || account.currency)}</span>
                   <button type="button" className="mny-icon-btn !h-7 !w-7" onClick={() => openEditAccount(child)} aria-label={`Edit ${child.name}`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -398,6 +399,11 @@ export default function Money() {
   const sumWaited = useRef(false);
   if (sumWait) sumWaited.current = true;
   const revealSum = !sumWait && sumWaited.current;   // fade in only what replaced placeholders
+  // The summary's figures are in the main currency. An account in another currency reads its own block of figures instead.
+  const inCurrency = (account, key, fallback) => {
+    if (!sum?.by_currency || !account || account.currency === sum.main_currency) return fallback;
+    return sum.by_currency.find((r) => r.currency === account.currency)?.[key] ?? fallback;
+  };
   const accountOptions = useMemo(() => orderAccounts(accounts.filter((a) => a.type !== "owed" && a.type !== "owed_person")), [accounts]);
 
   const openBudgets = () => { setBudgetForm(Object.fromEntries(categories.map((c) => [c.id, c.monthly_budget || ""]))); setBudgetOpen(true); };
@@ -460,6 +466,13 @@ export default function Money() {
                 <h3 id="mny-total-h" className="mny-muted text-sm font-medium">Total available now</h3>
                 <p data-testid="money-total" className="mny-num mny-title mt-2 break-words text-4xl font-medium sm:text-5xl">{eur(sum?.total_available)}</p>
                 {(sumWait || lockedTotal > 0) && <p className="mny-amber sk-ph mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
+                {sum?.by_currency && (
+                  <ul className="mt-2 space-y-0.5" data-testid="money-by-currency" aria-label="Totals in other currencies">
+                    {sum.by_currency.filter((r) => r.currency !== sum.main_currency).map((r) => (
+                      <li key={r.currency} className="mny-num mny-title text-sm font-medium">{eur(r.total_available, r.currency)} <span className="mny-muted text-xs font-normal">in {r.currency}</span></li>
+                    ))}
+                  </ul>
+                )}
                 <div className="mt-5 grid grid-cols-3 gap-2 text-center">
                   {[["Bank", sum?.bank], ["Hand", sum?.cash_available], ["Revolut", sum?.revolut]].map(([l, v]) => (
                     <div key={l} className="mny-tile px-1.5 py-2">
@@ -503,7 +516,7 @@ export default function Money() {
                   onTransferIn={() => mainAccounts.bank && openTransferTo(mainAccounts.bank.id)}
                 />
                 <AccountRow
-                  icon={Wallet} label="Money in hand" amount={sum?.cash_available} testid="money-cash" account={mainAccounts.cash}
+                  icon={Wallet} label="Money in hand" amount={inCurrency(mainAccounts.cash, "cash_available", sum?.cash_available)} testid="money-cash" account={mainAccounts.cash}
                   meta={sumWait ? <><p className="sk-ph">€000.00 locked</p><p className="sk-ph">Total €000.00 · 3 places · favorite Default</p></> : <>{(sum?.cash_locked || 0) > 0 && <p className="mny-amber">{eur(sum.cash_locked)} locked</p>}<AllocationSummary account={mainAccounts.cash} /></>}
                   onEdit={() => mainAccounts.cash && openEditAccount(mainAccounts.cash)}
                   onAddSub={() => mainAccounts.cash && openNewSubAccount(mainAccounts.cash)}
@@ -512,7 +525,7 @@ export default function Money() {
                   {sumWait ? <p className="mny-muted text-xs"><span className="sk-ph">Show 3 places</span></p> : <SubPlaces account={mainAccounts.cash} />}
                 </AccountRow>
                 <AccountRow
-                  icon={Smartphone} label="Revolut" amount={sum?.revolut} testid="money-revolut" account={mainAccounts.revolut}
+                  icon={Smartphone} label="Revolut" amount={inCurrency(mainAccounts.revolut, "revolut", sum?.revolut)} testid="money-revolut" account={mainAccounts.revolut}
                   meta={sumWait ? <><p className="sk-ph">€000.00 locked</p><p className="sk-ph">Total €000.00 · 2 places · favorite Default</p></> : <>{(sum?.revolut_locked || 0) > 0 && <p className="mny-amber">{eur(sum.revolut_locked)} locked</p>}<AllocationSummary account={mainAccounts.revolut} /></>}
                   onEdit={() => mainAccounts.revolut && openEditAccount(mainAccounts.revolut)}
                   onAddSub={() => mainAccounts.revolut && openNewSubAccount(mainAccounts.revolut)}
@@ -738,7 +751,7 @@ export default function Money() {
                   <div key={date}>
                     <div className="mny-muted mny-hair sticky top-0 z-10 flex items-center justify-between border-y bg-[var(--mny-surface-2)] px-5 py-1.5 text-xs font-semibold">
                       <span>{new Date(date).toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric" })}</span>
-                      <span className="mny-num">{eur(group.reduce((a, t) => a + signedAmount(t), 0))}</span>
+                      {new Set(group.map((t) => t.currency)).size === 1 && <span className="mny-num">{eur(group.reduce((a, t) => a + signedAmount(t), 0), group[0].currency)}</span>}
                     </div>
                     {group.map((t) => {
                       const isExpense = t.type === "expense";
@@ -772,8 +785,8 @@ export default function Money() {
                             </p>
                           </div>
                           <div className="shrink-0 text-right">
-                            <p className={cn("mny-num text-sm font-semibold", isIncome ? "mny-green" : "mny-title")}>{isIncome ? "+" : ""}{eur(t.gross_amount)}</p>
-                            {isExpense && t.reimbursable_amount > 0.005 && <p className="mny-amber text-xs">{eur(t.remaining_refund)} owed</p>}
+                            <p className={cn("mny-num text-sm font-semibold", isIncome ? "mny-green" : "mny-title")}>{isIncome ? "+" : ""}{eur(t.gross_amount, t.currency)}{isTransfer && t.to_amount != null && <span className="mny-muted font-normal"> → {eur(t.to_amount, t.to_currency)}</span>}</p>
+                            {isExpense && t.reimbursable_amount > 0.005 && <p className="mny-amber text-xs">{eur(t.remaining_refund, t.currency)} owed</p>}
                           </div>
                           <div className="flex items-center gap-0.5 transition-opacity sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
                             {isExpense && <button type="button" data-testid={`edit-txn-${t.id}`} aria-label={`Edit ${t.merchant || t.description || "transaction"}`} onClick={() => setEditTxn(t)} className="mny-icon-btn"><Pencil className="h-4 w-4" /></button>}
@@ -820,7 +833,7 @@ export default function Money() {
               <div key={c.id} className="flex items-center gap-3">
                 <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c.color || CATEGORY_COLORS[c.name] || "#94A3B8" }} aria-hidden="true" />
                 <span className="mny-title flex-1 text-sm">{c.name}</span>
-                <Input type="number" min={0} step="0.01" placeholder="€" aria-label={`${c.name} monthly budget`}
+                <Input type="number" min={0} step="0.01" placeholder={currencySymbol()} aria-label={`${c.name} monthly budget`}
                   value={budgetForm[c.id] || ""}
                   onChange={(e) => setBudgetForm((prev) => ({ ...prev, [c.id]: e.target.value }))}
                   className="mny-field h-9 w-28 text-right" />
@@ -839,7 +852,7 @@ export default function Money() {
         onOpenChange={(v) => !v && setDeleteAccountId(null)}
         title="Delete money place?"
         description={deletingPlace
-          ? `The ${eur(deletingPlace.balance)} in "${deletingPlace.name}" goes back to its main account, so nothing is lost. Its past transactions stay in your history.`
+          ? `The ${eur(deletingPlace.balance, deletingPlace.currency)} in "${deletingPlace.name}" goes back to its main account, so nothing is lost. Its past transactions stay in your history.`
           : "The money in it goes back to the main account, so nothing is lost. Its past transactions stay in your history."}
         onConfirm={() => deleteAccountId && deleteAccount(deleteAccountId)}
         confirmText="Delete"
@@ -850,7 +863,7 @@ export default function Money() {
         open={deleteTxnOpen}
         onOpenChange={setDeleteTxnOpen}
         title="Delete transaction?"
-        description={txnToDelete ? `This will permanently delete "${txnToDelete.merchant || txnToDelete.description || "this transaction"}" (${eur(txnToDelete.gross_amount)}).` : "This will permanently delete the transaction."}
+        description={txnToDelete ? `This will permanently delete "${txnToDelete.merchant || txnToDelete.description || "this transaction"}" (${eur(txnToDelete.gross_amount, txnToDelete.currency)}).` : "This will permanently delete the transaction."}
         onConfirm={() => { const id = deleteTxnId; if (id) del(id); }}
         confirmText="Delete"
         variant="danger"
@@ -863,12 +876,17 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState(defaultTo || "");
   const [amount, setAmount] = useState("");
+  const [arrives, setArrives] = useState("");
   useEffect(() => { if (defaultTo) setTo(defaultTo); }, [defaultTo]);
   const source = accounts.find((a) => a.id === from);
+  const target = accounts.find((a) => a.id === to);
+  // Two currencies: nothing is converted for the person. They say what arrived, and the rate that implies is shown back to them.
+  const crossing = !!source && !!target && (source.currency || "EUR") !== (target.currency || "EUR");
+  const rate = crossing && Number(amount) > 0 && Number(arrives) > 0 ? Number(arrives) / Number(amount) : null;
   // The server refuses to take more than a place, or a main account's unassigned part, holds: say so before it has to.
   const tooMuch = checkSpend(source, amount, { everyAccount: true });
   const option = (a, withAmount) => (
-    <SelectItem key={a.id} value={a.id}>{a.label}{withAmount ? ` · ${eur(a.available)}${(a.place_count || 0) > 0 ? " not in a place" : ""}` : ""}</SelectItem>
+    <SelectItem key={a.id} value={a.id}>{a.label}{withAmount ? ` · ${eur(a.available, a.currency)}${(a.place_count || 0) > 0 ? " not in a place" : ""}` : ""}</SelectItem>
   );
   return (
     <div className="space-y-3 mt-2">
@@ -891,20 +909,29 @@ function TransferForm({ accounts, defaultTo, onSubmit, onCancel }) {
         </Select>
       </div>
       <div>
-        <Label className="mny-muted text-xs" htmlFor="transfer-amount">Amount (€)</Label>
-        <Input id="transfer-amount" type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" aria-describedby="transfer-note" data-testid="transfer-amount" className="mny-field" />
+        <Label className="mny-muted text-xs" htmlFor="transfer-amount">Amount ({currencySymbol(source?.currency)})</Label>
+        <Input id="transfer-amount" type="number" min={0.01} step={currencyStep(source?.currency)} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" aria-describedby="transfer-note" data-testid="transfer-amount" className="mny-field" />
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <p id="transfer-note" data-testid="transfer-note" role={tooMuch ? "alert" : undefined} className={cn("text-xs", tooMuch ? "mny-neg" : "mny-muted")}>
-            {tooMuch || (source ? `Available to move from ${source.name}: ${eur(spendable(source))}.` : "")}
+            {tooMuch || (source ? `Available to move from ${source.name}: ${eur(spendable(source), source.currency)}.` : "")}
           </p>
           {source && spendable(source) > 0 && (
             <button type="button" className="mny-pill sm" onClick={() => setAmount(String(spendable(source)))}>All of it</button>
           )}
         </div>
       </div>
+      {crossing && (
+        <div>
+          <Label className="mny-muted text-xs" htmlFor="transfer-arrives">Amount arriving in {target.name} ({currencySymbol(target.currency)})</Label>
+          <Input id="transfer-arrives" type="number" min={0.01} step={currencyStep(target.currency)} value={arrives} onChange={(e) => setArrives(e.target.value)} placeholder="0.00" aria-describedby="transfer-rate" data-testid="transfer-arrives" className="mny-field" />
+          <p id="transfer-rate" data-testid="transfer-rate" className="mny-muted mt-1.5 text-xs">
+            {rate ? `1 ${source.currency} = ${rate.toFixed(4)} ${target.currency}. Nothing is converted for you: this is the rate you are giving.` : `These places use different currencies. Enter how much arrives in ${target.currency}.`}
+          </p>
+        </div>
+      )}
       <div className="flex justify-end gap-2 mt-4">
         <button type="button" className="mny-pill" onClick={onCancel}>Cancel</button>
-        <button type="button" className="mny-pill mny-cta" onClick={() => onSubmit(from, to, amount)} disabled={!from || !to || !amount || from === to || !!tooMuch}>Transfer</button>
+        <button type="button" className="mny-pill mny-cta" onClick={() => onSubmit(from, to, amount, crossing ? arrives : null)} disabled={!from || !to || !amount || from === to || !!tooMuch || (crossing && !(Number(arrives) > 0))}>Transfer</button>
       </div>
     </div>
   );

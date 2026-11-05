@@ -45,15 +45,15 @@ export const Composer = forwardRef(function Composer(
           <img src={image} alt="Attached preview" className="h-10 w-10 rounded-lg object-cover" />
           <span>Image attached</span>
           <button type="button" onClick={onScan} disabled={scanning} data-testid="ai-scan-receipt"
-            className="ml-auto inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+            className="ml-auto inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-50">
             <ScanLine className="h-3.5 w-3.5" />{scanning ? "Reading…" : "Scan receipt"}
           </button>
-          <button type="button" onClick={onClearImage} aria-label="Remove image" className="grid h-7 w-7 place-items-center rounded-lg hover:bg-muted">
+          <button type="button" onClick={onClearImage} aria-label="Remove image" className="grid h-7 w-7 place-items-center rounded-full hover:bg-muted">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
-      <div className="flex items-end gap-1.5 rounded-[1.375rem] border border-border bg-card p-2 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_10px_24px_-14px_rgba(15,23,42,0.25)] transition-[box-shadow,border-color] duration-200 focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/20 motion-reduce:transition-none">
+      <div className="flex items-end gap-1.5 rounded-[1.375rem] border border-border bg-card p-2 shadow-[var(--card-edge)] transition-[box-shadow,border-color] duration-200 focus-within:border-emerald-500/60 focus-within:ring-2 focus-within:ring-emerald-500/20 motion-reduce:transition-none">
         <input ref={file} type="file" accept="image/*" className="hidden" data-testid="ai-file-input"
           onChange={(e) => { onPickImage(e); e.target.value = ""; }} />
         <Hint label="Attach an image">
@@ -82,7 +82,7 @@ export const Composer = forwardRef(function Composer(
           </Hint>
         ) : (
           <button type="button" data-testid="ai-send" aria-label="Send message" onClick={onSend} disabled={!canSend}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-700 text-white transition-all hover:bg-emerald-700 active:scale-95 disabled:bg-muted disabled:text-muted-foreground">
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full cta-fill transition-all hover:brightness-105 active:scale-95 disabled:bg-none disabled:bg-muted disabled:text-muted-foreground">
             <ArrowUp className="h-4 w-4" />
           </button>
         )}

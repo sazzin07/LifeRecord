@@ -11,7 +11,7 @@ import { useTwoFactorStatus } from "./useTwoFactorStatus";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-const BAR = ["#e5604d", "#e5604d", "#e0a93a", "#6fcf97", "#34d399"];
+const BAR = ["var(--mny-neg)", "var(--mny-neg)", "var(--mny-amber)", "var(--mny-green)", "var(--mny-green)"];   // weak is the spend colour, so-so the locked one, strong the gain one
 
 /** Four segments that fill as the password gets stronger, with a word for it. */
 function Meter({ score, label, tip }) {

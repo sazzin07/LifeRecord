@@ -271,11 +271,11 @@ function PriceHistoryDialog({ item, open, setOpen }) {
             {chartData.length > 1 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#94A3B8" />
-                  <YAxis tickFormatter={(v) => `€${v}`} tick={{ fontSize: 10 }} stroke="#94A3B8" />
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={(v) => `€${v}`} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip formatter={(v) => eur(v)} />
-                  <Line type="monotone" dataKey="price" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="price" stroke="var(--chart-line)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--chart-line)", stroke: "var(--chart-line)" }} activeDot={{ r: 6, fill: "var(--tip-bg)", stroke: "var(--chart-line)", strokeWidth: 3 }} animationDuration={1000} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

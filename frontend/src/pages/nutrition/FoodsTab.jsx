@@ -246,7 +246,7 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{r.name}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
                     {r.nutrition_meta?.linked > 0 && (
-                      <p className={r.nutrition_meta.complete ? "mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-400" : "mt-0.5 text-[11px] text-amber-700 dark:text-amber-400"} data-testid={`recipe-calc-${r.id}`}
+                      <p className={r.nutrition_meta.complete ? "mt-0.5 text-[11px] text-green-700 dark:text-green-400" : "mt-0.5 text-[11px] text-amber-700 dark:text-amber-400"} data-testid={`recipe-calc-${r.id}`}
                         title={r.nutrition_meta.missing?.length ? `Not counted: ${r.nutrition_meta.missing.join(", ")}` : undefined}>
                         {r.nutrition_meta.complete ? "Calculated from its ingredients" : `Based on ${r.nutrition_meta.linked} of ${r.nutrition_meta.total} ingredients`}
                       </p>
@@ -259,7 +259,7 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
                 <p className="mt-2 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{(r.ingredients || []).map((i) => `${i.quantity}${i.unit} ${i.name}`).join(", ")}</p>
                 <div className="mt-3 grid grid-cols-2 gap-2 [&>button]:min-w-0 [&>button]:px-2">
                   <Button size="sm" variant="outline" className="h-8" onClick={() => logRecipe(r)} disabled={r.calories == null} data-testid={`log-recipe-${r.id}`}>Log a serving</Button>
-                  <Button size="sm" className="h-8 bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => cook(r)} data-testid={`cook-${r.id}`}><Flame className="mr-1 h-3.5 w-3.5" />Cook</Button>
+                  <Button size="sm" className="h-8" onClick={() => cook(r)} data-testid={`cook-${r.id}`}><Flame className="mr-1 h-3.5 w-3.5" />Cook</Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => onPlanRecipe(r.id)} disabled={r.calories == null} data-testid={`plan-recipe-${r.id}`}><CalendarPlus className="mr-1 h-3.5 w-3.5" />Plan it</Button>
                   <Button size="sm" variant="ghost" className="h-8" onClick={() => shopRecipe(r)} data-testid={`shop-recipe-${r.id}`}><ShoppingCart className="mr-1 h-3.5 w-3.5" />Shopping list</Button>
                 </div>

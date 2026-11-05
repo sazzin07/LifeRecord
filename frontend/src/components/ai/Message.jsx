@@ -7,7 +7,7 @@ import { changeSummary, failedActions } from "@/lib/aiFormat";
 
 function Mark() {
   return (
-    <div aria-hidden="true" className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+    <div aria-hidden="true" className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,#e2b6ea,#a679b2)] text-[#2a1433]">
       <Sparkles className="h-3.5 w-3.5" />
     </div>
   );
@@ -40,7 +40,7 @@ function CopyButton({ text }) {
 function UserMessage({ m }) {
   return (
     <div className="flex justify-end" data-testid="ai-message-user">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-emerald-700 px-3.5 py-2.5 text-[14px] leading-relaxed text-white shadow-sm">
+      <div className="max-w-[85%] rounded-3xl rounded-br-lg pill-fill px-4 py-2.5 text-[14px] leading-relaxed">
         {m.image && <AuthImage src={m.image} />}
         {m.text && m.text !== "(image)" && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
       </div>

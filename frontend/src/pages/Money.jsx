@@ -6,13 +6,15 @@ import {
 import {
   Plus, Trash2, Wallet, CreditCard, Pencil, Search, Download, ArrowUpRight,
   ArrowDownRight, TrendingUp, CalendarDays, Target, Store, X, ChevronRight,
-  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock, Star, AlertTriangle, Banknote,
+  ChevronUp, PiggyBank, Building2, Smartphone, ArrowRightLeft, Lock, Star, AlertTriangle, Banknote, Sparkles,
 } from "lucide-react";
 import { moneyPaths } from "@/lib/periods";
 import { peekQuery, fetchQuery, subscribeQuery } from "@/lib/query";
 import { api, eur, errorMessage, CATEGORY_COLORS } from "@/lib/api";
 import { currencyDigits, currencyStep, currencySymbol, moneyCompact } from "@/lib/money";
 import { AddMoneyDialog } from "@/components/AddMoneyDialog";
+import { openAI } from "@/components/AppShell";
+import { followPointer } from "@/lib/pointerLight";
 import { useSettings } from "@/context/SettingsContext";
 import { orderAccounts, checkSpend, spendable } from "@/lib/allocation";
 import { refreshAll } from "@/lib/useFetch";
@@ -310,7 +312,7 @@ export default function Money() {
 
   // One account as a tile: badge, name (with its star), balance; a line of facts and the three small actions underneath.
   const AccountRow = ({ icon: Icon, label, amount, meta, children, onEdit, onAddSub, onTransferIn, onAddMoney, testid, account }) => (
-    <div className="mny-tile flex flex-col gap-2.5 p-3.5" data-testid={testid}>
+    <div className="mx-asset flex flex-col gap-2.5" data-testid={testid}>
       <div className="flex items-center gap-3">
         <span className="mny-badge"><Icon className="h-5 w-5" aria-hidden="true" /></span>
         <p className="mny-title flex min-w-0 flex-1 items-center gap-1 text-sm font-medium"><span className="truncate">{label}</span>{account && <FavoriteStar on={!!account.is_favorite} name={account.name} onSet={() => setFavorite(account)} />}</p>
@@ -424,11 +426,11 @@ export default function Money() {
   const catTotal = (sum?.by_category || []).reduce((a, c) => a + c.value, 0);
 
   return (
-    <div className="mny-theme mny-stage space-y-4 sm:space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
+    <div className="mny-theme mny-stage space-y-4 sm:space-y-5" onPointerMove={followPointer}>
+      <div className="mx-rise flex flex-wrap items-end justify-between gap-x-4 gap-y-4 px-1" style={{ "--i": 0 }}>
         <div className="min-w-0">
-          <h2 className="mny-title text-2xl font-semibold tracking-tight sm:text-3xl">Money</h2>
-          <p className="mny-muted mt-0.5 text-sm">Bank, cash, Revolut and actual spending</p>
+          <h2 className="mx-title">Money</h2>
+          <p className="mny-muted mt-1 text-sm">Bank, cash, Revolut and actual spending</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="mny-pill" onClick={() => openAddMoney(null)} data-testid="add-money-btn">
@@ -449,8 +451,9 @@ export default function Money() {
         </div>
       </div>
 
-      {/* Period filter */}
-      <div ref={scrollRef} className="scrollbar-hide -mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+      {/* Period filter, and the way to ask the assistant about the money */}
+      <div className="mx-rise flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4" style={{ "--i": 1 }}>
+      <div ref={scrollRef} className="scrollbar-hide -mx-1 flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto px-1 py-1">
         {PERIODS.map((p) => (
           <button key={p.id} type="button" data-testid={`period-${p.id}`} aria-pressed={period === p.id} onClick={() => setPeriod(p.id)} className="mny-pill snap-start">
             {p.label}
@@ -465,6 +468,10 @@ export default function Money() {
           );
         })}
       </div>
+        <button type="button" data-testid="money-ask-ai" onClick={() => openAI()} className="mx-ask w-full lg:w-[19rem] lg:shrink-0">
+          <Sparkles className="h-4 w-4 shrink-0 text-[var(--mx-orchid)]" aria-hidden="true" />Ask about your money
+        </button>
+      </div>
 
       {(
         <>
@@ -478,10 +485,10 @@ export default function Money() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
             {/* The total, and where money left the bank */}
               <div className="flex flex-col gap-4 lg:col-span-4">
-              <section className="mny-card mny-hero p-5 sm:p-6" aria-labelledby="mny-total-h">
-                <h3 id="mny-total-h" className="mny-muted text-sm font-medium">Total available now</h3>
-                <p data-testid="money-total" className="mny-num mny-title mt-2 break-words text-4xl font-medium sm:text-5xl">{eur(sum?.total_available)}</p>
-                {(sumWait || lockedTotal > 0) && <p className="mny-amber sk-ph mt-1 text-xs">+ {eur(lockedTotal)} locked</p>}
+              <section className="mny-card mny-hero mx-bloom mx-rise overflow-hidden p-5 sm:p-6" style={{ "--i": 2 }} aria-labelledby="mny-total-h">
+                <h3 id="mny-total-h" className="mx-h">Total available now</h3>
+                <p data-testid="money-total" className="mny-num mx-fig mt-5 break-words text-[2.5rem] sm:text-[3rem]">{eur(sum?.total_available)}</p>
+                {(sumWait || lockedTotal > 0) && <p className="mny-amber sk-ph mt-2 text-xs font-medium">+ {eur(lockedTotal)} locked</p>}
                 {sum?.by_currency && (
                   <ul className="mt-2 space-y-0.5" data-testid="money-by-currency" aria-label="Totals in other currencies">
                     {sum.by_currency.filter((r) => r.currency !== sum.main_currency).map((r) => (
@@ -499,8 +506,8 @@ export default function Money() {
                 </div>
               </section>
 
-              <section className="mny-card flex-1 p-5" aria-labelledby="mny-flow-h">
-                <h3 id="mny-flow-h" className="mny-title text-base font-semibold">Where it went</h3>
+              <section className="mny-card mx-glow mx-rise flex-1 overflow-hidden p-5 sm:p-6" style={{ "--i": 3 }} aria-labelledby="mny-flow-h">
+                <h3 id="mny-flow-h" className="mx-h">Where it went</h3>
                 <div className="mt-3 space-y-3 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0"><p className="mny-title">Left the bank</p><p className="mny-muted sk-ph text-xs">Started {eur(sum?.bank_initial)} → now {eur(sum?.bank)}</p></div>
@@ -522,9 +529,9 @@ export default function Money() {
               </div>
 
             {/* The three accounts */}
-            <section className="mny-card p-5 lg:col-span-4" aria-labelledby="mny-accounts-h">
-              <h3 id="mny-accounts-h" className="mny-title mb-3 text-base font-semibold">Accounts</h3>
-              <div className="space-y-3">
+            <section className="mny-card mx-rise p-5 sm:p-6 lg:col-span-4" style={{ "--i": 4 }} aria-labelledby="mny-accounts-h">
+              <h3 id="mny-accounts-h" className="mx-h mb-4">Accounts</h3>
+              <div>
                 {sumWait ? (<>
                 <AccountRow
                   icon={Building2} label="Bank account" amount={mainAccounts.bank?.balance} testid="money-bank" account={mainAccounts.bank}
@@ -573,14 +580,14 @@ export default function Money() {
                       </AccountRow>
                     );
                   })}
-                  <button type="button" className="mny-pill w-full" onClick={openNewMain} data-testid="add-account"><Plus className="h-4 w-4" aria-hidden="true" />New account</button>
+                  <button type="button" className="mny-pill mt-3 w-full" onClick={openNewMain} data-testid="add-account"><Plus className="h-4 w-4" aria-hidden="true" />New account</button>
                 </>)}
               </div>
             </section>
 
             {/* The period in four tiles, then the pace */}
-            <section className="mny-card p-5 md:col-span-2 lg:col-span-4" aria-labelledby="mny-period-h">
-              <h3 id="mny-period-h" className="mny-title text-base font-semibold">This period</h3>
+            <section className="mny-card mx-rise p-5 sm:p-6 md:col-span-2 lg:col-span-4" style={{ "--i": 5 }} aria-labelledby="mny-period-h">
+              <h3 id="mny-period-h" className="mx-h">This period</h3>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 {[
                   { id: "money-gross", label: "Spent", value: moneyCompact(sum?.gross), hint: `Your share ${eur(sum?.personal)}`, icon: ArrowUpRight },
@@ -609,9 +616,9 @@ export default function Money() {
 
           {/* Spending over time, and where it went by category */}
           <div className="grid gap-4 lg:grid-cols-12">
-            <section className="mny-card p-5 lg:col-span-8" aria-labelledby="mny-time-h">
+            <section className="mny-card mx-rise p-5 sm:p-6 lg:col-span-8" style={{ "--i": 6 }} aria-labelledby="mny-time-h">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 id="mny-time-h" className="mny-title text-base font-semibold">Spending over time</h3>
+                <h3 id="mny-time-h" className="mx-h">Spending over time</h3>
                 <div className="flex items-center gap-2">
                   {trendPct != null && (
                     <span className={cn("mny-state", trendPct > 0 ? "neg" : "")}>
@@ -625,19 +632,19 @@ export default function Money() {
               {sumWait ? <SkChart className="mt-4" height={260} /> : sum?.by_day?.length ? (
                 <ResponsiveContainer width="100%" height={260} className="mt-4">
                   <AreaChart data={sum.by_day} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                    <defs><linearGradient id="mny-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.16} /><stop offset="100%" stopColor="#34d399" stopOpacity={0} /></linearGradient></defs>
-                    <CartesianGrid vertical={false} stroke="var(--mny-line)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--mny-muted)" }} tickFormatter={(d) => d.slice(5)} axisLine={false} tickLine={false} minTickGap={24} />
-                    <YAxis width={44} tick={{ fontSize: 11, fill: "var(--mny-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : v)} />
-                    <Tooltip content={<ChartTip />} cursor={{ stroke: "var(--mny-green)", strokeDasharray: "4 4" }} />
-                    <Area type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2.5} fill="url(#mny-g)" activeDot={{ r: 6, fill: "#d6fbe8", stroke: "#34d399", strokeWidth: 3 }} />
+                    <defs><linearGradient id="mny-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--chart-line)" stopOpacity={0.34} /><stop offset="100%" stopColor="var(--chart-line)" stopOpacity={0} /></linearGradient></defs>
+                    <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(d) => d.slice(5)} axisLine={false} tickLine={false} minTickGap={24} />
+                    <YAxis width={44} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : v)} />
+                    <Tooltip content={<ChartTip />} cursor={{ stroke: "var(--line-strong)", strokeDasharray: "3 5" }} />
+                    <Area type="monotone" dataKey="value" stroke="var(--chart-line)" strokeWidth={2.5} fill="url(#mny-g)" animationDuration={1100} animationEasing="ease-out" activeDot={{ r: 7, fill: "var(--tip-bg)", stroke: "var(--chart-line)", strokeWidth: 4 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : <p className="mny-muted mt-12 text-center text-sm">No spending in this period.</p>}
             </section>
 
-            <section className="mny-card p-5 lg:col-span-4" aria-labelledby="mny-cat-h">
-              <h3 id="mny-cat-h" className="mny-title text-base font-semibold">By category</h3>
+            <section className="mny-card mx-rise p-5 sm:p-6 lg:col-span-4" style={{ "--i": 7 }} aria-labelledby="mny-cat-h">
+              <h3 id="mny-cat-h" className="mx-h">By category</h3>
               {sumWait ? (
                 <>
                   <div className="mt-2 grid place-items-center" style={{ height: 170 }}><Sk className="h-[152px] w-[152px] !rounded-full" /></div>
@@ -669,8 +676,8 @@ export default function Money() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <section className="mny-card p-5" aria-labelledby="mny-merch-h">
-              <h3 id="mny-merch-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Store className="h-4 w-4" aria-hidden="true" /> Top merchants</h3>
+            <section className="mny-card mx-rise p-5 sm:p-6" style={{ "--i": 8 }} aria-labelledby="mny-merch-h">
+              <h3 id="mny-merch-h" className="mx-h flex items-center gap-2"><Store className="h-4 w-4 text-[var(--mx-orchid)]" aria-hidden="true" /> Top merchants</h3>
               {sumWait ? (
                 <ul className="mt-3 space-y-2.5" aria-hidden="true">
                   {["Merchant name", "Another place", "Short", "A longer merchant"].map((n) => <li key={n} className="flex items-center justify-between gap-3 text-sm"><span className="sk-ph">{n}</span><span className="mny-num font-medium">€00.00</span></li>)}
@@ -687,8 +694,8 @@ export default function Money() {
               ) : <p className="mny-muted mt-6 text-center text-sm">No data.</p>}
             </section>
 
-            <section className="mny-card p-5" aria-labelledby="mny-inex-h">
-              <h3 id="mny-inex-h" className="mny-title text-base font-semibold">Income vs expense</h3>
+            <section className="mny-card mx-rise p-5 sm:p-6" style={{ "--i": 9 }} aria-labelledby="mny-inex-h">
+              <h3 id="mny-inex-h" className="mx-h">Income vs expense</h3>
               <div className="mt-3 grid grid-cols-3 gap-3 text-center">
                 <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Income</p><p className="mny-num mny-green truncate text-base font-semibold">{eur(sum?.income)}</p></div>
                 <div className="mny-tile p-2.5"><p className="mny-muted text-xs">Expense</p><p className="mny-num mny-title truncate text-base font-semibold">{eur(sum?.gross)}</p></div>
@@ -700,8 +707,8 @@ export default function Money() {
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" hide />
                   <Tooltip formatter={(v) => eur(v)} contentStyle={{ borderRadius: 12, fontSize: 12 }} cursor={false} />
-                  <Bar dataKey="income" fill="#34d399" radius={[6, 6, 6, 6]} barSize={14} />
-                  <Bar dataKey="expense" fill="#7aa592" radius={[6, 6, 6, 6]} barSize={14} />
+                  <Bar dataKey="income" fill="var(--mny-green)" radius={[7, 7, 7, 7]} barSize={14} animationDuration={900} />
+                  <Bar dataKey="expense" fill="var(--chart-line-soft)" radius={[7, 7, 7, 7]} barSize={14} animationDuration={900} />
                 </BarChart>
               </ResponsiveContainer>
               )}
@@ -710,9 +717,9 @@ export default function Money() {
 
           {/* Budget progress */}
           {sum?.by_category?.some((c) => c.budget) && (
-            <section className="mny-card sk-reveal p-5" aria-labelledby="mny-budget-h">
+            <section className="mny-card sk-reveal p-5 sm:p-6" aria-labelledby="mny-budget-h">
               <div className="mb-4 flex items-center justify-between gap-2">
-                <h3 id="mny-budget-h" className="mny-title flex items-center gap-2 text-base font-semibold"><Target className="h-4 w-4" aria-hidden="true" /> Category budgets</h3>
+                <h3 id="mny-budget-h" className="mx-h flex items-center gap-2"><Target className="h-4 w-4 text-[var(--mx-orchid)]" aria-hidden="true" /> Category budgets</h3>
                 <button type="button" className="mny-pill sm" onClick={openBudgets}>Edit</button>
               </div>
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -742,9 +749,9 @@ export default function Money() {
           <Recurring accounts={accountOptions} categories={categories} />
 
           {/* Transactions */}
-          <section className="mny-card overflow-hidden" aria-labelledby="mny-txn-h">
+          <section className="mny-card mx-rise overflow-hidden" style={{ "--i": 10 }} aria-labelledby="mny-txn-h">
             <div className="flex flex-col justify-between gap-3 p-5 pb-3 xl:flex-row xl:items-center">
-              <h3 id="mny-txn-h" className="mny-title text-base font-semibold">Transactions</h3>
+              <h3 id="mny-txn-h" className="mx-h">Transactions</h3>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="relative">
                   <Search className="mny-muted absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
@@ -753,14 +760,14 @@ export default function Money() {
                 </div>
                 <Select value={catFilter} onValueChange={setCatFilter}>
                   <SelectTrigger className="mny-field h-9 w-full sm:w-40" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="mx-pop">
                     <SelectItem value="all">All categories</SelectItem>
                     {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={sort} onValueChange={setSort}>
                   <SelectTrigger className="mny-field h-9 w-full sm:w-40" aria-label="Sort transactions"><SelectValue placeholder="Sort" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="mx-pop">
                     {SORTS.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -856,7 +863,7 @@ export default function Money() {
 
       {/* Transfer dialog */}
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-        <DialogContent className="mny-dialog max-w-md">
+        <DialogContent className="mny-theme mny-dialog max-w-md">
           <DialogHeader>
             <DialogTitle>Transfer money</DialogTitle>
             <DialogDescription>Move money from one location to another.</DialogDescription>
@@ -867,7 +874,7 @@ export default function Money() {
 
       {/* Budget dialog */}
       <Dialog open={budgetOpen} onOpenChange={setBudgetOpen}>
-        <DialogContent className="mny-dialog max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="mny-theme mny-dialog max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Category budgets</DialogTitle>
             <DialogDescription>Set a monthly spending target for each category. Leave empty to disable.</DialogDescription>

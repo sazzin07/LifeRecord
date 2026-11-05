@@ -2,8 +2,10 @@
   "project_name": "Life Record",
   "purpose": "One private account per person for money, shared expenses, groceries, meals and nutrition, workouts, body measurements, tasks and a calendar, with an assistant that works on the same data.",
   "users": "Many people, each with their own private data (health data is never shared or published). Nothing in the interface assumes a particular person.",
-  "last_checked_against_the_code": "2026-11-01",
+  "last_checked_against_the_code": "2026-11-05",
   "source_of_truth": [
+    "docs/design-system/PURPLE_MAIN_THEME.md (the Purple Main Theme: the full specification of the look, every token and component)",
+    "frontend/src/theme/orchid.css (the Money, Settings and Profile scope)",
     "frontend/src/index.css (colour tokens, contrast floor, glass, motion)",
     "frontend/tailwind.config.js (how the tokens become Tailwind colours, radii, fonts)",
     "frontend/src/components/AppShell.jsx (navigation)",
@@ -12,29 +14,29 @@
   "colour_tokens_hsl": {
     "note": "Values are HSL components exactly as written in index.css; Tailwind exposes them as bg-background, text-foreground, bg-card, text-muted-foreground, border-border, bg-primary, ...",
     "light": {
-      "background": "210 40% 98%", "foreground": "222 47% 11%", "card": "0 0% 100%", "card-foreground": "222 47% 11%",
-      "primary": "160 84% 30%", "primary-foreground": "0 0% 100%", "secondary": "210 40% 96%", "muted": "210 40% 96%",
-      "muted-foreground": "215 16% 43%", "accent": "152 76% 95%", "accent-foreground": "160 84% 24%",
-      "destructive": "0 84% 60%", "border": "214 32% 91%", "ring": "160 84% 30%", "radius": "0.85rem"
+      "background": "290 26% 96%", "foreground": "285 30% 11%", "card": "0 0% 100%", "card-foreground": "285 30% 11%",
+      "primary": "280 21% 40%", "primary-foreground": "0 0% 100%", "secondary": "290 22% 93%", "muted": "290 22% 93%",
+      "muted-foreground": "285 12% 38%", "accent": "290 32% 92%", "accent-foreground": "280 32% 24%",
+      "destructive": "0 72% 46%", "border": "285 16% 86%", "ring": "280 32% 46%", "radius": "1rem"
     },
     "dark": {
-      "background": "222 42% 7%", "foreground": "210 40% 98%", "card": "220 33% 14%", "card-foreground": "210 40% 98%",
-      "primary": "160 84% 39%", "primary-foreground": "222 47% 8%", "secondary": "217 33% 18%", "muted": "217 33% 18%",
-      "muted-foreground": "215 20% 65%", "accent": "160 60% 16%", "accent-foreground": "152 76% 80%",
-      "destructive": "0 72% 51%", "border": "217 24% 22%", "ring": "160 84% 39%"
+      "background": "285 12% 5%", "foreground": "300 28% 95%", "card": "285 10% 8%", "card-foreground": "300 28% 95%",
+      "primary": "280 21% 44%", "primary-foreground": "0 0% 100%", "secondary": "285 9% 14%", "muted": "285 9% 14%",
+      "muted-foreground": "292 10% 70%", "accent": "295 18% 18%", "accent-foreground": "300 45% 92%",
+      "destructive": "0 72% 56%", "border": "290 9% 20%", "ring": "297 48% 76%"
     }
   },
   "contrast_floor": {
     "rule": "Text must reach WCAG AA (4.5:1 for normal text, 3:1 for large). Secondary text is written as text-slate-400/500 across the app, so the floor is applied once, in index.css, instead of in every class list.",
     "light_theme": {
       "text-slate-400 and text-slate-500": "muted-foreground token",
-      "text-emerald-600": "#047857", "text-red-500": "#dc2626", "text-amber-600": "#b45309"
+      "text-emerald-600": "#6c4d7d", "text-red-500": "#c2262e", "text-amber-600": "#a24a08"
     },
     "dark_theme": {
       "text-slate-500 and text-slate-600": "muted-foreground token",
-      "text-emerald-600": "#34d399", "text-red-500": "#f87171", "text-amber-600": "#fbbf24"
+      "text-emerald-600": "#dcb0e5", "text-red-500": "#ff9fac", "text-amber-600": "#f6c46e"
     },
-    "buttons_with_white_text": "bg-emerald-700 hover:bg-emerald-800 (never bg-emerald-600: white on it is 3.8:1).",
+    "buttons_with_white_text": "The default Button (bg-primary: white on it is 6.75:1 in the light theme and 5.86:1 in the dark one). The emerald and teal classes are the orchid ramp now; a gain, a warning or a success is written green, red or amber.",
     "text_in_a_data_colour": "Use the tint-text class with a --tint style variable (a category, a workout type). It darkens the colour in the light theme and lightens it in the dark theme until it reads on its own pale tint. The raw colour stays for dots, bars and icons.",
     "how_to_change_it": "Add a colour to the floor only when the audit finds it failing; explicit dark:, hover: and focus: classes on the same element still win (the selectors use :where())."
   },
@@ -44,15 +46,15 @@
     "Bills": "#64748B", "Other": "#94A3B8"
   },
   "typography": {
-    "sans": "Inter, system-ui, -apple-system, sans-serif",
-    "mono": "JetBrains Mono, ui-monospace, monospace (amounts and numbers: stat-num, lm-money)",
+    "sans": "Plus Jakarta Sans, Inter, system-ui, -apple-system, sans-serif",
+    "mono": "JetBrains Mono, ui-monospace, monospace (code and the assistant's inline amounts only: lm-money). Figures use the same face as the words, in tabular numerals (stat-num).",
     "page_title": "text-xl sm:text-2xl font-bold tracking-tight",
     "amount_in_a_stat_card": "text-xl sm:text-3xl font-extrabold; a word in a stat card (a category name) is set as text, text-base sm:text-lg, or it outgrows the card",
-    "label": "small caps label via the Label component (text-xs, semibold, uppercase, tracking)",
+    "label": "a small muted label via the Label component (text-xs, semibold); no uppercase text anywhere",
     "body": "text-sm, leading-relaxed"
   },
   "surfaces": {
-    "card": "rounded-2xl border border-border bg-card card-ambient (a very light shadow); the Card component in common.jsx",
+    "card": "card-ambient: 24px radius, the --card-fill gradient, a --line hairline and the --card-edge shadow (a light top edge and a long soft drop); the Card component in common.jsx",
     "glass": "only for layers that float above content: the top bar (glass), the phone bottom bar (glass-strong), the assistant button and panel",
     "dialogs": "Radix Dialog via components/ui/dialog.jsx; the close button is at least 24 by 24 px; every dialog has a title and a (possibly screen-reader-only) description",
     "sheets": "components/ui/sheet.jsx (the phone's More sheet); focus returns to the control that opened it"

@@ -89,7 +89,7 @@ export function Recurring({ accounts, categories }) {
       </Resolve>
 
       <Dialog open={!!form} onOpenChange={(v) => !v && setForm(null)}>
-        <DialogContent className="mny-dialog max-w-md" data-testid="recurring-dialog">
+        <DialogContent className="mny-theme mny-dialog max-w-md" data-testid="recurring-dialog">
           <DialogHeader>
             <DialogTitle>{form?.id ? "Edit recurring" : "New recurring"}</DialogTitle>
             <DialogDescription>It is recorded as a normal transaction on each due day, by itself. You can undo or delete any of them.</DialogDescription>

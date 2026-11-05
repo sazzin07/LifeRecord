@@ -72,7 +72,7 @@ export default function BarcodeScanner({ open, onOpenChange, onDetected }) {
         </DialogHeader>
         <div className="relative overflow-hidden rounded-xl bg-slate-900" style={{ aspectRatio: "4 / 3" }}>
           <video ref={setVideo} className="h-full w-full object-cover" playsInline muted aria-label="Camera view" />
-          {state === "scanning" && <div className="pointer-events-none absolute inset-x-8 top-1/2 h-px bg-emerald-400/80 shadow-[0_0_8px_2px_rgba(52,211,153,0.6)]" aria-hidden="true" />}
+          {state === "scanning" && <div className="pointer-events-none absolute inset-x-8 top-1/2 h-px bg-emerald-300/90 shadow-[0_0_8px_2px_rgba(220,176,229,0.6)]" aria-hidden="true" />}
           {state === "starting" && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-300"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting the camera…</div>}
         </div>
         <p role={state === "error" ? "alert" : "status"} className={state === "error" ? "text-sm text-red-700 dark:text-red-300" : "text-sm text-slate-500 dark:text-slate-400"} data-testid="scanner-status">

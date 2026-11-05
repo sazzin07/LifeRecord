@@ -107,7 +107,7 @@ export function AccountDialog({ open, setOpen, account = null, parent = null, pa
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="mny-dialog max-w-md" data-testid="account-dialog">
+      <DialogContent className="mny-theme mny-dialog max-w-md" data-testid="account-dialog">
         <DialogHeader>
           <DialogTitle>{account ? (isMain ? "Edit account" : "Edit place") : creatingMain ? "New account" : "Add place"}</DialogTitle>
           <DialogDescription>{account ? "Update the name, currency and balance." : creatingMain ? "A bank, cash or wallet account of your own, in any currency." : "Set money aside in a new place under the selected location."}</DialogDescription>

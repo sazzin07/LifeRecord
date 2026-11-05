@@ -30,7 +30,7 @@ const APPLIANCE_KINDS = [
 const kindMeta = (k) => APPLIANCE_KINDS.find((x) => x.value === k) || APPLIANCE_KINDS[APPLIANCE_KINDS.length - 1];
 
 const STATUS = {
-  ok: { icon: Check, tone: "text-emerald-600 dark:text-emerald-400", label: () => "In stock" },
+  ok: { icon: Check, tone: "text-green-600 dark:text-green-400", label: () => "In stock" },
   short: { icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400", label: (r) => `Need ${+r.shortfall.toFixed(2)} ${r.unit} more` },
   missing: { icon: Plus, tone: "text-red-600 dark:text-red-400", label: () => "Not in stock" },
   check_units: { icon: CircleHelp, tone: "text-slate-500", label: () => "In stock, units differ" },
@@ -80,7 +80,7 @@ function RecipeCard({ e, onAddMissing, onCook }) {
       </ul>
 
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
-        <Button size="sm" className="bg-emerald-700 text-white hover:bg-emerald-700" onClick={() => onCook(e)}><ChefHat className="mr-1.5 h-4 w-4" />Cook this</Button>
+        <Button size="sm" onClick={() => onCook(e)}><ChefHat className="mr-1.5 h-4 w-4" />Cook this</Button>
         {e.missing.length > 0 && (
           <Button size="sm" variant="outline" onClick={() => onAddMissing(e)}><ShoppingCart className="mr-1.5 h-4 w-4" />Add {e.missing.length} to a list</Button>
         )}

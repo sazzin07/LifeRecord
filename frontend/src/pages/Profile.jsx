@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { followPointer } from "@/lib/pointerLight";
 import { MotionConfig } from "framer-motion";
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -29,10 +30,10 @@ export default function Profile() {
 
   return (
     <MotionConfig reducedMotion={animations ? "user" : "always"}>
-      <div className="mny-theme mny-stage space-y-4 sm:space-y-5">
+      <div className="mny-theme mny-stage space-y-4 sm:space-y-5" onPointerMove={followPointer}>
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
           <div className="min-w-0">
-            <h2 className="mny-title text-2xl font-semibold tracking-tight sm:text-3xl">Profile</h2>
+            <h2 className="mx-title">Profile</h2>
             <p className="mny-muted mt-0.5 text-sm">You, your sign-in and how it is protected. Anything that could lock you out asks for your password first.</p>
           </div>
           <AccountTabs />

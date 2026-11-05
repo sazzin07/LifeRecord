@@ -411,7 +411,7 @@ Every person has **two separate balances**, never netted against each other: *th
   server saved. Every action can be undone (by cancelling lines). The chat sends a `client_request_id`, so a retried send cannot apply a
   change twice.
 - **The screen** (`pages/People.jsx`, `pages/people/*`): the two totals and the latest activity; a directory of rows with search, sort,
-  filters and quick actions; the profile as a side sheet (a bottom sheet on a phone); a bar at the top for delete confirmations. Deep teal
+  filters and quick actions; the profile as a side sheet (a bottom sheet on a phone); a bar at the top for delete confirmations. Orchid
   and amber, glass only on the floating layers (sheet, dialogs, the bar), light and dark; the tokens live in `.ppl-theme` in `index.css`.
 - **Not done:** due dates and reminders (decided against for now); one currency (EUR; every ledger line carries a currency column so a second is
   never silently added); the old `DELETE /splits/{id}` and `/settlements/{id}` endpoints still exist for compatibility but the screen no
@@ -479,6 +479,15 @@ Two pages, switched from the top of either (`pages/Profile.jsx`, `pages/Settings
     signs out every other device and emails a notice. A request already on its way when the password changes waits for the change and uses the new token (`replacingSession` in `lib/api.js`), so the tab that changed it is never signed out by its own change.
 - **The assistant** can read and change the low-risk choices (`get_settings`, `update_settings`: theme, animations, week start, what Money opens on, the display name),
   and the user can undo. It has no tool for the password, two-step, sessions or deleting data, and says where to do those (Profile).
+
+### The look: the Purple Main Theme
+The whole app (shell, assistant, every page, dialogs, charts, skeletons, the sign-in pages) follows `docs/design-system/PURPLE_MAIN_THEME.md`: plum-tinted
+neutrals over a soft mauve haze, pill controls, 24-28px glass cards with a light top edge, one orchid accent, light and dark chosen in Settings
+(Light / Dark / System; `public/theme-init.js` applies the saved choice before the first paint, so neither theme flashes). The tokens are in
+`frontend/src/index.css`; the Money, Settings and Profile scope is `frontend/src/theme/orchid.css`. Colours come from variables, not literals:
+gain is green, spend red, locked or pending amber, always with a sign, an icon or a word; the `emerald-*` and `teal-*` classes are the orchid ramp.
+The pointer light on the Money, Settings and Profile cards is one handler (`lib/pointerLight.js`). Every animation has a `prefers-reduced-motion`
+and a `no-anim` (Settings > Animations) override. `design_guidelines.json` records the tokens and `designGuidelines.test.js` keeps it in step with the CSS.
 
 ### Offline
 Life Record needs its server. When the backend cannot be reached a banner says so and that changes will not save until it returns; changes are **not queued or replayed**. That is a decision (roadmap F-10), not a gap.

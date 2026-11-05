@@ -117,31 +117,31 @@ export function ExpenseDialog({ open, setOpen }) {
           )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</label>
+              <label className="text-xs font-semibold text-slate-500">Amount</label>
               <Input data-testid="expense-amount" type="number" step="0.01" value={splitMode === "items" ? itemsTotal.toFixed(2) : amount}
                 onChange={(e) => setAmount(e.target.value)} disabled={splitMode === "items"} placeholder="0.00" className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</label>
+              <label className="text-xs font-semibold text-slate-500">Date</label>
               <DatePicker data-testid="expense-date" value={date} onChange={setDate} clearable={false} className="mt-1" aria-label="Date" />
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Merchant</label>
+            <label className="text-xs font-semibold text-slate-500">Merchant</label>
             <Input data-testid="expense-merchant" value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="e.g. Lidl" className="mt-1" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</label>
+              <label className="text-xs font-semibold text-slate-500">Category</label>
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger data-testid="expense-category" aria-label="Category" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Paid with</label>
+              <label className="text-xs font-semibold text-slate-500">Paid with</label>
               <Select value={account} onValueChange={(v) => { pickedAccount.current = true; setAccount(v); }}>
                 <SelectTrigger data-testid="expense-account" aria-label="Paid with" className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -162,7 +162,7 @@ export function ExpenseDialog({ open, setOpen }) {
           )}
 
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Who participated?</label>
+            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Who participated?</label>
             <div className="mt-2 flex flex-wrap gap-2">
               {allNames.map((name) => (
                 <button key={name} type="button" data-testid={`participant-${name.toLowerCase()}`} onClick={() => name !== "Me" && toggleParticipant(name)}
@@ -176,7 +176,7 @@ export function ExpenseDialog({ open, setOpen }) {
 
           {participants.length > 1 && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Split</label>
+              <label className="text-xs font-semibold text-slate-500">Split</label>
               <div className="mt-2 flex gap-2">
                 {["equal", "items"].map((m) => (
                   <button key={m} type="button" data-testid={`split-${m}`} onClick={() => setSplitMode(m)}
@@ -221,7 +221,7 @@ export function ExpenseDialog({ open, setOpen }) {
               <div className="text-slate-500">Total {eur(gross)}</div>
               <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">Your share {eur(myShare)}</div>
             </div>
-            {gross - myShare > 0.005 && <div className="text-right text-emerald-600 dark:text-emerald-400 font-semibold">+{eur(gross - myShare)}<div className="text-xs text-slate-500 font-normal">to receive</div></div>}
+            {gross - myShare > 0.005 && <div className="text-right text-green-600 dark:text-green-400 font-semibold">+{eur(gross - myShare)}<div className="text-xs text-slate-500 font-normal">to receive</div></div>}
           </div>
 
           <Button data-testid="expense-save" onClick={save} disabled={saving || noAccounts || !!spendWarning} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11">

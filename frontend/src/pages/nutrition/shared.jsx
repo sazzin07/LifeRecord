@@ -80,7 +80,7 @@ export function RangeGauge({ label, color, intake, min, max, target, unit, missi
   const hasRange = min != null && max != null;
   const state = missing ? "No data yet" : hasRange ? (intake < min ? "Below range" : intake > max ? "Above range" : "In range")
     : target ? (intake >= target ? "Target reached" : `${Math.round((intake / target) * 100)}% of target`) : "";
-  const tone = missing ? "text-slate-500 dark:text-slate-400" : state === "In range" || state === "Target reached" ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400";
+  const tone = missing ? "text-slate-500 dark:text-slate-400" : state === "In range" || state === "Target reached" ? "text-green-700 dark:text-green-400" : "text-slate-500 dark:text-slate-400";
   return (
     <div data-testid={testid}>
       <div className="flex items-baseline justify-between gap-2">

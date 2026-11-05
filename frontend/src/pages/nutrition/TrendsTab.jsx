@@ -49,17 +49,17 @@ export function TrendsTab({ date, today, energyTarget }) {
   const empty = t.days_logged === 0;
   return (
     <div className="space-y-6" data-testid="trends-tab">
-      <div role="group" aria-label="What to show" className="inline-flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 scrollbar-hide dark:bg-slate-800">
+      <div role="group" aria-label="What to show" className="inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-field p-1 scrollbar-hide">
         {VIEWS.map(([k, label]) => (
           <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)} data-testid={`view-${k}`}
-            className={cn("shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500", view === k ? "bg-white shadow-sm dark:bg-slate-700" : "text-slate-600 dark:text-slate-400")}>{label}</button>
+            className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", view === k ? "pill-fill" : "text-muted-foreground hover:text-foreground")}>{label}</button>
         ))}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="group" aria-label="Time range" className="inline-flex max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 scrollbar-hide dark:bg-slate-800">
+        <div role="group" aria-label="Time range" className="inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-field p-1 scrollbar-hide">
           {RANGES.map(([n, label]) => (
             <button key={n} type="button" aria-pressed={days === n} onClick={() => setDays(n)} data-testid={`range-${n}`}
-              className={cn("shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500", days === n ? "bg-white shadow-sm dark:bg-slate-700" : "text-slate-600 dark:text-slate-400")}>{label}</button>
+              className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", days === n ? "pill-fill" : "text-muted-foreground hover:text-foreground")}>{label}</button>
           ))}
         </div>
         <div className="flex gap-2">
@@ -91,8 +91,8 @@ export function TrendsTab({ date, today, energyTarget }) {
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={Math.max(0, Math.ceil(series.length / 8) - 1)} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                   <Tooltip cursor={{ fill: "rgba(148,163,184,0.12)" }} formatter={(v) => [`${v} kcal`, "Energy"]} labelFormatter={(l) => `${bucket === "day" ? "Day" : bucket === "week" ? "Week of" : "Month"} ${l}`} />
-                  {energyTarget ? <ReferenceLine y={energyTarget} stroke="#10B981" strokeDasharray="4 4" label={{ value: "reference", fontSize: 11, fill: "#10B981", position: "insideTopRight" }} /> : null}
-                  <Bar dataKey="kcal" fill="#10B981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                  {energyTarget ? <ReferenceLine y={energyTarget} stroke="var(--chart-line)" strokeDasharray="4 4" label={{ value: "reference", fontSize: 11, fill: "var(--chart-line)", position: "insideTopRight" }} /> : null}
+                  <Bar dataKey="kcal" fill="var(--chart-line-soft)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

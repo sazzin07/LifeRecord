@@ -143,10 +143,10 @@ export default function Body() {
           <Label>Weight trend</Label>
           <ResponsiveContainer width="100%" height={200} className="mt-3">
             <LineChart data={arr}>
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} stroke="#94A3B8" />
-              <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 10 }} stroke="#94A3B8" width={30} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(d) => d.slice(5)} axisLine={false} tickLine={false} />
+              <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={30} />
               <Tooltip formatter={(v) => `${v} kg`} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-              <Line type="monotone" dataKey="weight" stroke="#10B981" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="weight" stroke="var(--chart-line)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--chart-line)", stroke: "var(--chart-line)" }} activeDot={{ r: 6, fill: "var(--tip-bg)", stroke: "var(--chart-line)", strokeWidth: 3 }} animationDuration={1000} />
             </LineChart>
           </ResponsiveContainer>
         </Card>

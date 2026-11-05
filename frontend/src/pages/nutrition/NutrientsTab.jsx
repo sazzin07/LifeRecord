@@ -9,10 +9,10 @@ import { Coverage, SRC_LABEL, STATUS_LABEL, UpperLevelBanner, fmt, upperLevelTex
 const GROUP_ORDER = ["macro", "fat", "vitamin", "mineral", "other"];
 const GROUP_TITLE = { macro: "Macronutrients", fat: "Fats", vitamin: "Vitamins", mineral: "Minerals", other: "Other" };
 const TONE = {
-  met: "text-emerald-700 dark:text-emerald-400", within: "text-emerald-700 dark:text-emerald-400", under: "text-emerald-700 dark:text-emerald-400",
+  met: "text-green-700 dark:text-green-400", within: "text-green-700 dark:text-green-400", under: "text-green-700 dark:text-green-400",
   below: "text-slate-500 dark:text-slate-400", above: "text-amber-700 dark:text-amber-400", over: "text-amber-700 dark:text-amber-400", no_data: "text-slate-500 dark:text-slate-400",
 };
-const BAR = { met: "bg-emerald-500", within: "bg-emerald-500", under: "bg-emerald-500", below: "bg-slate-400", above: "bg-amber-500", over: "bg-amber-500", no_data: "bg-slate-300" };
+const BAR = { met: "bg-green-500", within: "bg-green-500", under: "bg-green-500", below: "bg-slate-400", above: "bg-amber-500", over: "bg-amber-500", no_data: "bg-slate-300" };
 
 // What each filter keeps. "Below reference" means there is data and it is under the target, never "no data".
 const FILTERS = [
@@ -89,10 +89,10 @@ export function NutrientsTab({ day }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" aria-hidden="true" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a nutrient" aria-label="Find a nutrient" className="h-10 pl-9" data-testid="nutrient-search" />
         </div>
-        <div role="group" aria-label="Show" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+        <div role="group" aria-label="Show" className="inline-flex flex-wrap gap-1 rounded-full border border-line bg-field p-1">
           {FILTERS.map(([k, label]) => (
             <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} data-testid={`nutrient-filter-${k}`}
-              className={cn("rounded-lg px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500", filter === k ? "bg-white shadow-sm dark:bg-slate-700" : "text-slate-600 dark:text-slate-400")}>
+              className={cn("rounded-full px-4 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", filter === k ? "pill-fill" : "text-muted-foreground hover:text-foreground")}>
               {label} <span className="stat-num text-xs text-slate-600 dark:text-slate-300">{counts[k]}</span>
             </button>
           ))}

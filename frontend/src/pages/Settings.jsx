@@ -1,4 +1,5 @@
 import { MotionConfig, motion } from "framer-motion";
+import { followPointer } from "@/lib/pointerLight";
 import { useSearchParams } from "react-router-dom";
 import { CalendarDays, Laptop, Palette, Wallet } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
@@ -46,10 +47,10 @@ export default function Settings() {
 
   return (
     <MotionConfig reducedMotion={animations ? "user" : "always"}>
-      <div className="mny-theme mny-stage">
+      <div className="mny-theme mny-stage" onPointerMove={followPointer}>
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
           <div className="min-w-0">
-            <h2 className="mny-title text-2xl font-semibold tracking-tight sm:text-3xl">Settings</h2>
+            <h2 className="mx-title">Settings</h2>
             <p className="mny-muted mt-0.5 text-sm">How Life Record looks and works for you. Changes apply at once.</p>
           </div>
           <AccountTabs />

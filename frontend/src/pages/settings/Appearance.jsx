@@ -6,8 +6,8 @@ import { Row, SavedBadge, Section } from "@/components/settings/controls";
 import { cn } from "@/lib/utils";
 
 const PALETTE = {
-  light: { bg: "#eef3f0", card: "#ffffff", line: "#d3ded8", ink: "#0a2a1c", soft: "#9db5a9", accent: "#0b7a50" },
-  dark: { bg: "#080d0b", card: "#111a16", line: "#25322c", ink: "#e8f1ed", soft: "#51655b", accent: "#34d399" },
+  light: { bg: "#f7f2f7", card: "#ffffff", line: "#ded6e1", ink: "#201424", soft: "#c5b8ca", accent: "#6c4d7d" },
+  dark: { bg: "#0e0b0e", card: "#151216", line: "#362e38", ink: "#f6eff6", soft: "#857790", accent: "#dcb0e5" },
 };
 
 /** A tiny picture of the app in one theme: the side strip, a card with a figure, a button. */
@@ -46,8 +46,8 @@ export function Appearance({ index }) {
           const on = theme === t.k;
           return (
             <button key={t.k} type="button" role="radio" aria-checked={on} data-testid={`theme-${t.k}`} onClick={() => setTheme(t.k)}
-              className="group relative rounded-2xl p-1.5 text-left transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mny-green)]">
-              {on && <motion.span layoutId="theme-ring" className="absolute inset-0 rounded-2xl border-2 border-[var(--mny-green)]" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
+              className="group relative rounded-2xl p-1.5 text-left transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mx-orchid)]">
+              {on && <motion.span layoutId="theme-ring" className="absolute inset-0 rounded-2xl border-2 border-[var(--mx-orchid)]" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
               <span className={cn("relative block h-24 overflow-hidden rounded-xl border border-[var(--mny-line)]", on && "shadow-lg")}>
                 {t.k === "system" ? (
                   <>

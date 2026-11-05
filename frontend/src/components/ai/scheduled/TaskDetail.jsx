@@ -41,7 +41,7 @@ export function RunView({ runId, task, onBack, onChanged }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="run-view">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <button type="button" onClick={onBack} aria-label="Back to history" className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
+        <button type="button" onClick={onBack} aria-label="Back to history" className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
         <div className="min-w-0">
           <h2 className="truncate text-[15px] font-semibold tracking-tight">{TRIGGER[run.trigger] || "Run"} · {formatWhen(run.started_at || run.created_at, task.timezone)}</h2>
           <p className="text-xs text-muted-foreground">{run.duration_ms != null ? `Took ${duration(run.duration_ms)}` : "In progress"}</p>
@@ -107,7 +107,7 @@ export function TaskDetail({ task, onBack, onEdit, onChanged, onDeleted }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="task-detail">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <button type="button" onClick={onBack} aria-label="Back to scheduled tasks" className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
+        <button type="button" onClick={onBack} aria-label="Back to scheduled tasks" className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
         <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">{task.title}</h2>
         <TaskStatusPill status={task.status} />
       </header>

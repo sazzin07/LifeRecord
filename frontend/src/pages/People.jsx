@@ -186,7 +186,7 @@ export default function People() {
           <h1 className="text-2xl sm:text-[1.75rem] font-semibold tracking-[-0.015em] leading-tight">People</h1>
           <p className="ppl-muted mt-1 text-sm">Who owes you, and who you owe. Two separate balances for everyone.</p>
         </div>
-        <Button onClick={startAdd} data-testid="add-person-btn" className="ppl-btn-primary h-10 rounded-xl px-4 font-semibold"><Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />Add person</Button>
+        <Button onClick={startAdd} data-testid="add-person-btn" className="ppl-btn-primary h-10 px-4 font-semibold"><Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />Add person</Button>
       </header>
 
       <DeleteBar targets={deleteTargets} busy={deleting} onCancel={() => setDeleteTargets(null)} onConfirm={confirmDelete} />
@@ -230,7 +230,7 @@ export default function People() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people" aria-label="Search people" className="h-10 rounded-xl bg-[var(--ppl-surface)] pl-9" data-testid="people-search" />
           </div>
           <Select value={sort} onValueChange={setSort}>
-            <SelectTrigger className="h-10 w-full rounded-xl bg-[var(--ppl-surface)] sm:w-48" aria-label="Sort people" data-testid="people-sort"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10 w-full bg-[var(--ppl-surface)] sm:w-48" aria-label="Sort people" data-testid="people-sort"><SelectValue /></SelectTrigger>
             <SelectContent>{SORTS.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}</SelectContent>
           </Select>
         </div>
@@ -270,7 +270,7 @@ export default function People() {
             <span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl" style={{ background: "var(--ppl-teal-tint)" }}><Users className="ppl-teal h-6 w-6" aria-hidden="true" /></span>
             <p className="font-semibold">{source.length === 0 ? (view === "archived" ? "No archived people" : "No one here yet") : "No one matches"}</p>
             <p className="ppl-muted mt-1 max-w-sm text-sm">{source.length === 0 ? (view === "archived" ? "People you delete are kept here, with their history, until you restore them." : "Add the first person to start keeping track of who owes what.") : "Try another search or filter."}</p>
-            {source.length === 0 && view === "active" && <Button onClick={startAdd} className="ppl-btn-primary mt-5 rounded-xl"><Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />Add person</Button>}
+            {source.length === 0 && view === "active" && <Button onClick={startAdd} className="ppl-btn-primary mt-5"><Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />Add person</Button>}
           </div>
         ) : (
           <div className="ppl-solid overflow-hidden">
@@ -307,13 +307,13 @@ export default function People() {
                     <div className="col-start-2 flex gap-1.5 sm:col-start-auto sm:justify-end">
                       {view === "active" ? (
                         <>
-                          <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => setDebtDialog({ kind: "add", person: p })} data-testid={`person-add-debt-${p.id}`}><Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Debt</Button>
-                          <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => setDebtDialog({ kind: "payment", person: p })} data-testid={`person-payment-${p.id}`}><HandCoins className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Payment</Button>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => setDebtDialog({ kind: "add", person: p })} data-testid={`person-add-debt-${p.id}`}><Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Debt</Button>
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => setDebtDialog({ kind: "payment", person: p })} data-testid={`person-payment-${p.id}`}><HandCoins className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Payment</Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(p)} aria-label={`Edit ${p.name}`} data-testid={`person-edit-${p.id}`}><Pencil className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="ppl-amber h-8 w-8" onClick={() => setDeleteTargets([p])} aria-label={`Delete ${p.name}`} data-testid={`person-delete-${p.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                         </>
                       ) : (
-                        <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={async () => { try { await api.post(`/debts/people/${p.id}/restore`, null, { headers: { "Idempotency-Key": newKey() } }); refreshAll(["/people", "/debts"]); toast.success(`${p.name} is back`); } catch (err) { toast.error(errorMessage(err, "Could not restore")); } }} data-testid={`person-restore-${p.id}`}>Restore</Button>
+                        <Button variant="outline" size="sm" className="h-8" onClick={async () => { try { await api.post(`/debts/people/${p.id}/restore`, null, { headers: { "Idempotency-Key": newKey() } }); refreshAll(["/people", "/debts"]); toast.success(`${p.name} is back`); } catch (err) { toast.error(errorMessage(err, "Could not restore")); } }} data-testid={`person-restore-${p.id}`}>Restore</Button>
                       )}
                     </div>
                   </motion.li>

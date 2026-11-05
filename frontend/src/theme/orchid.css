@@ -1,0 +1,162 @@
+/* The plum look for every page that uses the .mny-* classes (Money, Profile, Settings): a stage with a mauve haze, glass cards, outlined pills and
+   one mauve gradient for the active choice. Two themes: `.mny-theme` carries the light values (lilac and ivory), `.dark .mny-theme` the dark ones
+   (plum-black). Every rule below reads the --mx-* variables, so nothing is written twice. Colour never carries a meaning alone: signs, arrows
+   and words say gain / spend / locked. */
+
+.mny-theme {
+  --mny-bg: #f5eff7;
+  --mny-lights:
+    radial-gradient(75% 55% at 78% -8%, rgba(196, 160, 214, 0.5), transparent 72%),
+    radial-gradient(55% 40% at 0% 8%, rgba(214, 186, 226, 0.36), transparent 70%),
+    radial-gradient(60% 40% at 50% 112%, rgba(200, 165, 215, 0.3), transparent 70%);
+  --mny-surface: #ffffff; --mny-surface-2: #f4eef7; --mny-line: rgba(70, 35, 90, 0.13);
+  --mny-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 2px rgba(70, 35, 90, 0.06), 0 22px 46px -30px rgba(70, 35, 90, 0.38);
+  --mny-text: #231a28; --mny-muted: #65586d;
+  --mny-green: #0b7a52; --mny-green-tint: rgba(11, 122, 82, 0.12);
+  --mny-grad: linear-gradient(135deg, #87699b, #5a4566); --mny-on-grad: #ffffff;
+  --mny-neg: #b4232f; --mny-neg-tint: rgba(200, 40, 60, 0.1);
+  --mny-amber: #8f4208; --mny-amber-tint: rgba(217, 138, 11, 0.16);
+  --mx-orchid: #6c4d7d; --mx-orchid-deep: #8b6a9d;
+  --mx-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --mx-edge: rgba(70, 35, 90, 0.12); --mx-edge-hover: rgba(70, 35, 90, 0.26); --mx-hair: rgba(70, 35, 90, 0.12);
+  --mx-card: linear-gradient(180deg, #ffffff, #fbf8fc);
+  --mx-glow: rgba(150, 100, 180, 0.13);
+  --mx-tile: rgba(90, 50, 110, 0.05); --mx-tile-edge: rgba(70, 35, 90, 0.12);
+  --mx-badge: rgba(122, 90, 138, 0.1);
+  --mx-pill: rgba(255, 255, 255, 0.85); --mx-pill-edge: rgba(70, 35, 90, 0.3); --mx-pill-hover: rgba(90, 50, 110, 0.08); --mx-pill-hover-edge: rgba(70, 35, 90, 0.5);
+  --mx-cta: linear-gradient(180deg, #876096, #6b4f7b); --mx-cta-ink: #ffffff; --mx-cta-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 12px 26px -14px rgba(107, 79, 123, 0.7);
+  --mx-field: rgba(255, 255, 255, 0.92); --mx-field-edge: rgba(70, 35, 90, 0.28);
+  --mx-ask: rgba(255, 255, 255, 0.75); --mx-ask-edge: rgba(70, 35, 90, 0.2);
+  --mx-bar: rgba(90, 50, 110, 0.1); --mx-bar-fill: linear-gradient(90deg, #8b6a9d, #6c4d7d);
+  --mx-warn-fill: linear-gradient(90deg, #d49a3a, #b8760b); --mx-over-fill: linear-gradient(90deg, #d8485c, #b4232f);
+  --mx-row: rgba(90, 50, 110, 0.05);
+  --mx-arc: rgba(160, 110, 190, 0.34); --mx-bloom: rgba(180, 135, 205, 0.4); --mx-bloom-soft: rgba(190, 150, 210, 0.14);
+  --mx-tip: #ffffff; --mx-selection: rgba(160, 110, 190, 0.3);
+  --mx-chip: rgba(255, 255, 255, 0.7); --mx-chip-edge: rgba(70, 35, 90, 0.22);
+  --mx-state: rgba(11, 122, 82, 0.12);
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  scrollbar-color: var(--scroll) transparent;
+}
+.dark .mny-theme {
+  --mny-bg: #0c0a0e;
+  --mny-lights:
+    radial-gradient(75% 55% at 78% -8%, rgba(150, 118, 160, 0.42), transparent 72%),
+    radial-gradient(55% 40% at 0% 8%, rgba(120, 96, 132, 0.22), transparent 70%),
+    radial-gradient(60% 40% at 50% 112%, rgba(140, 105, 150, 0.2), transparent 70%);
+  --mny-surface: #100d12; --mny-surface-2: #1b161e; --mny-line: rgba(255, 232, 255, 0.1);
+  --mny-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 48px -30px rgba(0, 0, 0, 0.9);
+  --mny-text: #f6f0f7; --mny-muted: #b8adbb;
+  --mny-green: #62e4a4; --mny-green-tint: rgba(98, 228, 164, 0.13);
+  --mny-neg: #ff9fac; --mny-neg-tint: rgba(255, 140, 160, 0.14);
+  --mny-amber: #f6c46e; --mny-amber-tint: rgba(246, 196, 110, 0.14);
+  --mx-orchid: #dcb0e5; --mx-orchid-deep: #a87bb6;
+  --mx-edge: rgba(255, 232, 255, 0.1); --mx-edge-hover: rgba(255, 232, 255, 0.18); --mx-hair: rgba(255, 232, 255, 0.1);
+  --mx-card: linear-gradient(180deg, rgba(255, 240, 255, 0.055), rgba(255, 240, 255, 0.012)), #0e0b10;
+  --mx-glow: rgba(220, 176, 229, 0.11);
+  --mx-tile: rgba(0, 0, 0, 0.32); --mx-tile-edge: rgba(255, 232, 255, 0.12);
+  --mx-badge: rgba(0, 0, 0, 0.35);
+  --mx-pill: rgba(0, 0, 0, 0.38); --mx-pill-edge: rgba(255, 240, 255, 0.24); --mx-pill-hover: rgba(255, 240, 255, 0.1); --mx-pill-hover-edge: rgba(255, 240, 255, 0.4);
+  --mx-cta: linear-gradient(180deg, #ecc9f2, #c795d3); --mx-cta-ink: #2a1433; --mx-cta-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 12px 26px -14px rgba(220, 150, 235, 0.7);
+  --mx-field: rgba(0, 0, 0, 0.38); --mx-field-edge: rgba(255, 240, 255, 0.2);
+  --mx-ask: rgba(0, 0, 0, 0.45); --mx-ask-edge: rgba(255, 240, 255, 0.12);
+  --mx-bar: rgba(0, 0, 0, 0.4); --mx-bar-fill: linear-gradient(90deg, #a87bb6, #e0b6e8);
+  --mx-warn-fill: linear-gradient(90deg, #d49a3a, #f6c46e); --mx-over-fill: linear-gradient(90deg, #e0566a, #ff9fac);
+  --mx-row: rgba(255, 240, 255, 0.045);
+  --mx-arc: rgba(220, 176, 229, 0.34); --mx-bloom: rgba(220, 176, 229, 0.38); --mx-bloom-soft: rgba(160, 120, 175, 0.14);
+  --mx-tip: #1d1720; --mx-selection: rgba(220, 176, 229, 0.32);
+  --mx-chip: rgba(0, 0, 0, 0.3); --mx-chip-edge: rgba(255, 240, 255, 0.2);
+  --mx-state: rgba(98, 228, 164, 0.13);
+}
+/* the dropdowns of the page's own selects open outside the stage (a portal): same face and corners */
+.mx-pop { font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif; border-radius: 18px; }
+.mny-theme { border-radius: 32px; border-color: var(--mx-edge); }
+.mny-theme ::selection { background: var(--mx-selection); }
+.mny-theme :focus-visible { outline: 2px solid var(--mx-orchid); outline-offset: 3px; }
+.mny-theme .mny-num { font-feature-settings: "tnum" 1; }
+
+/* ---- surfaces ---- */
+.mny-theme .mny-card {
+  position: relative; border-radius: 28px;
+  background: var(--mx-card);
+  border-color: var(--mx-edge);
+  transition: border-color 220ms var(--mx-ease);
+}
+.mny-theme .mny-card::before { /* a soft light that follows the pointer (mouse only) */
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0; border-radius: inherit;
+  background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 0%), var(--mx-glow), transparent 65%);
+  transition: opacity 300ms var(--mx-ease);
+}
+.mny-theme .mny-card > * { position: relative; z-index: 1; }
+@media (hover: hover) {
+  .mny-theme .mny-card:hover { border-color: var(--mx-edge-hover); }
+  .mny-theme .mny-card:hover::before { opacity: 1; }
+}
+.mny-theme .mny-card.mny-hero { border-color: color-mix(in srgb, var(--mx-orchid) 35%, transparent); }
+.mny-theme .mny-tile { border-radius: 20px; background: var(--mx-tile); border-color: var(--mx-tile-edge); }
+.mny-theme .mny-badge { background: var(--mx-badge); border-color: var(--mx-tile-edge); color: var(--mx-orchid); }
+
+/* the card with an arc of light along its bottom edge, and the one with a bloom in its corner */
+.mx-glow::after { content: ""; position: absolute; left: 50%; bottom: -46%; width: 120%; aspect-ratio: 1; transform: translateX(-50%); border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(closest-side, transparent 62%, var(--mx-arc) 79%, transparent 100%); }
+.mx-bloom::after { content: ""; position: absolute; right: -14%; top: -40%; width: 70%; aspect-ratio: 1; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(closest-side, var(--mx-bloom), var(--mx-bloom-soft) 55%, transparent 100%); filter: blur(8px); }
+
+/* ---- type ---- */
+.mny-theme .mny-title { letter-spacing: -0.005em; }
+.mx-h { font-size: 1.0625rem; font-weight: 600; color: var(--mny-text); }
+.mx-title { font-size: clamp(1.75rem, 3.6vw, 2.5rem); font-weight: 500; letter-spacing: -0.025em; line-height: 1.1; color: var(--mny-text); }
+.mx-fig { font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+
+/* ---- pills: outlined; the chosen one takes the mauve gradient ---- */
+.mny-theme .mny-pill { height: 2.5rem; padding: 0 1.15rem; border-color: var(--mx-pill-edge); background: var(--mx-pill); color: var(--mny-text); font-weight: 500;
+  transition: background-color 180ms var(--mx-ease), border-color 180ms, color 180ms, transform 120ms var(--mx-ease); }
+.mny-theme .mny-pill:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--mx-pill-hover); border-color: var(--mx-pill-hover-edge); }
+.mny-theme .mny-pill[aria-pressed="true"] { background: var(--mny-grad); color: var(--mny-on-grad); border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+.mny-theme .mny-pill.sm { height: 2rem; padding: 0 0.85rem; }
+.mny-theme .mny-pill:disabled { color: var(--mny-muted); }
+.mny-theme .mny-cta, .mny-theme .mny-cta:hover:not(:disabled) { background: var(--mx-cta); color: var(--mx-cta-ink); border-color: transparent; box-shadow: var(--mx-cta-shadow); }
+.mny-theme .mny-field { background: var(--mx-field); border-color: var(--mx-field-edge); }
+
+/* the ask bar: a wide pill, as in the reference */
+.mx-ask { display: flex; align-items: center; gap: 10px; height: 3rem; padding: 0 1.2rem; border-radius: 999px; text-align: left;
+  border: 1px solid var(--mx-ask-edge); background: var(--mx-ask); color: var(--mny-muted); font-size: 0.9375rem;
+  transition: border-color 180ms, background-color 180ms, color 180ms, transform 120ms var(--mx-ease); }
+.mx-ask:hover { border-color: var(--mx-pill-hover-edge); color: var(--mny-text); }
+.mx-ask:active { transform: scale(0.985); }
+
+.mx-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 12px; font-size: 0.75rem; font-weight: 600;
+  border: 1px solid var(--mx-chip-edge); background: var(--mx-chip); color: var(--mny-text); }
+
+/* ---- the "watchlist": rows on a hairline, the way the reference lists its holdings ---- */
+.mx-asset { padding: 14px 0; border-top: 1px solid var(--mx-hair); }
+.mx-asset:first-child { border-top: 0; padding-top: 4px; }
+.mx-asset:last-child { padding-bottom: 0; }
+.mx-list > li, .mx-list > div.mx-li { padding: 12px 0; border-top: 1px solid var(--mx-hair); }
+.mx-list > li:first-child { border-top: 0; padding-top: 2px; }
+
+/* ---- progress bars (budgets) ---- */
+.mny-theme .mny-bar { height: 0.55rem; background: var(--mx-bar); border-color: var(--mx-tile-edge); }
+.mny-theme .mny-bar > span { background: var(--mx-bar-fill); transform-origin: left; animation: mx-bar 900ms var(--mx-ease) both; animation-delay: 300ms; }
+.mny-theme .mny-bar > span.warn { background: var(--mx-warn-fill); }
+.mny-theme .mny-bar > span.over { background: var(--mx-over-fill); }
+@keyframes mx-bar { from { transform: scaleX(0); } }
+
+.mny-theme .mny-tip { background: var(--mx-tip); border-color: var(--mx-edge-hover); border-radius: 18px; padding: 0.7rem 0.95rem; }
+.mny-theme .mny-state { background: var(--mx-state); }
+.mny-theme .mny-state.neg { background: var(--mny-neg-tint); }
+.mny-theme .mny-state.amber { background: var(--mny-amber-tint); }
+.mny-theme .mny-row:hover, .mny-theme .mny-row:focus-within { background: var(--mx-row); }
+.mny-theme .mny-skip { background: transparent; }
+
+/* ---- motion: one staggered entrance; figures and bars arrive softly ---- */
+@keyframes mx-rise { from { opacity: 0; transform: translateY(12px); filter: blur(6px); } }
+.mx-rise { animation: mx-rise 700ms var(--mx-ease) both; animation-delay: calc(var(--i, 0) * 65ms); }
+@keyframes mx-appear { from { opacity: 0; filter: blur(4px); } }
+.mx-appear { animation: mx-appear 420ms var(--mx-ease) both; }
+.mx-press { transition: transform 120ms var(--mx-ease); }
+.mx-press:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .mx-rise, .mx-appear, .mny-theme .mny-bar > span { animation: none !important; }
+  .mny-theme .mny-card, .mny-theme .mny-pill, .mx-ask { transition: none !important; }
+}
+.no-anim .mx-rise, .no-anim .mx-appear, .no-anim .mny-theme .mny-bar > span { animation: none !important; }

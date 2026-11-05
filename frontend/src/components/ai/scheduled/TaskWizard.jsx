@@ -117,7 +117,7 @@ export function TaskWizard({ task, options, initialStep, onClose, onSaved }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="task-wizard">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <button type="button" onClick={onClose} aria-label="Back to scheduled tasks" className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
+        <button type="button" onClick={onClose} aria-label="Back to scheduled tasks" className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-muted"><ArrowLeft className="h-4 w-4" /></button>
         <h2 className="text-[15px] font-semibold tracking-tight">{editing ? "Edit scheduled task" : "New scheduled task"}</h2>
         <ol className="ml-auto flex items-center gap-1" aria-label="Steps">
           {STEPS.map((s, i) => (

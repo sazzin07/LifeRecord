@@ -95,29 +95,29 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</label>
+              <label className="text-xs font-semibold text-slate-500">Description</label>
               <Input value={f.description || ""} onChange={set("description")} className="mt-1" data-testid="edit-description" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total ({currencySymbol(txn?.currency)})</label>
+                <label className="text-xs font-semibold text-slate-500">Total ({currencySymbol(txn?.currency)})</label>
                 <Input type="number" step="0.01" value={f.amount ?? ""} onChange={set("amount")} className="mt-1" data-testid="edit-amount" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Your personal cost ({currencySymbol(txn?.currency)})</label>
+                <label className="text-xs font-semibold text-slate-500">Your personal cost ({currencySymbol(txn?.currency)})</label>
                 <Input type="number" step="0.01" value={f.personal_amount ?? ""} onChange={set("personal_amount")} className="mt-1" data-testid="edit-personal" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</label>
+                <label className="text-xs font-semibold text-slate-500">Category</label>
                 <Select value={f.category} onValueChange={(v) => setF((p) => ({ ...p, category: v }))}>
                   <SelectTrigger className="mt-1" data-testid="edit-category"><SelectValue /></SelectTrigger>
                   <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment</label>
+                <label className="text-xs font-semibold text-slate-500">Payment</label>
                 <Select value={f.payment_method} onValueChange={(v) => setF((p) => ({ ...p, payment_method: v }))}>
                   <SelectTrigger className="mt-1" data-testid="edit-method"><SelectValue /></SelectTrigger>
                   <SelectContent>{orderAccounts(accounts).map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}</SelectContent>
@@ -125,7 +125,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</label>
+              <label className="text-xs font-semibold text-slate-500">Date</label>
               <DatePicker value={f.date || ""} onChange={(v) => set("date")({ target: { value: v } })} clearable={false} className="mt-1" data-testid="edit-date" aria-label="Date" />
             </div>
             <Textarea placeholder="Notes" value={f.notes || ""} onChange={set("notes")} rows={2} data-testid="edit-notes" />
@@ -133,7 +133,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
             {txn.reimbursable_amount > 0.005 && (
               <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 p-4 text-sm space-y-1.5">
                 <div className="flex justify-between"><span className="text-slate-500">To be refunded</span><span className="stat-num font-semibold">{eur(txn.reimbursable_amount)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Already refunded</span><span className="stat-num font-semibold text-emerald-600 dark:text-emerald-400">{eur(txn.amount_refunded || 0)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Already refunded</span><span className="stat-num font-semibold text-green-600 dark:text-green-400">{eur(txn.amount_refunded || 0)}</span></div>
                 <div className="flex justify-between border-t border-border pt-1.5"><span className="text-slate-500">Remaining</span><span className="stat-num font-bold text-amber-600 dark:text-amber-400" data-testid="edit-remaining">{eur(txn.remaining_refund ?? txn.reimbursable_amount)}</span></div>
                 <div className="text-xs text-slate-500">Owed by: {txn.responsible?.join(", ") || "—"}</div>
                 {txn.remaining_refund > 0.005 && (
@@ -177,7 +177,7 @@ export function EditExpenseDialog({ txn, open, setOpen }) {
                 <SelectContent>{orderAccounts(accounts).map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <Button onClick={recordRefund} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" data-testid="refund-submit">Record</Button>
+            <Button onClick={recordRefund} className="w-full" data-testid="refund-submit">Record</Button>
           </div>
         </DialogContent>
       </Dialog>

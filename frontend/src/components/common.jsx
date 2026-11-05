@@ -29,7 +29,7 @@ export function SectionHeading({ title, sub, action }) {
 }
 
 export function Label({ children }) {
-  return <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{children}</span>;
+  return <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{children}</span>;
 }
 
 export function Card({ className, children, ...props }) {

@@ -124,7 +124,7 @@ function TargetDialog({ item, byKey, onClose }) {
             ))}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">Unit: {item.unit}. Fill in only what you want to set.</p>
-          <div className="flex justify-end"><Button type="submit" disabled={saving} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="target-save">Save target</Button></div>
+          <div className="flex justify-end"><Button type="submit" disabled={saving} data-testid="target-save">Save target</Button></div>
         </form>
       </DialogContent>
     </Dialog>

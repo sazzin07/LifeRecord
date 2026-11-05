@@ -144,7 +144,7 @@ function DayCard({ day, today, onAdd, onEdit, onDelete }) {
               const p = day.progress[k];
               if (!p || p.status === "no_data") return null;
               return (
-                <span key={k} className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px]", GOOD.has(p.status) ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300")}
+                <span key={k} className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px]", GOOD.has(p.status) ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300" : "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300")}
                   title={p.entries_reporting < p.entries ? `${p.entries - p.entries_reporting} of ${p.entries} planned items have no value for this` : undefined}>
                   {label} {fmt(p.intake)} {p.unit} · {STATUS_LABEL[p.status]}
                 </span>

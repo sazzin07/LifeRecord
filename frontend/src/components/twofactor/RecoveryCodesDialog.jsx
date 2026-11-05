@@ -38,7 +38,7 @@ export function RecoveryCodesDialog({ codes, onClose }) {
           <Button variant="outline" onClick={copy} className="flex-1" data-testid="two-factor-copy"><Copy className="h-4 w-4 mr-1" aria-hidden="true" />Copy</Button>
           <Button variant="outline" onClick={download} className="flex-1" data-testid="two-factor-download"><Download className="h-4 w-4 mr-1" aria-hidden="true" />Download</Button>
         </div>
-        <Button onClick={onClose} data-testid="two-factor-saved" className="w-full bg-emerald-700 hover:bg-emerald-800 text-white">I have saved them</Button>
+        <Button onClick={onClose} data-testid="two-factor-saved" className="w-full">I have saved them</Button>
       </DialogContent>
     </Dialog>
   );

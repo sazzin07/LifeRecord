@@ -40,7 +40,7 @@ export function AddMoneyDialog({ open, setOpen, options, defaultId }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="mny-dialog max-w-md" data-testid="add-money-dialog">
+      <DialogContent className="mny-theme mny-dialog max-w-md" data-testid="add-money-dialog">
         <DialogHeader>
           <DialogTitle>Add money</DialogTitle>
           <DialogDescription>Money that comes in (a salary, a gift, cash from a friend). It lands in the place you choose and shows in your history.</DialogDescription>

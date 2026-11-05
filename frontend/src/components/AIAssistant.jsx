@@ -86,7 +86,7 @@ function Empty({ page, onPick, reduce }) {
           <motion.button key={s} type="button" data-testid="ai-suggestion" onClick={() => onPick(s)}
             initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             transition={reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT, delay: 0.28 + i * 0.05 }}
-            className="rounded-xl border border-border bg-card px-3.5 py-3 text-left text-sm transition-[border-color,background-color,transform] duration-150 hover:border-emerald-400 hover:bg-emerald-50/60 active:scale-[0.98] motion-reduce:transition-colors dark:hover:bg-emerald-500/10">
+            className="rounded-2xl border border-line bg-field px-3.5 py-3 text-left text-sm transition-[border-color,background-color,transform] duration-200 hover:bg-hover active:scale-[0.98] motion-reduce:transition-colors">
             {s}
           </motion.button>
         ))}
@@ -344,17 +344,17 @@ export function AIAssistant() {
               animate={reduce ? { opacity: 1 } : { opacity: 1, backdropFilter: "blur(6px)" }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, backdropFilter: "blur(0px)" }}
               transition={{ duration: reduce ? 0.1 : 0.32, ease: EASE_OUT }}
-              onClick={close} aria-hidden="true" className="fixed inset-0 z-40 bg-slate-950/45" />
+              onClick={close} aria-hidden="true" className="fixed inset-0 z-40 bg-scrim" />
             <div key="frame" className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
             <motion.div ref={panel} role="dialog" aria-modal="true" aria-label="Assistant" data-testid="ai-panel" data-wide={docked ? "true" : "false"}
-              {...shell} style={{ transformOrigin: mobile ? "50% 100%" : "88% 0%" }} onKeyDown={onPanelKeyDown}
+              {...shell} style={{ transformOrigin: mobile ? "50% 100%" : "88% 0%", backgroundImage: "radial-gradient(70% 45% at 85% -10%, hsl(var(--primary) / 0.2), transparent 70%)" }} onKeyDown={onPanelKeyDown}
               className={cn(
-                "pointer-events-auto relative flex w-full overflow-hidden glass-strong border border-border",
-                "shadow-[0_40px_90px_-30px_rgba(2,6,23,0.55),0_10px_28px_-14px_rgba(2,6,23,0.3)]",
+                "pointer-events-auto relative flex w-full overflow-hidden glass-strong border border-line",
+                "shadow-[var(--pop-shadow)]",
                 "h-[calc(100dvh-2.5rem)] rounded-t-3xl border-b-0",
                 "sm:h-[min(780px,calc(100dvh-3rem))] sm:max-w-[1060px] sm:rounded-3xl sm:border-b",
               )}>
-              {docked && <motion.aside {...part(0.14, { x: -12 })} className="w-[280px] shrink-0 border-r border-border bg-muted/40" aria-label="Chats and tools">{sidebar}</motion.aside>}
+              {docked && <motion.aside {...part(0.14, { x: -12 })} className="w-[280px] shrink-0 border-r border-line bg-field" aria-label="Chats and tools">{sidebar}</motion.aside>}
 
               <div className="relative flex min-w-0 flex-1 flex-col">
                 <motion.header {...part(0.1, { y: -8 })} className="flex h-16 shrink-0 items-center gap-2 border-b border-border px-4 sm:px-6">
@@ -370,11 +370,11 @@ export function AIAssistant() {
                     {renaming ? (
                       <input value={nameDraft} autoFocus maxLength={120} aria-label="Chat name" data-testid="ai-title-input" onChange={(e) => setNameDraft(e.target.value)} onBlur={commitRename}
                         onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenaming(false); }}
-                        className="w-full rounded-lg border border-emerald-500/60 bg-background px-2 py-1 text-[15px] font-semibold outline-none ring-2 ring-emerald-500/20" />
+                        className="w-full rounded-full border border-emerald-500/60 bg-background px-3 py-1 text-[15px] font-semibold outline-none ring-2 ring-emerald-500/20" />
                     ) : (
                       <h1 className="truncate text-[15px] font-semibold leading-5 tracking-tight">
                         {view === "chat" && msgs.length ? (
-                          <button type="button" onClick={startRename} data-testid="ai-title" title="" aria-label={`${title}. Rename`} className="max-w-full truncate rounded-md text-left hover:bg-muted/70">{title}</button>
+                          <button type="button" onClick={startRename} data-testid="ai-title" title="" aria-label={`${title}. Rename`} className="max-w-full truncate rounded-full px-1 text-left hover:bg-muted/70">{title}</button>
                         ) : heading}
                       </h1>
                     )}
@@ -434,7 +434,7 @@ export function AIAssistant() {
                   {menu && !docked && (
                     <>
                       <motion.div key="menu-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0 : 0.15 }}
-                        onClick={() => setMenu(false)} aria-hidden="true" className="absolute inset-0 z-10 bg-slate-950/25" />
+                        onClick={() => setMenu(false)} aria-hidden="true" className="absolute inset-0 z-10 bg-scrim" />
                       <motion.aside key="menu" aria-label="Chats and tools" data-testid="ai-menu-panel" initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }}
                         transition={reduce ? { duration: 0 } : { type: "spring", damping: 34, stiffness: 380 }}
                         className="absolute inset-y-0 left-0 z-20 w-[min(86%,310px)] border-r border-border bg-background shadow-xl sm:rounded-none max-sm:rounded-tl-3xl">

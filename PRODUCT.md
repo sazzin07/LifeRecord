@@ -38,7 +38,7 @@ Connected data from one input: a sentence, a voice note or a receipt photo becom
 ## Evidence on Hand
 
 - Working application code in `backend/` and `frontend/`.
-- Existing visual material: `design_guidelines.json` and `Design Inspiration/`. These are recorded as files only; their visual direction is not confirmed here.
+- Visual system of the application: the Purple Main Theme (`docs/design-system/PURPLE_MAIN_THEME.md`, summarised in `design_guidelines.json`). `Design Inspiration/` is reference material only.
 - No public customers, testimonials, benchmarks, or launch-date claims exist yet; future work must not invent them.
 
 ## Product Principles
@@ -51,4 +51,4 @@ Connected data from one input: a sentence, a voice note or a receipt photo becom
 
 - Public domain name and hosting: undecided.
 - Public-launch timing: undecided.
-- Visual direction for the public launch: undecided (to be decided in a later new-work pass, not here).
+- Visual direction for a public launch page: undecided (the application itself follows the Purple Main Theme; a landing page would be a separate new-work pass).

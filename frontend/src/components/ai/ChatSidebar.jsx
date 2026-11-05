@@ -29,7 +29,7 @@ function ChatRow({ c, active, onOpen, onRename, onArchive, onDelete, busy }) {
         <input ref={input} value={draft} maxLength={120} aria-label="Chat name" data-testid="ai-rename-input"
           onChange={(e) => setDraft(e.target.value)} onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); } }}
-          className="w-full rounded-lg border border-emerald-500/60 bg-background px-2.5 py-1.5 text-sm outline-none ring-2 ring-emerald-500/20" />
+          className="w-full rounded-full border border-emerald-500/60 bg-background px-3 py-1.5 text-sm outline-none ring-2 ring-emerald-500/20" />
       </div>
     );
   }
@@ -96,7 +96,7 @@ export function ChatSidebar({ view, onView, activeId, busy, onNew, onOpen, onDel
     <div className="flex h-full min-h-0 flex-col" data-testid="ai-sidebar">
       <div className="space-y-1 p-3">
         <button type="button" onClick={onNew} data-testid="ai-sidebar-new"
-          className="flex w-full items-center gap-2.5 rounded-xl bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700">
+          className="flex w-full items-center gap-2.5 rounded-full cta-fill px-3.5 py-2.5 text-sm font-semibold transition-[filter,transform] hover:brightness-105 active:scale-[0.98]">
           <SquarePen className="h-4 w-4" />New chat
         </button>
         <div className="pt-1">
@@ -109,11 +109,11 @@ export function ChatSidebar({ view, onView, activeId, busy, onNew, onOpen, onDel
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Search chats" data-testid="ai-search"
-            className="h-9 w-full rounded-xl border border-border bg-background pl-8 pr-8 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20" />
+            className="h-9 w-full rounded-full border border-line-strong bg-field pl-8 pr-8 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20" />
           {query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted"><X className="h-3.5 w-3.5" /></button>}
         </div>
         <Select value={sort} onValueChange={setSort}>
-          <SelectTrigger aria-label="Sort chats" className="h-9 w-[104px] shrink-0 rounded-xl px-2.5 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Sort chats" className="h-9 w-[104px] shrink-0 px-2.5 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>{SORTS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
         </Select>
       </div>

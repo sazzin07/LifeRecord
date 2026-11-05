@@ -102,10 +102,10 @@ export function DebtDialog({ state, onClose, onDone }) {
         {open && (
           <form onSubmit={submit} className="space-y-4">
             {!startDirection && (
-              <div role="radiogroup" aria-label="Which way" className="grid grid-cols-2 gap-1.5 rounded-xl bg-[var(--ppl-surface-2)] p-1">
+              <div role="radiogroup" aria-label="Which way" className="grid grid-cols-2 gap-1.5 rounded-full bg-[var(--ppl-surface-2)] p-1">
                 {[[THEY, "They owe me"], [I, "I owe them"]].map(([value, label]) => (
                   <button key={value} type="button" role="radio" aria-checked={direction === value} onClick={() => setDirection(value)} data-testid={`debt-direction-${value}`}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${direction === value ? "bg-[var(--ppl-surface)] shadow-sm" : "ppl-muted"}`}>{label}</button>
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition-colors ${direction === value ? "bg-[var(--ppl-surface)] shadow-sm" : "ppl-muted"}`}>{label}</button>
                 ))}
               </div>
             )}

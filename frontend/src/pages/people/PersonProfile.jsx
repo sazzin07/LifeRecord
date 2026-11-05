@@ -130,10 +130,10 @@ export function PersonProfile({ personId, onClose, onEdit, onDelete, onAction })
           </div>
           {person && (
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => onEdit(person)} data-testid="profile-edit"><Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Edit</Button>
+              <Button variant="outline" size="sm" className="h-8" onClick={() => onEdit(person)} data-testid="profile-edit"><Pencil className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Edit</Button>
               {person.archived
-                ? <Button variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => act(() => api.post(`/debts/people/${personId}/restore`, null, { headers: { "Idempotency-Key": newKey() } }), "Restored")} data-testid="profile-restore">Restore person</Button>
-                : <Button variant="outline" size="sm" className="ppl-amber h-8 rounded-lg" onClick={() => onDelete(person, balances)} data-testid="profile-delete"><Trash2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Delete</Button>}
+                ? <Button variant="outline" size="sm" className="h-8" onClick={() => act(() => api.post(`/debts/people/${personId}/restore`, null, { headers: { "Idempotency-Key": newKey() } }), "Restored")} data-testid="profile-restore">Restore person</Button>
+                : <Button variant="outline" size="sm" className="ppl-amber h-8" onClick={() => onDelete(person, balances)} data-testid="profile-delete"><Trash2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />Delete</Button>}
             </div>
           )}
         </SheetHeader>

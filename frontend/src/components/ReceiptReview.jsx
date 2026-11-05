@@ -79,7 +79,7 @@ export function ReceiptReview({ data, open, setOpen }) {
             </Select>
           </div>
           <div className="rounded-xl border border-border p-3 space-y-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Items found: {items.length}</p>
+            <p className="text-xs font-semibold text-slate-500">Items found: {items.length}</p>
             {items.map((it, idx) => (
               <div key={idx} className="flex gap-2">
                 <Input placeholder="Item" value={it.name} onChange={(e) => setItems((a) => a.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} className="h-9" data-testid={`receipt-item-${idx}`} />

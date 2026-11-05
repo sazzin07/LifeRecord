@@ -13,7 +13,7 @@ const Toaster = (props) => {
       closeButton
       toastOptions={{
         classNames: {
-          toast: "!rounded-2xl !border !border-border !shadow-lg !font-sans",
+          toast: "!rounded-2xl !border !border-line !bg-popover !shadow-[var(--pop-shadow)] !font-sans",
           title: "!font-semibold",
           description: "!text-muted-foreground",
         },

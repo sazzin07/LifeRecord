@@ -156,21 +156,21 @@ export function AppShell({ children }) {
   }, []);
 
   return (
-    <div className="App min-h-screen bg-background">
+    <div className="App min-h-screen">
       <AnimatePresence>{intro && <Intro key="intro" name={user?.name} onDone={() => setIntro(false)} />}</AnimatePresence>
 
       {/* Desktop sidebar */}
       <aside data-testid="sidebar" data-expanded={expanded}
         onMouseEnter={showPeek} onMouseLeave={hidePeek} onFocus={(e) => { if (e.target.matches(":focus-visible")) showPeek(); }}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) hidePeek(); }}
-        className={cn("hidden lg:flex flex-col fixed inset-y-0 left-0 overflow-hidden border-r border-border backdrop-blur-sm transition-[width,box-shadow] duration-300 ease-out motion-reduce:transition-none",
-          expanded ? "w-60" : "w-16", docked ? "bg-card/60 z-30" : "bg-card z-40", expanded && !docked && "shadow-2xl")}>
+        className={cn("hidden lg:flex flex-col fixed inset-y-0 left-0 overflow-hidden border-r border-line backdrop-blur-xl transition-[width,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+          expanded ? "w-60" : "w-16", docked ? "bg-sidebar z-30" : "bg-card z-40", expanded && !docked && "shadow-[var(--pop-shadow)]")}>
         <div className="h-16 flex shrink-0 items-center gap-2 border-b border-border px-4">
-          <div className="h-8 w-8 shrink-0 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
-          <span className={cn("whitespace-nowrap font-bold tracking-tight text-slate-900 transition-opacity duration-200 dark:text-slate-50", expanded ? "opacity-100" : "opacity-0")}>Life Record</span>
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#e2b6ea,#a679b2)] text-[#2a1433] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"><Sparkles className="h-4 w-4" /></div>
+          <span className={cn("whitespace-nowrap font-bold tracking-tight text-foreground transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>Life Record</span>
           {canHover && expanded && (
             <button type="button" data-testid="sidebar-pin" onClick={togglePin} aria-pressed={pinned} aria-label={pinned ? "Let the menu hide again" : "Keep the menu open"}
-              className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+              className="ml-auto grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-hover hover:text-foreground">
               {pinned ? <PinOff className="h-4 w-4" aria-hidden="true" /> : <Pin className="h-4 w-4" aria-hidden="true" />}
             </button>
           )}
@@ -180,42 +180,44 @@ export function AppShell({ children }) {
             <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`nav-${n.label.toLowerCase()}`}
               onMouseEnter={() => warm(n.to)} onFocus={() => warm(n.to)} onTouchStart={() => warm(n.to)} onClick={retract}
               className={({ isActive }) => cn(
-                "flex items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium transition-colors",
-                isActive ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                         : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                "relative isolate flex items-center gap-3 whitespace-nowrap rounded-full px-[11px] py-2.5 text-sm font-medium transition-colors duration-200",
+                isActive ? "text-white" : "text-muted-foreground hover:bg-hover hover:text-foreground"
               )}>
-              <n.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>{n.label}</span>
+              {({ isActive }) => (<>
+                {isActive && <motion.span layoutId="nav-pill" aria-hidden="true" className="absolute inset-0 -z-10 rounded-full pill-fill shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]" transition={{ type: "spring", stiffness: 420, damping: 38 }} />}
+                <n.icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>{n.label}</span>
+              </>)}
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-border">
+        <div className="border-t border-line p-3">
           <button data-testid="logout-btn" onClick={() => { retract(); logout(); }}
-            className="flex w-full items-center gap-3 whitespace-nowrap rounded-xl px-[11px] py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60">
+            className="flex w-full items-center gap-3 whitespace-nowrap rounded-full px-[11px] py-2.5 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:bg-hover hover:text-foreground">
             <LogOut className="h-[18px] w-[18px] shrink-0" aria-hidden="true" /><span className={cn("transition-opacity duration-200", expanded ? "opacity-100" : "opacity-0")}>Sign out</span>
           </button>
         </div>
       </aside>
 
       {/* Top bar */}
-      <header className={cn("glass sticky top-0 z-20 h-16 border-b border-border", docked ? "lg:pl-60" : "lg:pl-16")}>
+      <header className={cn("glass sticky top-0 z-20 h-16 border-b border-line", docked ? "lg:pl-60" : "lg:pl-16")}>
         {/* The same width as the page below, so the bar lines up with the content. */}
         <div className="mx-auto flex h-full max-w-7xl items-center gap-3 px-4 sm:px-6">
           <div className="lg:hidden flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-emerald-700 grid place-items-center text-white"><Sparkles className="h-4 w-4" /></div>
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-[linear-gradient(135deg,#e2b6ea,#a679b2)] text-[#2a1433]"><Sparkles className="h-4 w-4" /></div>
             <span className="font-bold tracking-tight">Life Record</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button type="button" data-testid="ai-trigger" aria-label="Open the assistant" aria-haspopup="dialog" onClick={() => openAI()}
-              className="group flex h-11 min-w-[2.75rem] items-center justify-center gap-2 rounded-full sm:h-10 sm:min-w-0 border border-emerald-600/30 bg-emerald-50/70 px-3 text-sm font-semibold text-emerald-800 transition-[background-color,border-color,transform] duration-150 hover:border-emerald-600/60 hover:bg-emerald-100 active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20">
-              <Sparkles className="h-4 w-4 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:rotate-[18deg] group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:transform-none" aria-hidden="true" />
+              className="group flex h-11 min-w-[2.75rem] items-center justify-center gap-2 rounded-full sm:h-10 sm:min-w-0 border border-line-strong bg-field px-3 text-sm font-semibold text-foreground transition-[background-color,border-color,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-line-strong hover:bg-hover active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4">
+              <Sparkles className="h-4 w-4 text-accent-ink transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:rotate-[18deg] group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:transform-none" aria-hidden="true" />
               <span className="hidden sm:inline">Assistant</span>
             </button>
             <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-slate-600 sm:h-10 sm:w-10 transition-colors hover:border-emerald-600/50 dark:text-slate-300">
+              className="grid h-11 w-11 place-items-center rounded-full border border-line-strong bg-field text-foreground transition-[border-color,background-color,transform] duration-200 hover:bg-hover active:scale-95 sm:h-10 sm:w-10">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <NavLink to="/profile" data-testid="header-profile" aria-label={`Your profile${user?.name ? `, ${user.name}` : ""}`}
-              className="grid h-11 w-11 place-items-center overflow-hidden rounded-full sm:h-10 sm:w-10 border border-border bg-card text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-600/50 dark:text-emerald-300">
+              className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-line-strong bg-field text-sm font-semibold text-accent-ink transition-[border-color,transform] duration-200 hover:border-line-strong active:scale-95 sm:h-10 sm:w-10">
               {/* Decorative: the button's label already names the person (the initials would not match it). A fixed size, so a large photo is scaled, not cropped by its own size. */}
               <span aria-hidden="true" className="block h-[38px] w-[38px] overflow-hidden rounded-full"><UserAvatar size="h-[38px] w-[38px]" className="text-xs" decorative /></span>
             </NavLink>
@@ -234,26 +236,29 @@ export function AppShell({ children }) {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="lg:hidden glass-strong fixed bottom-0 inset-x-0 z-30 border-t border-border h-16 flex items-center justify-around px-2">
+      <nav className="lg:hidden glass-strong fixed bottom-0 inset-x-0 z-30 flex h-16 items-center justify-around border-t border-line px-2">
         {MOBILE_NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === "/"} data-testid={`mnav-${n.label.toLowerCase()}`}
             onTouchStart={() => warm(n.to)} onFocus={() => warm(n.to)}
-            className={({ isActive }) => cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
-              isActive ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
-            <n.icon className="h-5 w-5" />{n.label}
+            className={({ isActive }) => cn("relative isolate flex flex-col items-center gap-0.5 rounded-full px-4 py-1.5 text-[10px] font-medium transition-colors duration-200 active:scale-95",
+              isActive ? "text-white" : "text-muted-foreground")}>
+            {({ isActive }) => (<>
+              {isActive && <motion.span layoutId="mnav-pill" aria-hidden="true" className="absolute inset-0 -z-10 rounded-full pill-fill shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]" transition={{ type: "spring", stiffness: 420, damping: 38 }} />}
+              <n.icon className="h-5 w-5" />{n.label}
+            </>)}
           </NavLink>
         ))}
         <button ref={moreButton} type="button" data-testid="mnav-more" aria-haspopup="dialog" aria-expanded={moreOpen} aria-current={inMore ? "page" : undefined}
           onClick={() => setMoreOpen(true)}
-          className={cn("flex flex-col items-center gap-0.5 text-[10px] font-medium px-3 py-1.5 rounded-lg",
-            inMore ? "text-emerald-700 dark:text-emerald-400" : "text-slate-600 dark:text-slate-400")}>
+          className={cn("flex flex-col items-center gap-0.5 rounded-full px-4 py-1.5 text-[10px] font-medium transition-[color,background-color,transform] duration-200 active:scale-95",
+            inMore ? "bg-hover text-foreground" : "text-muted-foreground")}>
           <Ellipsis className="h-5 w-5" aria-hidden="true" />More
         </button>
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         {/* Opened from state rather than a Trigger, so Radix cannot return the focus by itself: put it back by hand. */}
-        <SheetContent side="bottom" className="lg:hidden rounded-t-2xl pb-8" data-testid="more-sheet"
+        <SheetContent side="bottom" className="lg:hidden rounded-t-3xl pb-8" data-testid="more-sheet"
           onCloseAutoFocus={(e) => { e.preventDefault(); moreButton.current?.focus(); }}>
           <SheetHeader>
             <SheetTitle>More</SheetTitle>
@@ -262,15 +267,15 @@ export function AppShell({ children }) {
           <nav aria-label="More pages" className="mt-4 grid grid-cols-3 gap-2">
             {MORE_NAV.map((n) => (
               <NavLink key={n.to} to={n.to} data-testid={`more-${n.label.toLowerCase()}`} onClick={() => setMoreOpen(false)}
-                className={({ isActive }) => cn("flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs font-medium",
-                  isActive ? "border-emerald-400 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
-                           : "border-border text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50")}>
+                className={({ isActive }) => cn("flex flex-col items-center gap-1.5 rounded-2xl border p-3 text-xs font-medium transition-[background-color,border-color,transform] duration-200 active:scale-95",
+                  isActive ? "border-transparent pill-fill"
+                           : "border-line bg-field text-foreground hover:bg-hover")}>
                 <n.icon className="h-5 w-5" aria-hidden="true" />{n.label}
               </NavLink>
             ))}
           </nav>
           <button type="button" data-testid="more-signout" onClick={logout}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-border py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line-strong bg-field py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-hover">
             <LogOut className="h-4 w-4" aria-hidden="true" />Sign out
           </button>
         </SheetContent>

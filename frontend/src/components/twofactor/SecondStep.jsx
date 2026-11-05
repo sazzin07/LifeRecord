@@ -76,7 +76,7 @@ export function SecondStep({ challenge, methods, smsHint, onSignedIn, onBack }) 
         <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 grid place-items-center">
           <ShieldCheck className="h-6 w-6 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
         </div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Step 2 of 2 · Verify it is you</p>
+        <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Step 2 of 2 · Verify it is you</p>
       </div>
 
       <AnimatePresence mode="wait" initial={false}>
@@ -145,7 +145,7 @@ export function SecondStep({ challenge, methods, smsHint, onSignedIn, onBack }) 
 
       {others.length > 0 && (
         <nav aria-label="Other ways to verify" className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Other ways to verify</p>
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Other ways to verify</p>
           <ul className="mt-2 space-y-2">
             {others.map((w) => {
               const Other = WAYS[w].icon;

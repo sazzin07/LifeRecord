@@ -177,11 +177,11 @@ export default function Login() {
         {pendingUser && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl"
+              className="w-full max-w-md rounded-3xl border border-line [background:var(--card-fill)] p-6 shadow-[var(--pop-shadow)]"
             >
               <div className="mx-auto h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 grid place-items-center">
                 <ShieldCheck className="h-6 w-6 text-emerald-600" />

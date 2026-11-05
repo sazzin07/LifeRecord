@@ -10,7 +10,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
@@ -19,6 +19,13 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)'
       },
       colors: {
+        /* The plum look. `slate` is the neutral ramp, tinted towards plum so no navy shows through anywhere; `emerald` and `teal` (the app's brand
+           hue in a few hundred class names) are the orchid ramp. Colours that carry a meaning (a gain, a warning) are written as green/red/amber. */
+        /* the theme's semantic surface colours (defined per theme in index.css) */
+        line: 'var(--line)', 'line-strong': 'var(--line-strong)', field: 'var(--field)', hover: 'var(--hover)', sidebar: 'var(--sidebar)', scrim: 'var(--scrim)', 'accent-ink': 'var(--accent-ink)',
+        slate: { 50: '#f7f4f8', 100: '#efe9f1', 200: '#ddd3e0', 300: '#c5b8ca', 400: '#a699ad', 500: '#857790', 600: '#655a6d', 700: '#4a424f', 800: '#322c37', 900: '#1d1921', 950: '#100d12' },
+        emerald: { 50: '#fbf5fd', 100: '#f4e6f8', 200: '#ead0f1', 300: '#dcb0e5', 400: '#cc93d8', 500: '#b87cc8', 600: '#9a6aab', 700: '#7a5a8a', 800: '#644873', 900: '#4a3555', 950: '#2d1f35' },
+        teal: { 50: '#faf5fc', 100: '#f1e5f6', 200: '#e3cdec', 300: '#d2afe0', 400: '#bc90cf', 500: '#a276b6', 600: '#855f98', 700: '#6c4d7d', 800: '#573e66', 900: '#402e4b', 950: '#271c2e' },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -52,13 +59,6 @@ module.exports = {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
-        chart: {
-          '1': 'hsl(var(--chart-1))',
-          '2': 'hsl(var(--chart-2))',
-          '3': 'hsl(var(--chart-3))',
-          '4': 'hsl(var(--chart-4))',
-          '5': 'hsl(var(--chart-5))'
-        }
       },
       keyframes: {
         'accordion-down': {

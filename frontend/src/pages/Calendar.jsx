@@ -150,7 +150,7 @@ export default function CalendarPage() {
         <>
           <Card className="overflow-hidden" data-testid={`calendar-${view}-loading`}>
             <Busy label="Loading the calendar">
-              <div className="grid grid-cols-7 border-b border-border" aria-hidden="true">{WEEKDAYS.map((d) => <div key={d} className="px-1 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">{d}</div>)}</div>
+              <div className="grid grid-cols-7 border-b border-border" aria-hidden="true">{WEEKDAYS.map((d) => <div key={d} className="px-1 py-2 text-center text-[11px] font-semibold text-slate-500">{d}</div>)}</div>
               <div className="grid grid-cols-7" aria-hidden="true">
                 {Array.from({ length: view === "month" ? 35 : 7 }, (_, i) => (
                   <div key={i} className={cn("border-b border-r border-border p-1 sm:p-1.5", view === "month" ? "min-h-[3.5rem] sm:min-h-[6.5rem]" : "min-h-[8rem] sm:min-h-[14rem]")}>
@@ -166,7 +166,7 @@ export default function CalendarPage() {
       ) : (
         <Card className="overflow-hidden" data-testid={`calendar-${view}`}>
           <div className="grid grid-cols-7 border-b border-border bg-slate-50/60 dark:bg-slate-800/40">
-            {WEEKDAYS.map((d) => <div key={d} className="px-1 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">{d}</div>)}
+            {WEEKDAYS.map((d) => <div key={d} className="px-1 py-2 text-center text-[11px] font-semibold text-slate-500">{d}</div>)}
           </div>
           <div className="grid grid-cols-7">
             {days.map((d) => {

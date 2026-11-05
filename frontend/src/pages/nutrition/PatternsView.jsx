@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { MEALS, MEAL_BY_KEY, fmt } from "./shared";
 
 const KIND = {
-  positive: [CheckCircle2, "text-emerald-700 dark:text-emerald-400"],
+  positive: [CheckCircle2, "text-green-700 dark:text-green-400"],
   attention: [AlertTriangle, "text-amber-700 dark:text-amber-400"],
   info: [Info, "text-slate-500 dark:text-slate-400"],
 };

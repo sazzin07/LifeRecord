@@ -50,9 +50,8 @@ export const test = base.extend({
   // gets its (in-memory) access token from it at boot. Nothing is written to web storage.
   authenticatedPage: async ({ page, context }, use) => {
     const session = await getSession();
-    // The side menu hides until the pointer reaches the left edge; the suite clicks its links directly, so it keeps it open.
     // The owner account is shared by every worker: its look must not follow the account, or one test's theme would reach another's page.
-    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); localStorage.setItem("lm_sync", "false"); } catch { /* none */ } });
+    await context.addInitScript(() => { try { localStorage.setItem("lm_sync", "false"); } catch { /* none */ } });
     await context.addCookies([{ name: "lr_refresh", value: session.refresh_token, domain: new URL(API_URL).hostname,
                                 path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
     await page.goto("/");
@@ -78,7 +77,7 @@ export const test = base.extend({
     await anon.dispose();
     fresh.token = login.token;
     fresh.api = await request.newContext({ baseURL: API_URL, extraHTTPHeaders: { Authorization: `Bearer ${login.token}` } });
-    await context.addInitScript(() => { try { localStorage.setItem("lr-sidebar", "pinned"); sessionStorage.setItem("lm_intro", "1"); } catch { /* none */ } });
+    await context.addInitScript(() => { try { sessionStorage.setItem("lm_intro", "1"); } catch { /* none */ } });
     await context.addCookies([{ name: "lr_refresh", value: login.refresh_token, domain: new URL(API_URL).hostname, path: "/api/auth", httpOnly: true, secure: false, sameSite: "Lax" }]);
     await page.goto("/");
     await page.waitForURL("/", { timeout: 15000 });

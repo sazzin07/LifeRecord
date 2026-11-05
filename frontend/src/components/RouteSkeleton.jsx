@@ -62,23 +62,17 @@ export function RouteSkeleton() {
 }
 
 const sessionHint = () => { try { return Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")); } catch { return false; } };
-const sideMenuOpen = () => { try { return localStorage.getItem("lr-sidebar") === "pinned"; } catch { return false; } };
 
-/** The signed-in app's outline while the first sign-in check is under way, for someone who has used the app on this device: the side strip, the
+/** The signed-in app's outline while the first sign-in check is under way, for someone who has used the app on this device: the
  *  top bar and the page's own outline, so a returning visitor sees the structure at once instead of a blank screen. A first-time visitor (nothing
  *  remembered here) gets the plain wait, since they are about to see the sign-in page. */
 export function BootSkeleton({ note }) {
-  const pad = sideMenuOpen() ? "lg:pl-60" : "lg:pl-16";
   return (
     <div className="min-h-screen bg-background">
-      <aside aria-hidden="true" className={`fixed inset-y-0 left-0 hidden border-r border-border bg-card/60 lg:block ${sideMenuOpen() ? "w-60" : "w-16"}`}>
-        <div className="flex h-16 items-center gap-2 border-b border-border px-4"><Sk className="h-8 w-8 shrink-0 !rounded-xl" />{sideMenuOpen() && <Sk className="h-4 w-24" />}</div>
-        <div className="space-y-2 p-3">{Array.from({ length: 10 }, (_, i) => <Sk key={i} className="h-10 w-full !rounded-xl" />)}</div>
-      </aside>
-      <header aria-hidden="true" className={`sticky top-0 h-16 border-b border-border ${pad}`}>
+      <header aria-hidden="true" className="sticky top-0 h-16 border-b border-border">
         <div className="mx-auto flex h-full max-w-7xl items-center gap-3 px-4 sm:px-6"><Sk className="h-10 w-full max-w-md !rounded-full" /><div className="ml-auto flex gap-2"><Sk className="h-10 w-10 !rounded-full" /><Sk className="h-10 w-20 !rounded-full" /><Sk className="h-10 w-10 !rounded-full" /></div></div>
       </header>
-      <main className={pad}>
+      <main>
         {note}
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6"><RouteSkeleton /></div>
       </main>

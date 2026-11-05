@@ -107,7 +107,7 @@ export function Suggestions({ date }) {
       </div>
 
       {loading ? (
-        <Busy label="Loading suggestions" className="p-5"><SkRows n={2} lead="square" figure={false} /></Busy>
+        <Busy label="Loading suggestions" className="p-5"><SkRows n={5} lead="square" figure={false} /></Busy>
       ) : !data ? (
         <div className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm text-slate-600" role="alert">
           <span>Suggestions could not be loaded just now.</span>

@@ -33,9 +33,9 @@ describe("design_guidelines.json", () => {
     }
   });
 
-  test("it lists every page the shell offers", () => {
-    const shell = fs.readFileSync(path.join(root, "frontend/src/components/AppShell.jsx"), "utf8");
-    const labels = [...shell.matchAll(/\{ to: "[^"]+", label: "([^"]+)"/g)].map((m) => m[1]);
+  test("it lists every page the dock offers", () => {
+    const dock = fs.readFileSync(path.join(root, "frontend/src/components/dock/dockData.js"), "utf8");
+    const labels = [...dock.matchAll(/page\("[^"]+", "([^"]+)", "[^"]+"\)|id: "(?:home|settings)", label: "([^"]+)"/g)].map((m) => m[1] || m[2]);
     expect(labels.length).toBe(10);
     expect(JSON.parse(guidelines).layout_and_navigation.pages).toEqual(labels);
   });

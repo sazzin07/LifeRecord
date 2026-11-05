@@ -19,14 +19,10 @@ export function CalendarSettings({ index }) {
 }
 
 export function DeviceSettings({ index }) {
-  const { sideMenu, setSideMenu, sync, setSync, resetAll } = useSettings();
+  const { sync, setSync, resetAll } = useSettings();
   const [resetOpen, setResetOpen] = useState(false);
   return (
     <Section id="device" index={index} icon={Laptop} title="This device" description="Choices that belong to this screen, and how the rest follow you.">
-      <Row title="Side menu" description="A thin strip of icons that opens when you point at it, or the full menu always open. Phones use the bottom bar.">
-        <Segmented label="Side menu" value={sideMenu} onChange={setSideMenu} testid="side-menu"
-          options={[{ value: "auto", label: "Thin strip" }, { value: "open", label: "Always open" }]} />
-      </Row>
       <Row title="Use my choices on all my devices" description="Theme, animations, week start and what Money opens on follow your account, and the assistant can change them. Turn this off to keep this device's own." htmlFor="sync-toggle">
         <Switch id="sync-toggle" checked={sync} onCheckedChange={setSync} aria-label="Use my choices on all my devices" data-testid="sync-toggle" />
       </Row>

@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { openQuickAdd, openAssistant } from "./support/dock";
 import { audit, prepare, settle, THEMES, WIDTHS } from "./support/a11y";
 
 // D-01: axe-core on every signed-in page and its main dialogs, at desktop/tablet/phone widths in both themes, as the
@@ -57,14 +58,14 @@ for (const theme of THEMES) {
         const byId = (id) => (p) => p.getByTestId(id);
         const tap = (id) => (p) => p.getByTestId(id).click();
         const quickAdd = "quick-add-trigger";   // the round "+" floating at the bottom-right, on every screen size
-        await open("/money", [tap(quickAdd)], byId("quick-add-dialog"), "quick add");
-        await open("/money", [tap(quickAdd), tap("qa-expense")], byId("expense-dialog"), "add expense");
+        await open("/money", [(p) => openQuickAdd(p)], byId("quick-add-dialog"), "quick add");
+        await open("/money", [(p) => openQuickAdd(p), tap("qa-expense")], byId("expense-dialog"), "add expense");
         await open("/settings?section=money", [tap("settings-add-place")], (p) => p.getByRole("dialog"), "add place");
         await open("/profile", [tap("photo-open")], byId("photo-dialog"), "profile photo");
         await open("/profile", [tap("your-data-delete-open")], byId("delete-account-dialog"), "delete account");
         await open("/profile", [tap("your-data-deactivate-open")], byId("deactivate-account-dialog"), "deactivate account");
         await open("/", [(p) => p.keyboard.press("Control+K")], (p) => p.getByRole("dialog"), "command palette");
-        await open("/", [tap("ai-trigger")], byId("ai-panel"), "assistant");
+        await open("/", [(p) => openAssistant(p)], byId("ai-panel"), "assistant");
       });
     });
   }

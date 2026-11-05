@@ -57,3 +57,6 @@ backend/storage/
 
 # Service logs (rotated by tools/rotate_logs.py)
 logs/
+
+# visual brainstorming mockups
+.superpowers/

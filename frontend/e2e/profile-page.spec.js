@@ -19,7 +19,7 @@ test("the name is edited where it is shown: Enter saves, Esc cancels, the header
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("profile-name")).toHaveText("Alex Rivera");
   expect((await (await fresh.api.get("/api/auth/me")).json()).name).toBe("Alex Rivera");
-  await expect(page.getByTestId("header-profile").locator("[data-initials]")).toHaveAttribute("data-initials", "AR");   // drawn by CSS, so it is not text that could differ from the button's name
+  await expect(page.getByTestId("header-menu").locator("[data-initials]")).toHaveAttribute("data-initials", "AR");   // drawn by CSS, so it is not text that could differ from the button's name
 
   await page.getByTestId("name-edit").click();
   await page.getByTestId("name-input").fill("   ");
@@ -100,7 +100,7 @@ test("a profile photo: choose, place, save, see it in the header and on the prof
   await expect(page.getByTestId("user-photo")).toHaveCount(2);                        // the profile and the header
   // both really show the picture (a revoked or broken address leaves an image that is "there" but empty)
   await expect.poll(() => page.getByTestId("user-photo").evaluateAll((els) => els.every((e) => e.complete && e.naturalWidth > 0))).toBe(true);
-  await expect(page.getByTestId("header-profile").getByTestId("user-photo")).toBeVisible();
+  await expect(page.getByTestId("header-menu").getByTestId("user-photo")).toBeVisible();
   const saved = await fresh.api.get("/api/auth/me/photo");
   expect(saved.status()).toBe(200);
   expect(saved.headers()["content-type"]).toBe("image/jpeg");                          // what the screen sends: a square JPEG

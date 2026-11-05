@@ -1,4 +1,6 @@
 import { test, expect } from "./fixtures";
+import { openAssistant } from "./support/dock";
+import { goToPage } from "./support/dock";
 
 // Build a server-sent-events body the way /api/ai/chat/stream sends it.
 const sse = (events) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
@@ -99,7 +101,7 @@ test.describe("Assistant panel", () => {
 
   test("works on a phone: sheet fills the width, nothing overflows sideways", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 780 });
-    await page.getByTestId("ai-trigger").click();
+    await openAssistant(page);
     const box = await page.getByTestId("ai-panel").boundingBox();
     expect(box.x).toBeLessThanOrEqual(1);
     expect(Math.round(box.width)).toBe(390);
@@ -154,7 +156,7 @@ test.describe("Assistant with the real model", () => {
       await expect(second.getByTestId("ai-changes")).toContainText("Added a task", { timeout: 60000 });
 
       await page.keyboard.press("Escape");
-      await page.getByTestId("nav-tasks").click();
+      await goToPage(page, "tasks");
       await expect(page.getByText(title)).toBeVisible({ timeout: 15000 });
     } finally {
       const tasks = await (await apiContext.get("/api/tasks")).json();

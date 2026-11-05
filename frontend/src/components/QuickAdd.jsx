@@ -23,7 +23,7 @@ const OPTIONS = [
   { key: "person", label: "Person", icon: UserPlus },
 ];
 
-export function QuickAdd({ open, setOpen }) {
+export function QuickAdd({ open, setOpen, start = null }) {
   const [mode, setMode] = useState(null);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [workoutOpen, setWorkoutOpen] = useState(false);
@@ -34,10 +34,11 @@ export function QuickAdd({ open, setOpen }) {
   useEffect(() => {
     if (open) {
       setMode(null); setForm({});
+      if (start) choose(start);                              // opened from the phone's ball straight into one action
       swr("/people", (d) => setPeople(d));
       swr("/accounts", (d) => setAccounts(d.filter((a) => a.type !== "owed" && a.type !== "owed_person")));
     }
-  }, [open]);
+  }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps -- runs when the dialog opens (and reads `start` then), not each time they change
 
   const choose = (key) => {
     if (key === "expense") { setOpen(false); setExpenseOpen(true); return; }

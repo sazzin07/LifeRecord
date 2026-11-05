@@ -4,6 +4,7 @@ import { Card } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { useFetch } from "@/lib/useFetch";
 import { cn } from "@/lib/utils";
+import { Constellation } from "./Constellation";
 import { Coverage, SRC_LABEL, STATUS_LABEL, UpperLevelBanner, fmt, upperLevelText, useNutrientMeta } from "./shared";
 
 const GROUP_ORDER = ["macro", "fat", "vitamin", "mineral", "other"];
@@ -80,6 +81,7 @@ export function NutrientsTab({ day }) {
   return (
     <div className="space-y-6" data-testid="nutrients-tab">
       <UpperLevelBanner items={day.upper_exceeded} byKey={byKey} />
+      <Constellation items={all} onPick={(n) => { setFilter("all"); setQ(n.name); setOpen(n.key); }} />
       <Card className="p-4 text-sm text-slate-600 dark:text-slate-300 sm:p-5">
         <p><strong className="font-semibold">Reading this page.</strong> Bars show your recorded intake against the reference for your profile. "No data" means none of today's foods reported that nutrient, which is not the same as zero. The dots show how many of today's {day.entries} entries had a value.</p>
       </Card>

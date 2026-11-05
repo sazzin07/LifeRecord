@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { goToPage } from "./support/dock";
 
 // S-13: what the person sees when the backend cannot be reached or answers with an error (docs/testing/failure-sweep.md).
 
@@ -7,7 +8,7 @@ test.describe("when things break", () => {
     await page.goto("/tasks");
     await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
     await page.route("**/api/**", (route) => route.abort("connectionrefused"));
-    await page.getByTestId("nav-money").click();
+    await goToPage(page, "money");
     await expect(page.getByTestId("offline-banner")).toBeVisible();
     await expect(page.getByTestId("offline-banner")).toContainText("backend unavailable");
     await page.unroute("**/api/**");

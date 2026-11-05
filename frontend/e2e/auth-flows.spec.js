@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { goToPage } from "./support/dock";
 import { newEmail, verificationCode, resetToken, ageRotation, deleteUser } from "./support-new-user";
 
 // The account lifecycle as a person sees it, on brand-new throw-away accounts (reserved example.com address, never mailed,
@@ -147,7 +148,7 @@ test.describe("account lifecycle", () => {
     // What matters is the outcome: the refused request is repeated with the new token and succeeds (the heading alone appears at
     // once, long before the second refresh is answered).
     const repeated = page.waitForResponse((r) => r.url().includes("/api/tasks") && r.request().method() === "GET" && r.status() === 200, { timeout: 20000 });
-    await page.getByRole("link", { name: "Tasks" }).first().click();
+    await goToPage(page, "tasks");
     await repeated;
     expect(attempts, "the page asked again after the answer was lost").toBeGreaterThanOrEqual(2);
     await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();

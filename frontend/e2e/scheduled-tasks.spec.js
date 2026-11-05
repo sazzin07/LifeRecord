@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { openAssistant } from "./support/dock";
 import path from "node:path";
 import { test, expect } from "./fixtures";
 
@@ -154,7 +155,7 @@ test.describe("Scheduled tasks", () => {
   test("on a phone the whole flow fits without sideways scrolling", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await page.waitForTimeout(2600);
-    await page.getByTestId("ai-trigger").click();
+    await openAssistant(page);
     await page.getByTestId("ai-menu").click();
     await page.getByTestId("ai-nav-scheduled").click();
     await page.getByTestId("scheduled-new").click();

@@ -17,15 +17,11 @@ const SERVER_KEY = { theme: "theme", animations: "animations", weekStart: "week_
 const DEFAULTS = { theme: "system", animations: true, weekStart: "monday", moneyPeriod: "week" };
 const fromServer = (p) => ({ theme: p.theme, animations: p.animations, weekStart: p.week_start, moneyPeriod: p.money_period });
 
-// The side menu is about this screen (a phone and a desktop differ), so it is never synced. The old key held "pinned" or "auto".
-const loadSideMenu = () => { try { return localStorage.getItem("lr-sidebar") === "pinned" ? "open" : "auto"; } catch { return "auto"; } };
-
 export function SettingsProvider({ children }) {
   const [theme, setThemeState] = useState(() => load("lm_theme", DEFAULTS.theme));
   const [animations, setAnimationsState] = useState(() => load("lm_anim", DEFAULTS.animations));
   const [weekStart, setWeekStartState] = useState(() => load("lm_week_start", DEFAULTS.weekStart));
   const [moneyPeriod, setMoneyPeriodState] = useState(() => load("lm_money_period", DEFAULTS.moneyPeriod));
-  const [sideMenu, setSideMenuState] = useState(loadSideMenu);
   const [sync, setSyncState] = useState(() => load("lm_sync", true));
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
@@ -130,10 +126,6 @@ export function SettingsProvider({ children }) {
     syncRef.current = on;
     if (on) pull({ force: true });
   };
-  const setSideMenu = (mode) => {
-    setSideMenuState(mode);
-    try { localStorage.setItem("lr-sidebar", mode === "open" ? "pinned" : "auto"); } catch { /* not remembered */ }
-  };
   const resetAll = async () => {
     Object.entries(DEFAULTS).forEach(([k, v]) => setters[k](v));
     if (syncRef.current && bound.current) await push({ theme: DEFAULTS.theme, animations: DEFAULTS.animations, week_start: DEFAULTS.weekStart, money_period: DEFAULTS.moneyPeriod });
@@ -144,8 +136,8 @@ export function SettingsProvider({ children }) {
     animations, setAnimations: (v) => setPref("animations", v),
     weekStart, setWeekStart: (v) => setPref("weekStart", v),
     moneyPeriod, setMoneyPeriod: (v) => setPref("moneyPeriod", v),
-    sideMenu, setSideMenu, sync, setSync, saving, savedAt, saveError, retrySave, bindServer, pull, resetAll, DEFAULTS,
-  }), [theme, animations, weekStart, moneyPeriod, sideMenu, sync, saving, savedAt, saveError, retrySave, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
+    sync, setSync, saving, savedAt, saveError, retrySave, bindServer, pull, resetAll, DEFAULTS,
+  }), [theme, animations, weekStart, moneyPeriod, sync, saving, savedAt, saveError, retrySave, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;
 }

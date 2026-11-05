@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
+import { goToPage } from "./support/dock";
 
-// Every page the sidebar links to, in the order we browse them.
+// Every page the dock links to, in the order we browse them.
 const PAGES = ["home", "money", "people", "groceries", "nutrition", "fitness", "body", "tasks", "calendar", "settings"];
 const EMPTY_STATES = [
   "No tasks yet", "No people yet", "Your body log starts here", "No meals logged today", "No recipes yet", "No progress photos yet",
@@ -20,7 +21,7 @@ test.describe("Browsing between pages", () => {
     // First pass on a normal network: remember what each page looks like
     const seen = {};
     for (const p of PAGES) {
-      await page.getByTestId(`nav-${p}`).click();
+      await goToPage(page, p);
       await page.waitForTimeout(500); // let React swap pages (the old one stays up for a moment) before checking
       await settle(page);
       await page.waitForTimeout(300);
@@ -31,7 +32,7 @@ test.describe("Browsing between pages", () => {
     // Second pass with every API response delayed 1.5s: content must be there within 300ms, no skeleton, no flash
     await page.route("**/api/**", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
     for (const p of [...PAGES].reverse()) {
-      await page.getByTestId(`nav-${p}`).click();
+      await goToPage(page, p);
       await page.waitForTimeout(300);
       const busy = await page.locator('main [aria-busy="true"], main .skeleton').count();
       const text = await mainText(page);
@@ -58,11 +59,11 @@ test.describe("Browsing between pages", () => {
   test("changes show up on other pages after a short background refresh", async ({ authenticatedPage: page, apiContext }) => {
     test.setTimeout(90000);
     await page.waitForTimeout(2600);
-    await page.getByTestId("nav-home").click();
+    await goToPage(page, "home");
     await expect(page.getByTestId("stat-tasks")).toBeVisible({ timeout: 15000 });
     const before = await page.getByTestId("stat-tasks").innerText();
 
-    await page.getByTestId("nav-tasks").click();
+    await goToPage(page, "tasks");
     await settle(page);
     const title = `E2E task ${Date.now()}`;
     await page.getByTestId("task-input").fill(title);
@@ -70,7 +71,7 @@ test.describe("Browsing between pages", () => {
     await expect(page.getByText(title)).toBeVisible();
 
     // Home reads the same data; after the background refresh its open-task count must change
-    await page.getByTestId("nav-home").click();
+    await goToPage(page, "home");
     await expect.poll(async () => page.getByTestId("stat-tasks").innerText(), { timeout: 15000 }).not.toBe(before);
 
     const tasks = await (await apiContext.get("/api/tasks")).json();

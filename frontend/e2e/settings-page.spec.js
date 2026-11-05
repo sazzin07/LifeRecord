@@ -60,18 +60,6 @@ test("animations, the first day of the week and what Money opens on each do what
   await expect(page.getByTestId("period-day")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("the side menu choice belongs to this device: a thin strip or always open", async ({ freshUserPage: { page, fresh } }) => {
-  await page.goto("/settings?section=device");
-  const bar = page.getByTestId("sidebar");
-  await expect(bar).toHaveAttribute("data-expanded", "true");           // the fixture starts it pinned open
-  await page.getByTestId("side-menu-auto").click();
-  await page.mouse.move(900, 500);
-  await expect(bar).toHaveAttribute("data-expanded", "false");
-  await page.getByTestId("side-menu-open").click();
-  await expect(bar).toHaveAttribute("data-expanded", "true");
-  expect(Object.keys((await prefs(fresh)).preferences)).not.toContain("side_menu");   // never sent to the account
-});
-
 test("categories: add with a budget, rename, refuse a duplicate, and delete with a warning", async ({ freshUserPage: { page } }) => {
   await page.goto("/settings?section=money");
   await page.getByTestId("category-input").fill("Coffee");
@@ -115,7 +103,7 @@ test("reset puts the look and display choices back after a warning", async ({ fr
 
 test("every tab opens its own page of settings, by click, by keyboard and by address", async ({ freshUserPage: { page } }) => {
   await page.goto("/settings");
-  const expectations = { appearance: "theme-dark", money: "settings-add-place", calendar: "week-start-sunday", device: "side-menu-auto" };
+  const expectations = { appearance: "theme-dark", money: "settings-add-place", calendar: "week-start-sunday", device: "sync-toggle" };
   for (const [tab, marker] of Object.entries(expectations)) {
     await page.getByTestId(`settings-tab-${tab}`).click();
     await expect(page.getByTestId(`settings-tab-${tab}`)).toHaveAttribute("aria-selected", "true");
@@ -126,7 +114,7 @@ test("every tab opens its own page of settings, by click, by keyboard and by add
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("settings-tab-money")).toHaveAttribute("aria-selected", "true");
   await page.goto("/settings?section=device");                              // a link lands on the tab
-  await expect(page.getByTestId("side-menu-auto")).toBeVisible();
+  await expect(page.getByTestId("sync-toggle")).toBeVisible();
   // no empty tabs: nothing here only points somewhere else
   for (const gone of ["nutrition", "assistant"]) await expect(page.getByTestId(`settings-tab-${gone}`)).toHaveCount(0);
   await page.goto("/settings?section=assistant");                          // an old link lands on the first tab, not on nothing

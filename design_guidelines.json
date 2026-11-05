@@ -61,9 +61,9 @@
   },
   "layout_and_navigation": {
     "pages": ["Home", "Money", "People", "Groceries", "Nutrition", "Fitness", "Body", "Tasks", "Calendar", "Settings"],
-    "desktop": "Left sidebar with all pages (lg and up), top bar with search/command (Ctrl or Cmd + K), theme switch and Add",
-    "phone": "Bottom bar: Home, Money, + (quick add), People, Tasks, More. More opens a sheet with the other pages and Sign out, so every page is two taps away (derived from the NAV list, so a new page cannot be unreachable).",
-    "current_page": "aria-current=\"page\" on the active link; the More tab carries it when the current page is inside the sheet",
+    "desktop": "The floating dock (components/dock): six round glass tiles at the bottom, centred, resting small; a top bar with the assistant, the theme switch and the account menu (profile, Sign out); Ctrl or Cmd + K opens the command search",
+    "phone": "No dock under 640 px: a side menu of pages (the panel button at the left of the top bar, grouped Home, Money, Food, Body, Plan, Settings) and one ball in the middle at the bottom whose options are the assistant and the quick actions (tap, or press and drag to an option and lift). Every page is at most two taps away.",
+    "current_page": "aria-current=\"page\" on the active tile; a group tile carries it when the current page is one of its pages",
     "no_horizontal_scroll": "No page scrolls sideways at 390, 820 or 1280 px; headings and toolbars wrap (SectionHeading wraps its action), and long words are set as text rather than as large amounts"
   },
   "accessibility_rules": {

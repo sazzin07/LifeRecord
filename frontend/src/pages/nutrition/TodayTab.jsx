@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { Check, Copy, Droplets, GlassWater, History, Lightbulb, MoreHorizontal, Pencil, Plus, Trash2, Utensils, X, ArrowRightLeft, CalendarPlus } from "lucide-react";
+import { Check, Copy, Droplets, GlassWater, History, Lightbulb, MoreHorizontal, Pencil, Plus, Trash2, X, ArrowRightLeft, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
-import { Card, EmptyState } from "@/components/common";
+import { Card } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { QuickAdd } from "./QuickAdd";
+import { DayCurve } from "./DayCurve";
 import { Suggestions } from "./Suggestions";
-import { MEALS, MEAL_BY_KEY, MACRO_COLORS, EnergyBar, RangeGauge, QualityBadge, UpperLevelBanner, fmt, shiftDate, refreshNutrition, useNutrientMeta } from "./shared";
+import { MEALS, MEAL_BY_KEY, MACRO_COLORS, RangeGauge, QualityBadge, UpperLevelBanner, fmt, shiftDate, refreshNutrition, useNutrientMeta } from "./shared";
 
 function EntryRow({ entry, date, onEdit, onDelete }) {
   const n = entry.nutrients || {};
@@ -173,13 +173,10 @@ export const PLACEHOLDER_DAY = {
   hydration: { total_ml: 0, target_ml: 2500, drinks_ml: 0, food_water_ml: 0, entries: [] },
 };
 
-export function TodayTab({ day, insights, date, onAdd, onEdit, loading = false, insightsLoading = false }) {
+export function TodayTab({ day, insights, date, isToday = true, onAdd, onEdit, loading = false, insightsLoading = false }) {
   const [toDelete, setToDelete] = useState(null);
   const ref = day.progress || {};
   const { byKey } = useNutrientMeta();
-  const total = day.totals.energy_kcal;
-  const target = day.energy_target;
-  const left = target != null && total != null ? target - total : null;
   const byType = Object.fromEntries(day.meals.map((m) => [m.meal_type, m]));
 
   const remove = async () => {
@@ -194,83 +191,64 @@ export function TodayTab({ day, insights, date, onAdd, onEdit, loading = false, 
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3" {...(loading ? { "data-skeleton": "", inert: "true", "aria-hidden": "true" } : {})}>
-      <div className="min-w-0 space-y-6 lg:col-span-2">
-        <QuickAdd date={date} onMore={(foodId, query) => onAdd(undefined, foodId, query)} />
-        <Card className="p-5 sm:p-6" data-testid="day-ledger">
-          {day.entries === 0 ? (
-            <EmptyState icon={Utensils} title="Nothing logged for this day yet"
-              sub="Search about 8,000 reference foods, scan a barcode, add a recipe, or type a meal in. Totals and targets fill in as you go."
-              action={<Button onClick={() => onAdd()} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="add-first"><Plus className="mr-1 h-4 w-4" />Add food</Button>} />
-          ) : (
-            <>
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="stat-num text-4xl font-semibold tracking-tight" data-testid="energy-total">{fmt(total ?? 0)}<span className="ml-1.5 text-base font-normal text-slate-500 dark:text-slate-400">kcal</span></p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400" data-testid="energy-left">
-                    {loading ? <span className="sk-ph">0000 left of 0000 kcal</span> : target ? (left >= 0 ? `${fmt(left)} left of ${fmt(target)} kcal` : `${fmt(-left)} over ${fmt(target)} kcal`) : "No energy target set"}
-                  </p>
-                </div>
-                <Button onClick={() => onAdd()} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="add-food"><Plus className="mr-1 h-4 w-4" />Add food</Button>
-              </div>
-              <div className="mt-5"><EnergyBar meals={day.meals} total={total || 0} target={target || 0} /></div>
-              <div className="mt-6 grid gap-5 sm:grid-cols-3">
-                {[["protein_g", "Protein"], ["carbs_available_g", "Carbohydrate"], ["fat_g", "Fat"]].map(([k, label]) => {
-                  const p = ref[k];
-                  return p ? <RangeGauge key={k} testid={`gauge-${k}`} label={label} color={MACRO_COLORS[k]} intake={p.intake || 0} min={p.min} max={p.max} target={p.target} unit="g" missing={!loading && p.status === "no_data"} loading={loading} /> : null;
-                })}
-              </div>
-              {day.energy_check && Math.abs(day.energy_check.difference_pct) > 10 && (
-                <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">Listed energy and the energy the macronutrients add up to differ by {Math.abs(Math.round(day.energy_check.difference_pct))}% today. That is normal when label and database values are mixed; the listed energy is what is counted.</p>
-              )}
-              {day.reference?.notes?.length > 0 && (
-                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{day.reference.notes[0]} <span className="text-slate-500 dark:text-slate-400">Set your details under Goals.</span></p>
-              )}
-            </>
-          )}
-        </Card>
+    <div className="min-w-0 space-y-8" {...(loading ? { "data-skeleton": "", inert: "true", "aria-hidden": "true" } : {})}>
+      <DayCurve day={day} isToday={isToday} loading={loading} />
 
-        <UpperLevelBanner items={day.upper_exceeded} byKey={byKey} />
+      <section aria-label="Macronutrients against their ranges" className="grid gap-5 sm:grid-cols-3">
+        {[["protein_g", "Protein"], ["carbs_available_g", "Carbohydrate"], ["fat_g", "Fat"]].map(([k, label]) => {
+          const p = ref[k];
+          return p ? <RangeGauge key={k} testid={`gauge-${k}`} label={label} color={MACRO_COLORS[k]} intake={p.intake || 0} min={p.min} max={p.max} target={p.target} unit="g" missing={!loading && p.status === "no_data"} loading={loading} /> : null;
+        })}
+        {day.energy_check && Math.abs(day.energy_check.difference_pct) > 10 && (
+          <p className="text-xs text-muted-foreground sm:col-span-3">Listed energy and the energy the macronutrients add up to differ by {Math.abs(Math.round(day.energy_check.difference_pct))}% today. That is normal when label and database values are mixed; the listed energy is what is counted.</p>
+        )}
+        {day.reference?.notes?.length > 0 && (
+          <p className="text-xs text-muted-foreground sm:col-span-3">{day.reference.notes[0]} Set your details under Goals.</p>
+        )}
+      </section>
 
-        <Suggestions date={date} />
+      <UpperLevelBanner items={day.upper_exceeded} byKey={byKey} />
 
-        {MEALS.filter((m) => m.key !== "other" || byType.other).map((m) => {
+      <Suggestions date={date} />
+
+      <Card className="overflow-hidden" data-testid="day-log">
+        {MEALS.filter((m) => m.key !== "other" || byType.other).map((m, i) => {
           const g = byType[m.key];
           return (
-            <Card key={m.key} className="overflow-hidden" data-testid={`meal-${m.key}`}>
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+            <section key={m.key} className={i ? "border-t border-line" : ""} data-testid={`meal-${m.key}`}>
+              <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
                 <div className="flex items-center gap-2.5">
-                  <span className="h-6 w-1.5 rounded-full" style={{ background: m.color }} aria-hidden="true" />
-                  <h3 className="font-semibold">{m.label}</h3>
-                  {g && <span className="stat-num text-sm text-slate-500 dark:text-slate-400">{fmt(g.totals.energy_kcal || 0)} kcal</span>}
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} aria-hidden="true" />
+                  <h3 className="text-[1.0625rem] font-semibold">{m.label}</h3>
+                  {g && <span className="stat-num text-sm text-muted-foreground">{fmt(g.totals.energy_kcal || 0)} kcal</span>}
                 </div>
                 <div className="flex items-center gap-1">
                   {!g && m.key !== "other" && <Button variant="ghost" size="sm" onClick={() => copyYesterday(m)} aria-label={`Copy yesterday's ${m.label.toLowerCase()}`} data-testid={`copy-${m.key}`}><History className="mr-1 h-4 w-4" />Copy yesterday</Button>}
                   <Button variant="ghost" size="sm" onClick={() => onAdd(m.key)} aria-label={`Add food to ${m.label.toLowerCase()}`} data-testid={`add-${m.key}`}><Plus className="mr-1 h-4 w-4" />Add</Button>
                 </div>
               </div>
-              {g ? <div className="divide-y divide-border">{g.entries.map((e) => <EntryRow key={e.id} entry={e} date={date} onEdit={onEdit} onDelete={setToDelete} />)}</div>
-                : <p className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">Nothing logged.</span> : "Nothing logged."}</p>}
-            </Card>
+              {g ? <div className="divide-y divide-line">{g.entries.map((e) => <EntryRow key={e.id} entry={e} date={date} onEdit={onEdit} onDelete={setToDelete} />)}</div>
+                : <p className="px-4 pb-4 text-sm text-muted-foreground sm:px-6">{loading ? <span className="sk-ph">Nothing logged.</span> : "Nothing logged."}</p>}
+            </section>
           );
         })}
-      </div>
+      </Card>
 
-      <div className="min-w-0 space-y-6">
+      <div className="grid gap-6 md:grid-cols-2">
         <Hydration day={day} date={date} loading={loading} />
         <Insights insights={insights} onLog={(id) => onAdd(undefined, id)} loading={loading || insightsLoading} />
-        {day.quality && Object.keys(day.quality).length > 0 && (
-          <Card className="p-5">
-            <h3 className="font-semibold">Where today's numbers come from</h3>
-            <ul className="mt-3 space-y-1.5 text-sm">
-              {Object.entries(day.quality).map(([q, n]) => (
-                <li key={q} className="flex items-center justify-between"><QualityBadge quality={q} /><span className="text-slate-500 dark:text-slate-400">{n} {n === 1 ? "entry" : "entries"}</span></li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Typed-in and estimated entries are counted, but they may lack vitamins and minerals. The Nutrients tab shows exactly how complete each value is.</p>
-          </Card>
-        )}
       </div>
+      {day.quality && Object.keys(day.quality).length > 0 && (
+        <Card className="p-5">
+          <h3 className="font-semibold">Where today's numbers come from</h3>
+          <ul className="mt-3 space-y-1.5 text-sm">
+            {Object.entries(day.quality).map(([q, n]) => (
+              <li key={q} className="flex items-center justify-between"><QualityBadge quality={q} /><span className="text-muted-foreground">{n} {n === 1 ? "entry" : "entries"}</span></li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-muted-foreground">Typed-in and estimated entries are counted, but they may lack vitamins and minerals. The Nutrients tab shows exactly how complete each value is.</p>
+        </Card>
+      )}
 
       <ConfirmDialog open={!!toDelete} onOpenChange={(v) => !v && setToDelete(null)} title="Delete this entry?"
         description={toDelete ? `This removes "${toDelete.description}" from ${MEAL_BY_KEY[toDelete.meal_type]?.label.toLowerCase()} on this day.` : ""}

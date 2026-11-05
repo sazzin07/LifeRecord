@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { openAccountMenu } from "./support/dock";
 
 test("Profile and Settings are two pages, reachable from each other and from the header", async ({ authenticatedPage: page }) => {
   await page.goto("/settings");
@@ -20,6 +21,7 @@ test("Profile and Settings are two pages, reachable from each other and from the
   await page.getByTestId("tab-settings").click();
   await expect(page).toHaveURL(/\/settings$/);
 
+  await openAccountMenu(page);
   await page.getByTestId("header-profile").click();
   await expect(page).toHaveURL(/\/profile$/);
 });

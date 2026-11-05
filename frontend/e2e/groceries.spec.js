@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { goToPage, openAccountMenu } from "./support/dock";
 
 const uniqueName = () => `E2E-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -338,8 +339,8 @@ test.describe("Groceries kitchen", () => {
     await expect(page.getByText("Items in stock")).toBeVisible();
 
     // Leave and come back: the last-seen data is there immediately, long before the 1.5s responses arrive
-    await page.getByTestId("nav-tasks").click();
-    await page.getByTestId("nav-groceries").click();
+    await goToPage(page, "tasks");
+    await goToPage(page, "groceries");
     await expect(page.getByRole("button", { name: /^Greek yoghurt/ }).first()).toBeVisible({ timeout: 800 });
     await page.getByRole("tab", { name: "Catalog" }).click();
     await expect(page.getByTestId("product-card").first()).toBeVisible({ timeout: 800 });
@@ -354,6 +355,7 @@ test.describe("Groceries kitchen", () => {
     await expect(page.getByText("Items in stock")).toBeVisible();
     await expect(page.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 });   // the cache is written when every section has its data
     await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith("lm_cache:")))).toBe(true);
+    await openAccountMenu(page);
     await page.getByTestId("logout-btn").click();
     await page.waitForURL(/login/);
     // the page may still be settling after the redirect, so retry until the cache is gone

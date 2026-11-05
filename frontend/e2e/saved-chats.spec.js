@@ -1,4 +1,5 @@
 import { expect, request } from "@playwright/test";
+import { openAssistant } from "./support/dock";
 import { test as authed, credentials } from "./fixtures";
 
 // Chats are created through the real assistant (one short message each), then managed through the real UI.
@@ -150,7 +151,7 @@ authed.describe("Saved chats", () => {
   authed("on a phone the menu opens over the chat and picking a chat closes it", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await page.getByTestId("ai-search").waitFor({ state: "hidden" }).catch(() => {});
-    if (!(await page.getByTestId("ai-menu").isVisible())) await page.getByTestId("ai-trigger").click();
+    if (!(await page.getByTestId("ai-menu").isVisible())) await openAssistant(page);
     await page.getByTestId("ai-menu").click();
     await page.getByTestId("ai-search").fill(`${TAG} alpha`);
     await page.getByTestId("ai-chat-row").first().click();

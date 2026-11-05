@@ -429,6 +429,7 @@ Every person has **two separate balances**, never netted against each other: *th
 
 ### Nutrition
 A food diary backed by real reference data (details, limits and test results in [`docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md`](docs/history/ROADMAP_ARCHIVE_2026-10-19_to_30.md) §17 and §17b; open work in [`APPLICATION_COMPLETION_ROADMAP.md`](APPLICATION_COMPLETION_ROADMAP.md)). The page is at `/nutrition`; the tab and the day are in the address (`?tab=plan&date=2026-10-30`).
+- **The redesigned page** (design: `docs/superpowers/specs/2026-11-05-nutrition-redesign-design.md`): beside the day views (Today, Nutrients, Trends) a sticky panel holds the **orb** (nested rings: energy outside, then protein, carbs, fat, with what is left of the day's energy in the middle), the macro figures, a **one-tap water row** (a glass is 250 ml) and **Replay the day** (the entries played back in the order they were eaten, in normal or quarter speed); on a phone it is the first block. The quick-log bar is always on top; the views (Today, Plan, Nutrients, Trends, Foods, Goals) switch with a crossfading pill. Today adds the **curve through the day** (energy eaten by each hour against an even pace; scrub it with the pointer or a finger), and Nutrients opens with a **constellation** of every nutrient filled to its share of the reference (choosing one filters the list to it). Nothing about the data, the dialogs or the assistant changed.
 - **Today:** quick add (type a few letters and tap Add, or tap a food you eat often to repeat its last amount, with Undo), the day as one energy bar split by meal, macronutrient range gauges, meals with add/edit/duplicate/move/delete and "copy yesterday", editable drinks, insights that say why something is shown, and **ideas for the next meal**: your own recipes, foods and usual meals ranked by how much of what you still need they cover, with the reason for each and a note when nothing fits (never invented dishes).
 - **Plan:** a week of planned food and recipes, kept apart from the diary until you tap "I ate this". Copy a week, move items between days, and build a shopping list from the plan (minus what the kitchen already has; nothing is marked as bought). **Suggest a week** previews a plan built only from your own recipes and foods (diet, allergies and recently eaten meals respected); you drop what you do not want and only the rest is planned.
 - **Foods:** about 8,000 USDA reference foods (public domain) with portions, your own foods, favourites, and packaged foods by barcode (typed or scanned with the camera; Open Food Facts values are marked estimated). Find similar foods with less sodium, sugar or saturated fat, or more fibre or protein. A nutrient a source does not report shows "not reported", never zero.
@@ -465,8 +466,7 @@ Two pages, switched from the top of either (`pages/Profile.jsx`, `pages/Settings
 - **Settings** is a set of tabs (Appearance, Money, Calendar, This device; the tab is in the address, `?section=money`, and the arrow keys move between them). It holds the everyday choices, each applied at once, with a "Saved" note: **theme** (light, dark, system; system follows the device as it changes),
   **animations**, **calendar week start** (Monday or Sunday: the month grid, the week view and their headings), **what Money opens on** (last 7 days, today,
   all time), **money places**, **categories with monthly budgets** (renaming a category renames it on every past transaction; two with the same name in any
-  case are refused; deleting says what happens to past transactions), and **this device**: the **side menu** (a thin icon strip
-  that opens on hover or focus and folds back after a page is chosen, or always open; never synced, a phone and a desktop differ) and **"use my choices on all my
+  case are refused; deleting says what happens to past transactions), and **this device**: **"use my choices on all my
   devices"**. Reset puts the look and display choices back to their defaults after a warning.
 - **Saved on the account**: theme, animations, week start and the Money period are in `user_preferences` (one row per user; no row means "never saved", and
   then the first browser that opens the app gives the account what it already had). They follow the person to every device that syncs, and a change made by the
@@ -488,6 +488,20 @@ neutrals over a soft mauve haze, pill controls, 24-28px glass cards with a light
 gain is green, spend red, locked or pending amber, always with a sign, an icon or a word; the `emerald-*` and `teal-*` classes are the orchid ramp.
 The pointer light on the Money, Settings and Profile cards is one handler (`lib/pointerLight.js`). Every animation has a `prefers-reduced-motion`
 and a `no-anim` (Settings > Animations) override. `design_guidelines.json` records the tokens and `designGuidelines.test.js` keeps it in step with the CSS.
+
+### Navigation: the floating dock (and, on a phone, the ball and the side menu)
+From 640px up a dock of round glass tiles floats at the bottom of the screen (`components/dock/NavDock.jsx`): **Home**, **Money** (Money, People), **Food** (Groceries,
+Nutrition), **Body** (Fitness, Body), **Plan** (Tasks, Calendar) and **Settings**. It rests small and grows when the pointer reaches it; the tile under the pointer lifts and
+its two neighbours lean a little, but each tile's hover zone is exactly the tile. A group springs its pages out above its tile on hover (mouse), a tap or Enter, and folds
+them back in reverse. The dock steps aside while the page scrolls down and returns when the scrolling stops, on a scroll up, at the end of the page, when the mouse reaches
+the bottom edge or when a tile has keyboard focus. Arrow keys move along the dock and its open group, Escape folds the group and returns to its tile; the current page is filled
+with the selected-pill gradient and marked `aria-current`.
+
+On a phone (under 640px) there is no dock. The pages are in a **side menu** that slides in from the left (the panel button at the left of the top bar), grouped the same way.
+The one button at the bottom, in the middle, is the **ball** (`PhoneBall.jsx`): tap it and its options fan out (the assistant, and the quick actions Expense, Meal, Task, Weight
+and More, which opens the full Quick add dialog), or press it and drag a finger to an option, which grows and takes the accent colour, and lift to choose it; lifting anywhere
+else closes it. Reduced motion and the Animations setting make everything instant. Sign out and the profile are in the menu on the avatar in the top bar. The design is
+`docs/superpowers/specs/2026-11-05-floating-dock-design.md`.
 
 ### Offline
 Life Record needs its server. When the backend cannot be reached a banner says so and that changes will not save until it returns; changes are **not queued or replayed**. That is a decision (roadmap F-10), not a gap.

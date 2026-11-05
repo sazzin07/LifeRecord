@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 /** Accounts as a tree: top-level places (bank, cash, Revolut) with their sub-places. */
 export function buildAccountTree(accounts) {

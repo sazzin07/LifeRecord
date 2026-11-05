@@ -9,6 +9,7 @@ import { Appearance } from "@/pages/settings/Appearance";
 import { MoneySettings } from "@/pages/settings/MoneySettings";
 import { CalendarSettings, DeviceSettings } from "@/pages/settings/DisplaySettings";
 import { cn } from "@/lib/utils";
+import "@/styles/money.css";
 
 const TABS = [
   { id: "appearance", label: "Appearance", icon: Palette },

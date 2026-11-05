@@ -1,0 +1,52 @@
+/* ------------------------------------------------------------------------------------------------------------------------------
+   People: orchid and amber, glass on the floating layers only (the side sheet, dialogs, the delete bar), solid surfaces for
+   everything that carries a figure. Direction is never colour alone: icons and words say "owes you" / "you owe".
+   ------------------------------------------------------------------------------------------------------------------------------ */
+.ppl-theme {
+  --ppl-bg: #f3edf5; --ppl-lights: radial-gradient(75% 55% at 82% -8%, rgba(196, 160, 214, 0.5), transparent 72%), radial-gradient(55% 40% at 0% 100%, rgba(214, 186, 226, 0.32), transparent 70%);
+  --ppl-surface: #ffffff; --ppl-surface-2: #f6f0f8; --ppl-line: rgba(70, 35, 90, 0.14);
+  --ppl-text: #231a28; --ppl-muted: #65586d;
+  --ppl-teal-text: #6c4d7d; --ppl-teal-fill: #7a5a8a; --ppl-on-fill: #ffffff; --ppl-teal-tint: rgba(122, 90, 138, 0.12);
+  --ppl-amber-text: #92400e; --ppl-amber-fill: #d98a0b; --ppl-amber-tint: rgba(217, 138, 11, 0.16);
+  --ppl-glass: rgba(255, 255, 255, 0.72); --ppl-glass-line: rgba(255, 255, 255, 0.85);
+  --ppl-glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 24px 60px -24px rgba(70, 35, 90, 0.35), 0 2px 8px rgba(70, 35, 90, 0.08);
+  color: var(--ppl-text);
+  caret-color: var(--ppl-teal-text);
+  scrollbar-color: var(--scroll) transparent;
+}
+.dark .ppl-theme {
+  --ppl-bg: #0c0a0e; --ppl-lights: radial-gradient(75% 55% at 82% -8%, rgba(150, 118, 160, 0.4), transparent 72%), radial-gradient(55% 40% at 0% 100%, rgba(140, 105, 150, 0.16), transparent 70%);
+  --ppl-surface: #100d12; --ppl-surface-2: #1b161e; --ppl-line: rgba(255, 232, 255, 0.1);
+  --ppl-text: #f6f0f7; --ppl-muted: #b8adbb;
+  --ppl-teal-text: #dcb0e5; --ppl-teal-fill: #cc93d8; --ppl-on-fill: #1d0f25; --ppl-teal-tint: rgba(220, 176, 229, 0.13);
+  --ppl-amber-text: #f6c46e; --ppl-amber-fill: #f6c46e; --ppl-amber-tint: rgba(246, 196, 110, 0.14);
+  --ppl-glass: rgba(18, 14, 21, 0.66); --ppl-glass-line: rgba(255, 232, 255, 0.14);
+  --ppl-glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 28px 70px -24px rgba(0, 0, 0, 0.75), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.ppl-theme ::selection { background: var(--ppl-teal-tint); color: inherit; }
+.ppl-theme :focus-visible { outline: 2px solid var(--ppl-teal-text); outline-offset: 2px; }
+.ppl-stage { position: relative; isolation: isolate; background: var(--ppl-lights), var(--ppl-bg); border: 1px solid var(--ppl-line); border-radius: 1.75rem; }
+/* A floating layer: translucent, blurred, hairline edge, a lit top edge. Used on the sheet, dialogs and the delete bar only. */
+.ppl-theme.ppl-glass, .ppl-glass { background: var(--ppl-glass); backdrop-filter: blur(24px) saturate(165%); -webkit-backdrop-filter: blur(24px) saturate(165%);
+  border: 1px solid var(--ppl-glass-line); box-shadow: var(--ppl-glass-shadow); color: var(--ppl-text); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ppl-theme.ppl-glass, .ppl-glass { background: var(--ppl-surface); }
+}
+.ppl-solid { background: var(--ppl-surface); border: 1px solid var(--ppl-line); border-radius: 1.25rem; }
+.ppl-muted { color: var(--ppl-muted); }
+.ppl-teal { color: var(--ppl-teal-text); }
+.ppl-amber { color: var(--ppl-amber-text); }
+.ppl-row { transition: background-color 160ms cubic-bezier(0.2, 0, 0, 1); }
+.ppl-row:hover, .ppl-row:focus-within { background: var(--ppl-surface-2); }
+.ppl-chip { border: 1px solid var(--ppl-line); color: var(--ppl-muted); transition: background-color 160ms cubic-bezier(0.2, 0, 0, 1), color 160ms; }
+.ppl-chip:hover { background: var(--ppl-surface-2); color: var(--ppl-text); }
+.ppl-chip[aria-pressed="true"] { background: var(--ppl-teal-tint); color: var(--ppl-teal-text); border-color: var(--ppl-teal-text); }
+.ppl-theme .ppl-btn-primary, .ppl-theme .ppl-btn-primary:hover { background: var(--ppl-teal-fill); color: var(--ppl-on-fill); }
+.ppl-theme .ppl-btn-primary:hover { filter: brightness(1.07); }
+.ppl-theme .ppl-btn-primary:disabled { opacity: 0.5; }
+.ppl-theme .ppl-btn-danger, .ppl-theme .ppl-btn-danger:hover { background: #b91c1c; color: #fff; }
+.ppl-theme .ppl-btn-danger:hover { filter: brightness(0.9); }
+.dark .ppl-theme .ppl-btn-danger, .dark .ppl-theme .ppl-btn-danger:hover { background: #ef4444; color: #1b0505; }
+.dark .ppl-theme .ppl-btn-danger:hover { filter: brightness(1.08); }
+@media (prefers-reduced-motion: reduce) { .ppl-row, .ppl-chip { transition: none; } }
+

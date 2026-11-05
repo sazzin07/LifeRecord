@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import "@/styles/money.css";
 
 /** Put money into an account without editing its whole balance: choose the place it lands in, say how much, done. It is recorded as income, so it
  *  shows in the history and the totals. `options` are the places (and accounts without places), "Main › Place"; `defaultId` preselects one. */

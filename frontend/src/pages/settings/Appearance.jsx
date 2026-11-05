@@ -4,6 +4,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { Switch } from "@/components/ui/switch";
 import { Row, SavedBadge, Section } from "@/components/settings/controls";
 import { cn } from "@/lib/utils";
+import "@/styles/money.css";
 
 const PALETTE = {
   light: { bg: "#f7f2f7", card: "#ffffff", line: "#ded6e1", ink: "#201424", soft: "#c5b8ca", accent: "#6c4d7d" },

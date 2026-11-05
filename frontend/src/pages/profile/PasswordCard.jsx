@@ -10,6 +10,7 @@ import { checksFor, strength, suggestPassword } from "@/lib/passwordStrength";
 import { useTwoFactorStatus } from "./useTwoFactorStatus";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 const BAR = ["var(--mny-neg)", "var(--mny-neg)", "var(--mny-amber)", "var(--mny-green)", "var(--mny-green)"];   // weak is the spend colour, so-so the locked one, strong the gain one
 

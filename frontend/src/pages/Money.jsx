@@ -35,6 +35,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Hint } from "@/components/ui/hint";
+import "@/styles/money.css";
 
 const REFUND_BADGE = {
   pending: { type: "unknown", label: "Pending" },

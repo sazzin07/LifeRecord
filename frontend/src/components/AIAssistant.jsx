@@ -14,6 +14,7 @@ import { ScheduledView } from "@/components/ai/scheduled/ScheduledView";
 import { conversationsChanged } from "@/components/ai/useConversations";
 import { useAssistant } from "@/components/ai/useAssistant";
 import { cn } from "@/lib/utils";
+import "@/styles/assistant.css";
 
 const GENERIC = [
   "How am I doing today?",

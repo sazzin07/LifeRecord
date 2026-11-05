@@ -12,6 +12,7 @@ import { TwoFactor } from "@/components/twofactor/TwoFactor";
 import { IdentityCard } from "@/pages/profile/IdentityCard";
 import { PasswordCard } from "@/pages/profile/PasswordCard";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 export default function Profile() {
   const { logout } = useAuth();

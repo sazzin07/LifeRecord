@@ -20,6 +20,7 @@ import { Busy, ErrorBlock, Sk } from "@/components/skeletons";
 import { Amount } from "@/pages/people/Amount";
 import { DebtDialog } from "@/pages/people/DebtDialog";
 import { PersonProfile } from "@/pages/people/PersonProfile";
+import "@/styles/people.css";
 
 const SORTS = [
   { id: "name_asc", label: "Name A-Z" },

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Row, SavedBadge, Section, Segmented } from "@/components/settings/controls";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 const PERIODS = [{ value: "week", label: "Last 7 days" }, { value: "day", label: "Today" }, { value: "all", label: "All time" }];
 const COLORS = Object.values(CATEGORY_COLORS);

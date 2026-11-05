@@ -9,6 +9,7 @@ import { useTwoFactorState } from "./useTwoFactorStatus";
 import { Sk } from "@/components/skeletons";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 /** The display name, edited where it is shown: pencil, type, Enter saves, Esc cancels. */
 function NameEditor() {

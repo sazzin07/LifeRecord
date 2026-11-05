@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 import { cn } from "@/lib/utils";
+import "@/styles/money.css";
 
 /** One choice out of a few. The chosen option is a solid pill that slides to the next one (a shared layout animation). */
 export function Segmented({ value, onChange, options, label, testid, className }) {

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { Amount } from "@/pages/people/Amount";
+import "@/styles/people.css";
 
 const ICON = { add: Plus, reduce: Minus, correct: Pencil, excess: Plus, expense: Receipt, payment_in: ArrowDownLeft, payment_out: ArrowUpRight };
 const EASE = [0.2, 0, 0, 1];

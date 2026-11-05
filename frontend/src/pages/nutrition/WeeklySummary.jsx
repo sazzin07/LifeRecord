@@ -3,6 +3,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { SRC_LABEL, STATUS_LABEL, fmt, prettyDate, useNutrientMeta } from "./shared";
+import "@/styles/print.css";
 
 const refText = (p) => (p.min != null && p.max != null ? `${fmt(p.min)}–${fmt(p.max)}` : p.target != null ? `${fmt(p.target)}` : p.max != null ? `limit ${fmt(p.max)}` : "–");
 

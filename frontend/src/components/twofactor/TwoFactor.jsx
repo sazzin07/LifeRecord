@@ -11,6 +11,7 @@ import { StepUpDialog } from "./StepUpDialog";
 import { AuthenticatorDialog } from "./AuthenticatorDialog";
 import { SmsCodeDialog } from "./SmsCodeDialog";
 import { RecoveryCodesDialog } from "./RecoveryCodesDialog";
+import "@/styles/money.css";
 
 // The words of each way are the same whether or not the status has arrived, so the rows are drawn from these both while loading and after.
 const PASSKEY_HINT = "Your fingerprint, face or screen lock, or a USB key. The safest way: nothing to type, and it only works on the real site.";

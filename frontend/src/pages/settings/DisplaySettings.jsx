@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Switch } from "@/components/ui/switch";
 import { Row, SavedBadge, Section, Segmented } from "@/components/settings/controls";
 import { toast } from "sonner";
+import "@/styles/money.css";
 
 export function CalendarSettings({ index }) {
   const { weekStart, setWeekStart } = useSettings();

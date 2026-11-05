@@ -1,11 +1,11 @@
 {
- "note": "Gzip sizes in bytes: the measured size plus 10 %. Raise a number only on purpose, with a reason in the commit.",
+ "note": "Gzip sizes in bytes: the measured size plus 10 %. Raise a number only on purpose, with a reason in the commit. main.css raised to 26,500 on 2026-11-05: measured 23.9 kB after the Nutrition refinement and the styles/ split, plus the usual margin; the old dark:/slate classes were left in place on purpose.",
  "set_on": "2026-11-01",
  "total_gzip": 784897,
  "largest_single_file_gzip": 351683,
  "roles": {
   "main.css": {
-   "gzip_largest": 20880
+   "gzip_largest": 26500
   },
   "lazy chunk": {
    "gzip_largest": 127408

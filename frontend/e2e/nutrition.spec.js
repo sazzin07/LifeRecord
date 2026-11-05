@@ -147,6 +147,7 @@ test.describe("Nutrition", () => {
       await page.getByRole("option", { name: /Moderately active/ }).click();
       await page.getByTestId("profile-save").click();
       await expect(page.getByTestId("goal-energy_kcal")).toContainText("2,080");
+      await page.getByTestId("goal-toggle-mineral").click();                           // minerals open on a press
       await expect(page.getByTestId("goal-iron_mg")).toContainText("16");
       await expect(page.getByTestId("sources-card")).toContainText("EFSA");
 
@@ -238,7 +239,9 @@ test.describe("Nutrition", () => {
     await page.getByTestId("tab-trends").click();
     await expect(page.getByTestId("trends-tab")).toBeVisible();
     await page.getByTestId("range-30").click();
-    await expect(page.getByTestId("trends-tab")).toContainText("a day without entries is not counted as zero");
+    await page.getByRole("button", { name: "About the averages" }).click();
+    await expect(page.getByText("a day without entries is not counted as zero")).toBeVisible();
+    await page.keyboard.press("Escape");
     const dl = page.waitForEvent("download");
     await page.getByTestId("trends-download").click();
     expect((await dl).suggestedFilename()).toMatch(/^nutrition-\d{4}-\d{2}-\d{2}-to-\d{4}-\d{2}-\d{2}\.csv$/);
@@ -256,7 +259,7 @@ test.describe("Nutrition", () => {
   test("on a phone nothing scrolls sideways and the dialog fits", async ({ authenticatedPage: page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto("/nutrition");
-    await expect(page.getByTestId("day-ledger")).toBeVisible();
+    await expect(page.getByTestId("day-strip")).toBeVisible();
     for (const t of ["today", "nutrients", "trends", "foods", "goals"]) {
       await page.getByTestId(`tab-${t}`).click();
       await page.waitForTimeout(400);

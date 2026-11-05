@@ -70,7 +70,7 @@ export function DayCurve({ day, isToday, loading = false }) {
             <g key={h}><line x1={X(h)} x2={X(h)} y1={padTop} y2={H - padBottom} stroke="var(--chart-grid)" /><text x={X(h)} y={H - 8} textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">{String(h).padStart(2, "0")}:00</text></g>
           ))}
           <line x1={X(FROM)} y1={Y(0)} x2={X(21)} y2={Y(target)} stroke="hsl(var(--muted-foreground))" strokeOpacity="0.7" strokeDasharray="4 6" />
-          <text x={X(21) - 2} y={Y(target) - 8} textAnchor="end" fontSize="11" fill="hsl(var(--muted-foreground))">even pace to {fmt(target)}</text>
+          <g pointerEvents="none"><line x1={padX + 4} x2={padX + 26} y1={padTop + 6} y2={padTop + 6} stroke="hsl(var(--muted-foreground))" strokeOpacity="0.7" strokeDasharray="4 6" /><text x={padX + 32} y={padTop + 10} fontSize="11" fill="hsl(var(--muted-foreground))">even pace to {fmt(target)}</text></g>
           {events.length > 0 && (
             <>
               <path d={`${line} L${knots[knots.length - 1][0]} ${H - padBottom} L${knots[0][0]} ${H - padBottom}Z`} fill="url(#dc-fill)" />

@@ -39,36 +39,65 @@ test.describe("Nutrition trends and insights", () => {
       await expect(variety).toContainText("different foods");
       await expect(variety.getByTestId("group-Legumes")).toContainText("seen");
       await expect(variety.getByTestId("group-Vegetables")).toContainText("seen");
-      await expect(variety).toContainText("Groups come from each food's database category");
-      await expect(page.getByTestId("patterns-view")).toContainText("Descriptions, not medical advice");
+      await page.getByRole("button", { name: "About these numbers" }).click();
+      await expect(page.getByText("Descriptions, not medical advice")).toBeVisible();
+      await page.keyboard.press("Escape");
       // the group chips never rely on colour alone
       expect(await variety.getByTestId("group-Legumes").innerText()).toMatch(/Legumes/);
       expect(await page.getByTestId("group-Legumes").locator(".sr-only").innerText()).toContain("seen");
     } finally { await clean(apiContext, made); }
   });
 
-  test("nutrient density compares each 1,000 kcal with the reference and does not judge nutrients that are rarely reported", async ({ authenticatedPage: page, apiContext }) => {
-    const made = await addDays(apiContext, 6);
-    try {
+  test("nutrient density is its own view: a ladder around the reference, where each nutrient came from, which foods are rich in it, and what cannot be judged", async ({ freshUserPage: { page, fresh } }) => {
+    const apiContext = fresh.api;
+    await addDays(apiContext, 6);
+    {
       await page.goto("/nutrition?tab=trends");
       await page.getByTestId("range-30").click();
       await page.getByTestId("view-density").click();
       const dens = page.getByTestId("pattern-density");
       await expect(dens).toBeVisible();
-      await expect(dens.getByTestId("density-fiber_g")).toContainText("per 1,000 kcal");
-      await expect(dens.getByTestId("density-fiber_g")).toContainText("of the reference");
-      await expect(dens).toContainText("not a deficiency");
-      await expect(dens).toContainText("not counted as zero");
-      const fibreBar = dens.getByTestId("density-fiber_g").getByRole("img");
-      await expect(fibreBar).toHaveAttribute("aria-label", /% of the reference per 1,000 kcal/);
-    } finally { await clean(apiContext, made); }
+      await expect(page.getByTestId("pattern-insights")).toHaveCount(0);       // the insights belong to Patterns, not to Density
+      await expect(page.getByTestId("pattern-rhythm")).toHaveCount(0);
+      // the account has other entries too, so the rungs are taken from what the server judged reliable
+      const pat = await (await apiContext.get("/api/nutrition/patterns?days=30")).json();
+      const judged = pat.density.filter((x) => x.reliable);
+      expect(judged.length).toBeGreaterThan(3);
+      const ladder = [...judged].sort((a, b) => a.ratio - b.ratio);          // the page opens the biggest gap by itself, so the test uses the next two rungs
+      const one = ladder[1], two = ladder[2];
+      const rung = dens.getByTestId(`density-${one.nutrient}`);
+      await expect(rung.getByRole("button")).toHaveAttribute("aria-label", /per 1,000 kcal, \d+% of the reference of/);
+      await rung.getByRole("button").click();
+      const detail = dens.getByTestId(`density-detail-${one.nutrient}`);
+      await expect(detail).toContainText("Where it came from in this period");
+      await expect(detail).toContainText("Whole foods rich in it");
+      // only one rung is open at a time, and pressing it again closes it
+      await dens.getByTestId(`density-${two.nutrient}`).getByRole("button").click();
+      await expect(detail).toHaveCount(0);
+      await expect(dens.getByTestId(`density-detail-${two.nutrient}`)).toBeVisible();
+      await dens.getByTestId(`density-${two.nutrient}`).getByRole("button").click();
+      await expect(dens.getByTestId(`density-detail-${two.nutrient}`)).toHaveCount(0);
+      // a nutrient that most of the energy never reported is kept apart, not judged
+      for (const r of pat.density.filter((x) => !x.reliable)) await expect(dens.getByTestId("density-unsure").getByTestId(`density-${r.nutrient}`)).toBeVisible();
+      // a rich food can be logged from here: the add dialog opens on it
+      await rung.getByRole("button").click();
+      await expect(dens.locator('[data-testid^="density-log-"]').first()).toBeVisible();
+      await dens.locator('[data-testid^="density-log-"]').first().click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.keyboard.press("Escape");
+      // the caveat is one press away
+      await dens.getByRole("button", { name: "How to read nutrient density" }).click();
+      await expect(page.getByText("not counted as zero")).toBeVisible();
+    }
   });
 
   test("six months show weekly averages and a year shows monthly averages, and the CSV follows", async ({ authenticatedPage: page }) => {
     await page.goto("/nutrition?tab=trends");
     await page.getByTestId("range-180").click();
     await expect(page.getByText("Average energy per week")).toBeVisible();
-    await expect(page.getByTestId("trends-tab")).toContainText("Each bar is the average of the days you logged in that week");
+    await page.getByRole("button", { name: "About the chart" }).click();
+    await expect(page.getByText("Each bar is the average of the days you logged in that week")).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByTestId("range-365").click();
     await expect(page.getByText("Average energy per month")).toBeVisible();
     const dl = page.waitForEvent("download");

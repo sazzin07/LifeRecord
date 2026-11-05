@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Busy, Sk, SkForm } from "@/components/skeletons";
-import { AlertTriangle, ExternalLink, Pencil, RotateCcw } from "lucide-react";
+import { AlertTriangle, ChevronDown, ExternalLink, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
 import { Card } from "@/components/common";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,12 +13,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { cn } from "@/lib/utils";
 import { RemindersSettings } from "./Reminders";
 import { SRC_LABEL, fmt, upperLevelText, useNutrientMeta, refreshNutrition } from "./shared";
 
 const ACTIVITY = { sedentary: "Mostly sitting (PAL 1.4)", moderate: "Moderately active (PAL 1.6)", active: "Active (PAL 1.8)", very_active: "Very active (PAL 2.0)" };
 const PREGNANCY = { pregnant_t1: "Pregnant, first trimester", pregnant_t2: "Pregnant, second trimester", pregnant_t3: "Pregnant, third trimester", lactating_0_6: "Breastfeeding, first 6 months", lactating_6plus: "Breastfeeding, after 6 months" };
 const NONE = "__none";
+const GROUPS = [["macro", "Energy and macros"], ["fat", "Fats"], ["vitamin", "Vitamins"], ["mineral", "Minerals"], ["other", "Other"]];
 const KIND = { PRI: "Population reference intake", AI: "Adequate intake", RI: "Reference range", AR: "Average requirement", limit: "Guideline limit", ref: "Labelling reference" };
 
 function ProfileForm({ profile }) {
@@ -52,8 +55,9 @@ function ProfileForm({ profile }) {
   const field = "mt-1 h-10";
   return (
     <Card className="p-5" data-testid="profile-form">
-      <h3 className="font-semibold">About you</h3>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Optional. These details are used only to pick reference values and stay in your account. Leave a field empty if you prefer not to say; general adult values are used where something is missing.</p>
+      <div className="flex items-center gap-1"><h3 className="font-semibold">About you</h3>
+        <InfoTip label="About these details">Optional. These details are used only to pick reference values and stay in your account. Leave a field empty if you prefer not to say; general adult values are used where something is missing.</InfoTip></div>
+      <p className="mt-0.5 text-sm text-muted-foreground">Optional, and only used to pick your reference values.</p>
       <form onSubmit={save} className="mt-4 space-y-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div><Label htmlFor="p-year">Birth year</Label><Input id="p-year" inputMode="numeric" value={f.birth_year} onChange={(e) => set("birth_year")(e.target.value.replace(/\D/g, "").slice(0, 4))} className={field} data-testid="profile-year" /></div>
@@ -80,7 +84,7 @@ function ProfileForm({ profile }) {
               <label key={t} className="flex items-center gap-2 text-sm"><Checkbox checked={f.diet_tags.includes(t)} onCheckedChange={(c) => set("diet_tags")(c ? [...f.diet_tags, t] : f.diet_tags.filter((x) => x !== t))} />{t}</label>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Used to filter food suggestions and flag foods by name. Always check labels: this app cannot see ingredient lists for generic foods.</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Flags foods by name only. Always check labels.</p>
         </fieldset>
         <div><Label htmlFor="p-all">Allergies or foods to avoid (comma separated)</Label><Input id="p-all" value={f.allergies} onChange={(e) => set("allergies")(e.target.value)} placeholder="peanut, shellfish" className={field} data-testid="profile-allergies" /></div>
         <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto]">
@@ -136,6 +140,8 @@ export function GoalsTab() {
   const { data: t } = useFetch("/nutrition/targets");
   const { byKey } = useNutrientMeta();
   const [editing, setEditing] = useState(null);
+  const [openG, setOpenG] = useState({ macro: true, fat: true });   // the groups you set targets for most are open; vitamins and minerals open on a press
+  const groupOf = (k) => { const g = byKey[k]?.group; return g === "energy" ? "macro" : g || "other"; };
   const reset = async (k) => {
     try { await api.delete(`/nutrition/targets/${k}`); toast.success("Back to the suggested value"); refreshNutrition(); } catch (err) { toast.error(errorMessage(err, "Could not reset")); }
   };
@@ -146,7 +152,7 @@ export function GoalsTab() {
       <ProfileForm profile={profile} />
       <RemindersSettings timezone={profile?.timezone} />
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-4 py-3 sm:px-5">
+        <div className="border-b border-line px-4 py-3 sm:px-5">
           <h3 className="font-semibold">Targets</h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{!t ? <><span className="sr-only">Loading the targets</span><Sk className="h-4 w-72 max-w-full" /></> : t.supported === false ? "" : t.personalised ? "Suggested for your details, from EFSA's dietary reference values." : "General adult values. Add your birth year and sex above for personalised ones."}</p>
         </div>
@@ -155,23 +161,38 @@ export function GoalsTab() {
         ) : !t ? <Busy label="Loading your targets" className="space-y-3 p-5">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="flex items-center justify-between gap-3"><Sk className="h-3.5 w-32" /><Sk className="h-8 w-24" /></div>)}</Busy> : (
           <>
             {t.notes.length > 0 && <ul className="space-y-1 border-b border-border bg-amber-50/60 px-5 py-3 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">{t.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
-            <div className="divide-y divide-border">
-              {items.map((it) => (
-                <div key={it.key} className="flex items-center gap-3 px-4 py-3 text-sm sm:px-5" data-testid={`goal-${it.key}`}>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{byKey[it.key]?.name || it.key}{it.overridden && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Your target</span>}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{KIND[it.kind]} · {SRC_LABEL[it.source]}</p>
-                    {upperLevelText(it.upper, it.unit) && <p className="text-xs text-slate-500 dark:text-slate-400" data-testid={`goal-upper-${it.key}`}>{upperLevelText(it.upper, it.unit)}</p>}
-                  </div>
-                  <p className="stat-num shrink-0 text-right">
-                    {it.min != null && it.max != null ? `${fmt(it.min)}–${fmt(it.max)}` : it.target != null ? fmt(it.target) : it.max != null ? `≤ ${fmt(it.max)}` : "–"} <span className="text-xs text-slate-500 dark:text-slate-400">{it.unit}</span>
-                  </p>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${byKey[it.key]?.name} target`} onClick={() => setEditing(it)} data-testid={`goal-edit-${it.key}`}><Pencil className="h-4 w-4" /></Button>
-                  {it.overridden ? <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Reset ${byKey[it.key]?.name} to suggested`} onClick={() => reset(it.key)}><RotateCcw className="h-4 w-4" /></Button> : <span className="h-8 w-8" aria-hidden="true" />}
-                </div>
-              ))}
-            </div>
-            <p className="border-t border-border px-5 py-4 text-xs text-slate-500 dark:text-slate-400">{t.disclaimer}</p>
+            {GROUPS.map(([g, title]) => {
+              const list = items.filter((it) => groupOf(it.key) === g);
+              if (!list.length) return null;
+              const isOpen = !!openG[g];
+              return (
+                <section key={g} className="border-b border-line last:border-b-0" data-testid={`goal-group-${g}`}>
+                  <button type="button" aria-expanded={isOpen} onClick={() => setOpenG((o) => ({ ...o, [g]: !o[g] }))} data-testid={`goal-toggle-${g}`}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold outline-none transition-colors duration-200 hover:bg-hover focus-visible:bg-hover sm:px-5">
+                    <span>{title} <span className="stat-num ml-1 font-normal text-muted-foreground">{list.length}</span></span>
+                    <ChevronDown className={cn("h-4 w-4 text-muted-foreground motion-safe:transition-transform", isOpen && "rotate-180")} aria-hidden="true" />
+                  </button>
+                  {isOpen && (
+                    <div className="divide-y divide-line border-t border-line">
+                      {list.map((it) => (
+                        <div key={it.key} className="flex items-center gap-3 px-4 py-2.5 text-sm sm:px-5" data-testid={`goal-${it.key}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium" title={`${KIND[it.kind]} · ${SRC_LABEL[it.source]}`}>{byKey[it.key]?.name || it.key}{it.overridden && <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-accent-ink">Your target</span>}</p>
+                            {upperLevelText(it.upper, it.unit) && <p className="text-xs text-muted-foreground" data-testid={`goal-upper-${it.key}`}>{upperLevelText(it.upper, it.unit)}</p>}
+                          </div>
+                          <p className="stat-num shrink-0 text-right">
+                            {it.min != null && it.max != null ? `${fmt(it.min)}–${fmt(it.max)}` : it.target != null ? fmt(it.target) : it.max != null ? `≤ ${fmt(it.max)}` : "–"} <span className="text-xs text-muted-foreground">{it.unit}</span>
+                          </p>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${byKey[it.key]?.name} target`} onClick={() => setEditing(it)} data-testid={`goal-edit-${it.key}`}><Pencil className="h-4 w-4" /></Button>
+                          {it.overridden ? <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Reset ${byKey[it.key]?.name} to suggested`} onClick={() => reset(it.key)}><RotateCcw className="h-4 w-4" /></Button> : <span className="h-8 w-8" aria-hidden="true" />}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+            <p className="border-t border-line px-5 py-4 text-xs text-muted-foreground">{t.disclaimer}</p>
           </>
         )}
       </Card>

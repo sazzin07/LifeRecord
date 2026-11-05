@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { InfoTip } from "@/components/InfoTip";
 import { refreshAll, useFetch } from "@/lib/useFetch";
 
 // the pure helpers live in format.js (unit-tested); they are re-exported so the tabs keep importing everything from "./shared"
@@ -52,21 +53,11 @@ export function QualityBadge({ quality, className }) {
   return <span title={title} className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", tone, className)}>{label}</span>;
 }
 
-/** How many of the day's entries reported a value. Dots, not a percentage, so "3 of 5" stays literal. */
+/** Shown only when some entries gave no value for a nutrient: "3/5" in amber. When every entry reported it there is nothing to say. */
 export function Coverage({ reporting, entries }) {
-  if (!entries) return null;
-  const full = reporting === entries;
-  return (
-    <span className={cn("inline-flex items-center gap-1 text-[11px]", full ? "text-slate-500 dark:text-slate-400" : "text-amber-700 dark:text-amber-400")}
-      title={full ? "Every entry reported this value" : `${entries - reporting} of ${entries} entries have no value for this`}>
-      <span className="flex gap-0.5" aria-hidden="true">
-        {Array.from({ length: Math.min(entries, 8) }).map((_, i) => (
-          <span key={i} className={cn("h-1.5 w-1.5 rounded-full", i < Math.min(reporting, 8) ? "bg-current" : "border border-current")} />
-        ))}
-      </span>
-      {full ? null : <span>{reporting}/{entries}</span>}
-    </span>
-  );
+  if (!entries || reporting === entries) return null;
+  const text = `${entries - reporting} of ${entries} entries have no value for this`;
+  return <span title={text} aria-label={text} className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{reporting}/{entries}</span>;
 }
 
 /**
@@ -147,21 +138,24 @@ export function upperLevelText(upper, unit) {
 }
 
 /**
- * Shown when a day's logged total is above a comparable EFSA upper (or safe) level. It is a prompt to look, never a diagnosis:
- * the levels concern usual intake over weeks and cover supplements, which are not logged.
+ * Shown when a day's logged total is above a comparable EFSA upper (or safe) level. One line with the numbers; the reason it is "a prompt to look, never a
+ * diagnosis" sits behind the (i): the levels concern usual intake over weeks and cover supplements, which are not logged.
  */
 export function UpperLevelBanner({ items, byKey }) {
   if (!items?.length) return null;
+  const ul = items.some((i) => i.kind === "UL");
   return (
-    <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200" data-testid="upper-banner" role="note">
+    <div className="flex items-start gap-2.5 rounded-2xl border border-amber-300/70 bg-amber-50/70 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200" data-testid="upper-banner" role="note">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-      <div>
-        <p className="font-medium">Above an EFSA {items.some((i) => i.kind === "UL") ? "upper level" : "safe level"} today</p>
-        <ul className="mt-1 list-disc pl-4">
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Above an EFSA {ul ? "upper level" : "safe level"} today</p>
+        <ul className="mt-0.5 space-y-0.5">
           {items.map((i) => <li key={i.key}>{byKey[i.key]?.name || i.key}: {fmt(i.intake)} {i.unit} against {i.kind === "UL" ? "an upper level" : "a safe level (not a limit)"} of {fmt(i.limit)} {i.unit}</li>)}
         </ul>
-        <p className="mt-1 text-xs">These levels describe usual intake over weeks and include supplements, which are not logged here, so one day above one is a reason to look, not a finding. Ask a doctor or dietitian if you are unsure.</p>
       </div>
+      <InfoTip label="About upper levels" align="end" className="-my-0.5 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300">
+        These levels describe usual intake over weeks and include supplements, which are not logged here, so one day above one is a reason to look, not a finding. Ask a doctor or dietitian if you are unsure.
+      </InfoTip>
     </div>
   );
 }

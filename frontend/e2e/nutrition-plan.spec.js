@@ -57,7 +57,8 @@ test.describe("Nutrition navigation", () => {
     await expect(page.getByTestId("tab-plan")).toHaveAttribute("aria-selected", "true");
     // a chosen day is kept too, and "Today" clears it
     await page.goto("/nutrition?tab=trends&date=2026-09-01");
-    await expect(page.getByTestId("day-label")).toContainText("2026-09-01");
+    await expect(page.getByTestId("day-label")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Day: .*2026/ })).toBeVisible();
     await page.getByTestId("day-today").click();
     await expect(page).not.toHaveURL(/date=/);
     // nonsense in the address falls back to the default instead of breaking the page

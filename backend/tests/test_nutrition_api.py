@@ -52,6 +52,24 @@ def log(s, food, qty, unit="g", **kw):
 
 
 # ---------------------------------------------------------------- food database
+def test_search_ignores_the_amount_typed_with_a_food_and_relaxes_a_word_that_nothing_matches(a):
+    """"2 eggs" found cornbread made with 2% milk and "eggs, boiled" found nothing, for the quick-add bar and for the assistant alike (live probe 2026-11-05)."""
+    assert napi.search_terms("2 eggs") == ["eggs"]
+    assert napi.search_terms("200g of chicken breast") == ["chicken", "breast"]
+    assert napi.search_terms("330 ml cola") == ["cola"]
+    assert napi.search_terms("eggs, boiled") == ["eggs", "boiled"]
+    assert napi.search_terms("2% milk") == ["2%", "milk"]
+    assert napi.search_terms("100") == ["100"]                          # nothing but an amount: used as typed
+    assert napi.search_terms("  ") == []
+    res = a.get(f"{N}/foods/search", params={"q": "2 eggs"}).json()
+    assert res and all("egg" in f["name"].lower() for f in res[:3])
+    res = a.get(f"{N}/foods/search", params={"q": "eggs, boiled"}).json()
+    assert res and "egg" in res[0]["name"].lower()
+    # a query that matches with every word is answered exactly as before: no word is dropped
+    plain = a.get(f"{N}/foods/search", params={"q": "spinach raw"}).json()
+    assert plain and all("spinach" in f["name"].lower() and "raw" in f["name"].lower() for f in plain)
+
+
 def test_search_ranks_exact_starts_first_and_is_safe_with_odd_characters(a):
     res = a.get(f"{N}/foods/search", params={"q": "spinach raw"}).json()
     assert res and "spinach" in res[0]["name"].lower()

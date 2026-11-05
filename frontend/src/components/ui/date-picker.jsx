@@ -3,7 +3,6 @@ import { CalendarDays, X } from "lucide-react";
 import { addDays, format, isValid, parseISO } from "date-fns";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -15,12 +14,16 @@ const toIso = (d) => format(d, "yyyy-MM-dd");
  */
 export function DatePicker({ value, onChange, placeholder = "Pick a date", presets, clearable = true, className, disabled, "aria-label": ariaLabel, id, ...rest }) {
   const [open, setOpen] = React.useState(false);
+  const closing = React.useRef(0);
+  React.useEffect(() => () => clearTimeout(closing.current), []);
   const selected = value ? parseISO(value) : undefined;
   const valid = selected && isValid(selected);
-  const pick = (d) => { onChange(d ? toIso(d) : ""); setOpen(false); };
+  // The change is reported at once; the popover stays for a breath so the chosen day is seen settling before it closes.
+  const pick = (d) => { onChange(d ? toIso(d) : ""); clearTimeout(closing.current); closing.current = setTimeout(() => setOpen(false), d ? 170 : 0); };
   // The accessible name must contain the visible text (WCAG 2.5.3), so the label says what the field is and the button shows its value.
   const shown = valid ? format(selected, "EEE d MMM yyyy") : placeholder;
   const name = !ariaLabel ? shown : ariaLabel.toLowerCase().includes(shown.toLowerCase()) ? ariaLabel : `${ariaLabel}: ${shown}`;
+  const link = "rounded-full px-3 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors duration-200 hover:bg-field hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -55,17 +58,17 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", prese
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto rounded-2xl p-0" align="start">
+      <PopoverContent className="w-auto rounded-3xl p-0" align="start" sideOffset={8} data-testid="date-popover">
         {presets?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 border-b border-border p-3 pb-2.5">
-            {presets.map((p) => (
-              <Button key={p.label} type="button" size="sm" variant="outline" className="h-7 rounded-full px-3 text-xs"
-                onClick={() => pick(addDays(new Date(), p.days))}>{p.label}</Button>
-            ))}
+          <div className="flex flex-wrap gap-1 px-3 pt-3">
+            {presets.map((p) => <button key={p.label} type="button" className={cn(link, "border border-line")} onClick={() => pick(addDays(new Date(), p.days))}>{p.label}</button>)}
           </div>
         )}
-        <Calendar mode="single" selected={valid ? selected : undefined} defaultMonth={valid ? selected : undefined}
-          onSelect={(d) => d && pick(d)} initialFocus />
+        <Calendar selected={valid ? selected : undefined} defaultMonth={valid ? selected : undefined} onSelect={(d) => pick(d)} autoFocus />
+        <div className="flex items-center justify-between border-t border-line px-3 py-2">
+          <button type="button" className={link} onClick={() => pick(new Date())} data-testid="calendar-today">Today</button>
+          {clearable && valid && <button type="button" className={link} onClick={() => pick(null)}>Clear</button>}
+        </div>
       </PopoverContent>
     </Popover>
   );

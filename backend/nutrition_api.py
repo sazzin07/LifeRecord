@@ -255,6 +255,19 @@ def like_escape(t: str) -> str:
     return t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+_AMOUNT = re.compile(r"\d+(?:[.,]\d+)?(?:g|kg|mg|ml|cl|dl|l|oz|lb|lbs|x)?")
+_AMOUNT_WORDS = {"g", "kg", "gram", "grams", "ml", "l", "litre", "litres", "liter", "liters", "oz", "lb", "lbs", "cup", "cups", "tbsp", "tsp", "slice", "slices",
+                 "piece", "pieces", "serving", "servings", "x", "of", "a", "an", "the", "some"}
+
+
+def search_terms(q: str) -> List[str]:
+    """The words of a food search, without the amount a person naturally types with it ("2 eggs", "200g of chicken", "330 ml cola"): a number or a unit never
+    names a food, and left in, "2" finds "2% milk". Commas are dropped ("eggs, boiled"). If nothing but amounts is left, the query is used as typed."""
+    raw = [t for t in (w.strip(",.;:()") for w in re.split(r"\s+", q.strip().lower())) if t]
+    kept = [t for t in raw if not (_AMOUNT.fullmatch(t) or t in _AMOUNT_WORDS)]
+    return (kept or raw)[:6]
+
+
 def valid_date(s: str) -> date:
     try:
         return date.fromisoformat(s)
@@ -437,18 +450,24 @@ def register(router, srv):
     async def search_foods(q: str = Query(..., min_length=1, max_length=100), limit: int = Query(25, ge=1, le=100),
                            scope: Literal["all", "mine", "favorites"] = "all", user: dict = Depends(get_user), db: AsyncSession = Depends(get_db)):
         uid = user["_id"]
-        terms = [t for t in re.split(r"\s+", q.strip().lower()) if t][:6]
+        terms = search_terms(q)
         if not terms:
             return []
-        conds = [Food.name_lower.like(f"%{like_escape(t)}%", escape="\\") for t in terms]
-        stmt = select(Food).where(or_(Food.user_id == uid, Food.user_id.is_(None)), and_(*conds))
         favs = await favorites_of(db, uid)
-        if scope == "mine":
-            stmt = stmt.where(Food.user_id == uid)
-        elif scope == "favorites":
-            stmt = stmt.where(Food.id.in_(favs or {""}))
-        rows = (await db.execute(stmt.order_by(func.length(Food.name_lower)).limit(400))).scalars().all()
-        qn = " ".join(terms)
+        rows, used = [], terms
+        # every word must be in the name; when that finds nothing ("eggs, boiled"), the last words are dropped one at a time, never the first
+        for n in range(len(terms), 0, -1):
+            used = terms[:n]
+            conds = [Food.name_lower.like(f"%{like_escape(t)}%", escape="\\") for t in used]
+            stmt = select(Food).where(or_(Food.user_id == uid, Food.user_id.is_(None)), and_(*conds))
+            if scope == "mine":
+                stmt = stmt.where(Food.user_id == uid)
+            elif scope == "favorites":
+                stmt = stmt.where(Food.id.in_(favs or {""}))
+            rows = (await db.execute(stmt.order_by(func.length(Food.name_lower)).limit(400))).scalars().all()
+            if rows:
+                break
+        qn = " ".join(used)
         rows.sort(key=lambda f: search_rank(f.name_lower, qn, "user" if f.user_id else f.source, f.user_id == uid))
         prof = profile_dict(await get_profile_row(db, uid))
         out = []

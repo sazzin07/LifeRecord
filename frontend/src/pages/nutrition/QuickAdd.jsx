@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MoreHorizontal, Plus, Search } from "lucide-react";
+import { Loader2, MoreHorizontal, Plus, Search, Sparkles } from "lucide-react";
+import { openAI } from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
 import { Card } from "@/components/common";
@@ -43,15 +44,19 @@ export function QuickAdd({ date, mealType, onMore }) {
     <Card className="p-4 sm:p-5" data-testid="quick-add">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" aria-hidden="true" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Quick add: type a food, e.g. banana, oats, chicken"
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Quick add: banana, oats, chicken"
           onKeyDown={(e) => { if (e.key === "Enter" && results?.[0]) { e.preventDefault(); onMore(results[0].id); } if (e.key === "Escape") setQ(""); }}
-          aria-label="Quick add food" className="h-11 pl-9" data-testid="quick-add-input" />
-        {busy && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500 dark:text-slate-400" aria-label="Searching" />}
+          aria-label="Quick add food" className={q.trim().length >= 2 ? "h-11 pl-9 pr-12" : "h-11 pl-9"} data-testid="quick-add-input" />
+        {busy && <Loader2 className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500 dark:text-slate-400 ${q.trim().length >= 2 ? "right-12" : "right-3"}`} aria-label="Searching" />}
+        {q.trim().length >= 2 && (
+          <button type="button" onClick={() => openAI(`Log ${q.trim()}`)} aria-label="Ask the assistant to log this" title="Ask the assistant to log this"
+            className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-accent-ink outline-none transition-colors duration-200 hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"><Sparkles className="h-4 w-4" aria-hidden="true" /></button>
+        )}
       </div>
 
       {results ? (
         results.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No food matches "{q}". Try a simpler word, or <button type="button" className="font-medium text-emerald-700 underline dark:text-emerald-400" onClick={() => onMore(undefined, q)}>type it in</button> yourself.</p>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No food matches "{q}". Try a simpler word, or <button type="button" className="font-medium text-emerald-700 underline dark:text-emerald-400" onClick={() => onMore(undefined, q)}>type it in</button> yourself, or <button type="button" className="font-medium text-emerald-700 underline dark:text-emerald-400" onClick={() => openAI(`Log ${q.trim()}`)}>ask the assistant</button>.</p>
         ) : (
           <ul className="mt-2 divide-y divide-border rounded-xl border border-border" aria-label="Quick add results" data-testid="quick-add-results">
             {results.map((f) => {
@@ -74,7 +79,7 @@ export function QuickAdd({ date, mealType, onMore }) {
         )
       ) : recent?.length > 0 ? (
         <div className="mt-3" data-testid="quick-add-recent">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Again, with the amount you used last time</p>
+          <p className="text-xs font-medium text-muted-foreground">Log again</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {recent.slice(0, 8).map((f) => (
               <button key={f.id} type="button" disabled={adding === f.id} onClick={() => add(f)} title={`${f.name}: ${fmt(f.last_quantity)} ${f.last_unit}`}
@@ -87,7 +92,7 @@ export function QuickAdd({ date, mealType, onMore }) {
           </div>
         </div>
       ) : (
-        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Foods you log often appear here as one-tap shortcuts.</p>
+        <p className="mt-3 text-xs text-muted-foreground">Foods you log often appear here as one-tap shortcuts.</p>
       )}
     </Card>
   );

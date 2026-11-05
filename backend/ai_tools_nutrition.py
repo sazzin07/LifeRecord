@@ -43,7 +43,8 @@ _TIME = {"type": "string", "description": "Local time HH:MM (24-hour). Omit if u
 _MEAL = {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "other"],
          "description": "Omit to use the meal that fits the current time."}
 _CONFIRM = {"type": "boolean", "description": "Leave unset on the first call, which only previews. After the user has explicitly agreed in their latest "
-                                              "message, call the same tool again with exactly the same arguments and confirm=true."}
+                                              "message, call the same tool again with exactly the same arguments and confirm=true. On that turn call it once, with "
+                                              "confirm=true straight away: a call without it only previews again, and a preview made in the same turn cannot be confirmed."}
 _NUTRIENT = {"type": "string", "description": "A nutrient key such as energy_kcal, protein_g, carbs_g, fat_g, fiber_g, sugars_g, sat_fat_g, sodium_mg, "
                                               "potassium_mg, calcium_mg, iron_mg, magnesium_mg, zinc_mg, vit_a_ug, vit_c_mg, vit_d_ug, vit_b12_ug, folate_ug."}
 _INGREDIENTS = {"type": "array", "items": {"type": "object", "properties": {

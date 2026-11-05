@@ -30,7 +30,9 @@ test.describe("Reference values by age, and upper levels", () => {
       await expect(banner).toBeVisible();
       await expect(banner).toContainText("Zinc");
       await expect(banner).toContainText("18 mg");
-      await expect(banner).toContainText("not a finding");
+      await banner.getByRole("button", { name: "About upper levels" }).click();
+      await expect(page.getByText(/not a finding/)).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(banner).not.toContainText("Folate");   // the folate level covers folic acid only, so it is never compared with logged food
 
       // Nutrients: the detail says what each level covers
@@ -44,6 +46,7 @@ test.describe("Reference values by age, and upper levels", () => {
 
       // Goals: age-specific targets, upper and safe levels, and the child note
       await page.getByTestId("tab-goals").click();
+      await page.getByTestId("goal-toggle-mineral").click();
       await expect(page.getByTestId("goal-protein_g")).toContainText("44");               // PRI 0.87 g per kg at 14 (girls) x 50 kg = 43.5
       await expect(page.getByTestId("goal-upper-zinc_mg")).toContainText("Upper level 18 mg");
       await expect(page.getByTestId("goal-upper-iron_mg")).toContainText("Safe level 30 mg");
@@ -68,6 +71,7 @@ test.describe("Reference values by age, and upper levels", () => {
       expect((await apiContext.put("/api/nutrition/profile", { data: { birth_year: year - 35, sex: "F", weight_kg: 62, activity: "moderate", pregnancy: null, diet_tags: [], allergies: [], timezone: before.timezone } })).ok()).toBe(true);
       await page.goto("/nutrition?tab=goals");
       await expect(page.getByTestId("goal-energy_kcal")).toBeVisible();
+      await page.getByTestId("goal-toggle-mineral").click();
       await expect(page.getByTestId("goal-upper-zinc_mg")).toContainText("Upper level 25 mg");
       await expect(page.getByTestId("goals-tab")).not.toContainText("not a growth chart");
     } finally {

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
 import { Card } from "@/components/common";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -74,14 +75,14 @@ export function Suggestions({ date }) {
   const [aim, setAim] = useState("auto");
   const [all, setAll] = useState(false);
   const path = `/nutrition/suggestions?date=${date}${meal ? `&meal_type=${meal}` : ""}${aim !== "auto" ? `&focus=${aim}` : ""}&limit=8`;
-  const { data, loading, reload } = useFetch(path);
+  const { data, loading, reload } = useFetch(date ? path : null);
   const slot = meal || data?.meal_type || "dinner";
   const ideas = data ? [...data.suggestions, ...data.discover.filter((d) => !data.suggestions.some((s) => s.kind === d.kind && s.id === d.id))] : [];
   const shown = all ? ideas : ideas.slice(0, SHOWN);
 
   return (
     <Card className="overflow-hidden" data-testid="suggestions" aria-labelledby="sug-title">
-      <div className="space-y-3 border-b border-border px-4 py-3 sm:px-5">
+      <div className="space-y-3 border-b border-line px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <h3 id="sug-title" className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-emerald-700" aria-hidden="true" />What could I eat?</h3>
@@ -101,13 +102,14 @@ export function Suggestions({ date }) {
                 slot === m.key ? "border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200" : "border-border text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/50")}>{m.label}</button>
           ))}
         </div>
+        {loading && <p className="text-xs text-muted-foreground"><span className="sk-ph">Still needed: Protein 00 g · Fibre 00 g</span></p>}
         {data?.context?.focus?.length > 0 && (
           <p className="text-xs text-slate-500 dark:text-slate-400" data-testid="suggestions-focus">Still needed: {data.context.focus.map((f) => `${f.name} ${fmt(f.remaining)} ${f.unit}`).join(" · ")}</p>
         )}
       </div>
 
       {loading ? (
-        <Busy label="Loading suggestions" className="p-5"><SkRows n={5} lead="square" figure={false} /></Busy>
+        <Busy label="Loading suggestions" className="p-5"><SkRows n={6} lead="square" figure={false} /></Busy>
       ) : !data ? (
         <div className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm text-slate-600" role="alert">
           <span>Suggestions could not be loaded just now.</span>
@@ -118,11 +120,11 @@ export function Suggestions({ date }) {
       ) : (
         <>
           {data.note && data.suggestions.length === 0 && <p className="border-b border-border px-5 py-3 text-xs text-slate-500 dark:text-slate-400">{data.note}</p>}
-          <ul className="divide-y divide-border" aria-label="Ideas">{shown.map((i) => <Idea key={`${i.kind}-${i.id}`} item={i} date={date} meal={slot} />)}</ul>
-          {ideas.length > SHOWN && <Button type="button" variant="ghost" size="sm" className="w-full rounded-none border-t border-border" aria-expanded={all} onClick={() => setAll((v) => !v)} data-testid="suggestions-more">{all ? "Show fewer" : `Show ${ideas.length - SHOWN} more`}</Button>}
-          <p className="border-t border-border px-5 py-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-            {data.excluded_for_diet > 0 ? `${data.excluded_for_diet} of your saved ${data.excluded_for_diet === 1 ? "item was" : "items were"} left out because of your diet or allergy words. ` : ""}
-            Only nutrients a food reports count. Reference values describe healthy people of your age and are not medical advice.
+          <ul className="divide-y divide-line" aria-label="Ideas">{shown.map((i) => <Idea key={`${i.kind}-${i.id}`} item={i} date={date} meal={slot} />)}</ul>
+          {ideas.length > SHOWN && <Button type="button" variant="ghost" size="sm" className="w-full rounded-none border-t border-line" aria-expanded={all} onClick={() => setAll((v) => !v)} data-testid="suggestions-more">{all ? "Show fewer" : `Show ${ideas.length - SHOWN} more`}</Button>}
+          <p className="flex flex-wrap items-center gap-x-1 border-t border-line px-5 py-2 text-[11px] text-muted-foreground">
+            {data.excluded_for_diet > 0 && <span>{data.excluded_for_diet} of your saved {data.excluded_for_diet === 1 ? "item was" : "items were"} left out because of your diet or allergy words.</span>}
+            <span className="inline-flex items-center">About these ideas<InfoTip label="About these ideas" align="start">Only nutrients a food reports count. Reference values describe healthy people of your age and are not medical advice.</InfoTip></span>
           </p>
         </>
       )}

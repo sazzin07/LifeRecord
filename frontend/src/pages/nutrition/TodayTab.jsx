@@ -3,6 +3,7 @@ import { Check, Copy, Droplets, GlassWater, History, Lightbulb, MoreHorizontal, 
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { Card } from "@/components/common";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -75,7 +76,7 @@ function Hydration({ day, date, loading }) {
       <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" role="progressbar" aria-label="Total water" aria-valuemin={0} aria-valuemax={h.target_ml || 0} aria-valuenow={h.total_ml}>
         <div className="h-full rounded-full bg-sky-500 motion-safe:transition-[width] motion-safe:duration-500" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{loading ? <span className="sk-ph">Drinks 000 ml + water in food 000 ml. EFSA's reference counts both.</span> : <>Drinks {fmt(h.drinks_ml)} ml + water in food {fmt(h.food_water_ml)} ml. EFSA's reference counts both.</>}</p>
+      <p className="mt-2 flex items-center gap-0.5 text-xs text-muted-foreground">{loading ? <span className="sk-ph">Drinks 000 ml + food 000 ml</span> : <>Drinks {fmt(h.drinks_ml)} ml + food {fmt(h.food_water_ml)} ml<InfoTip label="About total water">EFSA's reference for total water counts both the drinks you log and the water in food.</InfoTip></>}</p>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {[[150, "Cup"], [250, "Glass"], [500, "Bottle"]].map(([ml, label]) => (
           <Button key={ml} type="button" variant="outline" className="h-auto flex-col gap-0.5 py-2" onClick={() => add(ml)} data-testid={`water-add-${ml}`}>
@@ -115,6 +116,23 @@ function Hydration({ day, date, loading }) {
   );
 }
 
+/**
+ * An insight's reason, shortened: the first sentence stays ("0 of 95 mg (0%) from what you have logged"), a missing-data warning stays as a few words because a low
+ * figure could mislead without it, and the rest ("a low recorded intake for one day is not a deficiency") sits behind the (i).
+ */
+function Why({ text }) {
+  const main = (text.match(/^(.*?)(?:;\s|\.\s(?=[A-Z])|\.?$)/) || [null, text])[1];
+  const rest = text.slice(main.length).replace(/^[;.]\s*/, "");
+  const gap = rest.match(/(\d+) of (\d+) entries have no/);
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs leading-relaxed text-muted-foreground">
+      <span>{main}.</span>
+      {gap && <span className="text-amber-700 dark:text-amber-400">{gap[1]} of {gap[2]} entries have no data.</span>}
+      {rest && <InfoTip label="More about this" className="-my-1">{rest}</InfoTip>}
+    </p>
+  );
+}
+
 function Insights({ insights, onLog, loading }) {
   const [all, setAll] = useState(false);
   if (loading) {
@@ -140,19 +158,17 @@ function Insights({ insights, onLog, loading }) {
         {(all ? insights.insights : insights.insights.slice(0, 3)).map((i) => (
           <li key={i.nutrient}>
             <p className="text-sm font-medium">{i.title}</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{i.why}</p>
+            <Why text={i.why} />
             {i.foods?.length > 0 && (
-              <>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {i.foods.map((f) => (
-                    <button key={f.food_id} type="button" onClick={() => onLog(f.food_id)} title={`${fmt(f.amount_per_100g)} per 100 g`}
-                      className="rounded-full border border-border px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 dark:hover:bg-emerald-500/10">
-                      {f.name.split(",").slice(0, 2).join(",")}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">{i.foods_note}</p>
-              </>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {i.foods.map((f) => (
+                  <button key={f.food_id} type="button" onClick={() => onLog(f.food_id)} title={`${fmt(f.amount_per_100g)} per 100 g`}
+                    className="rounded-full border border-line px-2.5 py-1 text-xs transition-colors duration-200 hover:border-line-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {f.name.split(",").slice(0, 2).join(",")}
+                  </button>
+                ))}
+                {i.foods_note && <InfoTip label="About these foods">{i.foods_note}</InfoTip>}
+              </div>
             )}
           </li>
         ))}
@@ -191,7 +207,7 @@ export function TodayTab({ day, insights, date, isToday = true, onAdd, onEdit, l
   };
 
   return (
-    <div className="min-w-0 space-y-8" {...(loading ? { "data-skeleton": "", inert: "true", "aria-hidden": "true" } : {})}>
+    <div className="min-w-0 space-y-8" {...(loading ? { "data-skeleton": "", inert: true, "aria-hidden": "true" } : {})}>
       <DayCurve day={day} isToday={isToday} loading={loading} />
 
       <section aria-label="Macronutrients against their ranges" className="grid gap-5 sm:grid-cols-3">
@@ -199,11 +215,16 @@ export function TodayTab({ day, insights, date, isToday = true, onAdd, onEdit, l
           const p = ref[k];
           return p ? <RangeGauge key={k} testid={`gauge-${k}`} label={label} color={MACRO_COLORS[k]} intake={p.intake || 0} min={p.min} max={p.max} target={p.target} unit="g" missing={!loading && p.status === "no_data"} loading={loading} /> : null;
         })}
-        {day.energy_check && Math.abs(day.energy_check.difference_pct) > 10 && (
-          <p className="text-xs text-muted-foreground sm:col-span-3">Listed energy and the energy the macronutrients add up to differ by {Math.abs(Math.round(day.energy_check.difference_pct))}% today. That is normal when label and database values are mixed; the listed energy is what is counted.</p>
-        )}
-        {day.reference?.notes?.length > 0 && (
-          <p className="text-xs text-muted-foreground sm:col-span-3">{day.reference.notes[0]} Set your details under Goals.</p>
+        {loading && <div className="h-6 sm:col-span-3" aria-hidden="true" />}   {/* the row that says how the references were chosen has its place while the day loads */}
+        {(day.reference?.notes?.length > 0 || (day.energy_check && Math.abs(day.energy_check.difference_pct) > 10)) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:col-span-3">
+            {day.reference?.notes?.length > 0 && (
+              <span className="inline-flex items-center gap-0.5">About these references<InfoTip label="About these references">{day.reference.notes[0]} Set your details under Goals.</InfoTip></span>
+            )}
+            {day.energy_check && Math.abs(day.energy_check.difference_pct) > 10 && (
+              <span className="inline-flex items-center gap-0.5">Energy differs by {Math.abs(Math.round(day.energy_check.difference_pct))}%<InfoTip label="About the energy difference">Listed energy and the energy the macronutrients add up to differ by {Math.abs(Math.round(day.energy_check.difference_pct))}% today. That is normal when label and database values are mixed; the listed energy is what is counted.</InfoTip></span>
+            )}
+          </div>
         )}
       </section>
 
@@ -246,7 +267,7 @@ export function TodayTab({ day, insights, date, isToday = true, onAdd, onEdit, l
               <li key={q} className="flex items-center justify-between"><QualityBadge quality={q} /><span className="text-muted-foreground">{n} {n === 1 ? "entry" : "entries"}</span></li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-muted-foreground">Typed-in and estimated entries are counted, but they may lack vitamins and minerals. The Nutrients tab shows exactly how complete each value is.</p>
+          <p className="mt-3 text-xs text-muted-foreground">Typed-in and estimated entries are counted but may lack vitamins and minerals.</p>
         </Card>
       )}
 

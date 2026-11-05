@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
 import { Card } from "@/components/common";
+import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,8 +71,9 @@ export function RemindersSettings({ timezone }) {
     <Card className="p-5" data-testid="reminders-settings">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-semibold">Reminders</h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">A nudge on the Nutrition page and on Home when a meal is not logged by the time you choose. They stay inside the app: nothing is emailed or pushed to your phone.</p>
+          <div className="flex items-center gap-1"><h3 className="font-semibold">Reminders</h3>
+            <InfoTip label="About reminders">Leave a time empty for no reminder. The water check appears if you have had less than half of your total-water reference by then. Times follow {timezone ? `your time zone (${timezone})` : "UTC, because no time zone is set above"}.</InfoTip></div>
+          <p className="mt-0.5 text-sm text-muted-foreground">A nudge on Nutrition and Home when a meal is not logged by your time. In-app only: nothing is emailed or pushed.</p>
         </div>
         <Switch checked={f.enabled} onCheckedChange={(v) => setF((x) => ({ ...x, enabled: v }))} aria-label="Turn reminders on" data-testid="reminders-enabled" />
       </div>
@@ -81,7 +83,6 @@ export function RemindersSettings({ timezone }) {
         ))}
         <div><Label htmlFor="rem-water" className="text-xs">Water check at</Label><Input id="rem-water" type="time" disabled={!f.enabled} value={f.water_by} onChange={(e) => setF((x) => ({ ...x, water_by: e.target.value }))} className="mt-1 h-10" data-testid="reminder-time-water" /></div>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Leave a time empty for no reminder. The water check appears if you have had less than half of your total-water reference by then. Times follow {timezone ? `your time zone (${timezone})` : "UTC, because no time zone is set above"}.</p>
       <div className="mt-3 flex justify-end"><Button onClick={save} disabled={saving} className="bg-emerald-700 text-white hover:bg-emerald-800" data-testid="reminders-save">Save reminders</Button></div>
     </Card>
   );

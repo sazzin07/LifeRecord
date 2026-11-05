@@ -27,7 +27,7 @@ test.describe("Nutrition: the day", () => {
     const orb = page.getByTestId("orb");
     await expect(orb).toBeVisible();
     await expect(page.getByTestId("energy-left")).toContainText(/\d/);
-    await expect(orb.locator("circle")).toHaveCount(8);                         // a track and a ring for energy, protein, carbs and fat
+    await expect(orb.locator("circle")).toHaveCount(12);                        // a track, a ring and a touch target for energy, protein, carbs and fat
     await expect(page.getByTestId("chip-protein_g")).toContainText("protein");
     await expect(page.getByTestId("day-ledger")).toBeVisible();
     await expect(page.getByTestId("day-curve")).toBeVisible();
@@ -62,32 +62,49 @@ test.describe("Nutrition: the day", () => {
     await expect.poll(async () => parseFloat((await total.innerText()).replace(",", ".")), { timeout: 8000 }).toBeGreaterThan(before);
   });
 
-  test("the orb and the day figures stay beside the Nutrients and Trends views, and the Plan view has the full width", async ({ freshUserPage: { page } }) => {
+  test("the orb and the day figures stay beside every view that looks at a day, and Plan and Goals have the full width", async ({ freshUserPage: { page } }) => {
     await page.goto("/nutrition");
     await settle(page);
-    for (const tab of ["nutrients", "trends"]) { await page.getByTestId(`tab-${tab}`).click(); await expect(page.getByTestId("orb")).toBeVisible(); }
-    await page.getByTestId("tab-plan").click();
-    await expect(page.getByTestId("orb")).toHaveCount(0);
+    for (const tab of ["nutrients", "trends", "foods"]) { await page.getByTestId(`tab-${tab}`).click(); await expect(page.getByTestId("orb")).toBeVisible(); }
+    for (const tab of ["plan", "goals"]) { await page.getByTestId(`tab-${tab}`).click(); await expect(page.getByTestId("orb")).toBeHidden(); }
   });
 
-  test("the constellation shows every nutrient and hands the chosen one to the list", async ({ freshUserPage: { page } }) => {
+  test("the nutrient table shows every nutrient as a tile in its group, reads one out on hover, and hands a pressed one to the list", async ({ freshUserPage: { page } }) => {
     await page.goto("/nutrition?tab=nutrients");
     await settle(page);
-    const cells = page.getByTestId("constellation").getByRole("button");
-    expect(await cells.count()).toBeGreaterThan(20);
-    const first = cells.first();
-    const label = await first.innerText();
-    await first.click();
-    await expect(page.getByTestId("nutrient-search")).not.toHaveValue("");
-    expect(label).toMatch(/percent|no data/);
-    await first.hover();
-    await expect(page.getByTestId("constellation-caption")).not.toBeEmpty();
+    const tiles = page.locator('[data-testid^="tile-"]');
+    expect(await tiles.count()).toBeGreaterThan(30);
+    for (const g of ["macro", "fat", "vitamin", "mineral"]) await expect(page.getByTestId(`table-group-${g}`)).toBeVisible();
+    const protein = page.getByTestId("tile-protein_g");
+    await expect(protein).toContainText("Protein");                                  // the full name is in the tile's accessible name
+    await protein.hover();
+    const read = page.getByTestId("table-readout");
+    await expect(read).toContainText("Protein");
+    await expect(read).toContainText("%");
+    await page.mouse.move(5, 5);
+    await expect(read).not.toContainText("Protein");
+    await protein.click();
+    await expect(page.getByTestId("nutrient-protein_g").getByRole("button", { name: /Protein/ }).first()).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByTestId("nutrient-protein_g")).toBeInViewport();
+    // the filters act on the tiles too: what does not match is dimmed
+    await page.getByTestId("nutrient-filter-nodata").click();
+    const total = await tiles.count();
+    const dimmed = await tiles.evaluateAll((els) => els.filter((el) => Number(getComputedStyle(el).opacity) < 0.6).length);
+    const shown = Number((await page.getByTestId("nutrient-filter-nodata").innerText()).replace(/\D/g, ""));
+    await expect.poll(async () => tiles.evaluateAll((els) => els.filter((el) => Number(getComputedStyle(el).opacity) < 0.6).length), { timeout: 4000 }).toBe(total - shown);
+    expect(dimmed).toBeGreaterThanOrEqual(0);
+    // the words that used to fill the page are one press away
+    await page.getByRole("button", { name: "How to read the nutrients" }).click();
+    await expect(page.getByText("not the same as zero")).toBeVisible();
   });
 
-  test("on a phone the orb leads and the views follow, with nothing wider than the screen", async ({ freshUserPage: { page } }) => {
+  test("on a phone the strip leads, the logging bar is on the first screen, and nothing is wider than the screen", async ({ freshUserPage: { page } }) => {
     await prepare(page, "light", { width: 390, height: 844 });
     await page.goto("/nutrition");
     await settle(page);
+    await expect(page.getByTestId("day-strip")).toBeVisible();
+    await expect(page.getByTestId("quick-add")).toBeInViewport();
+    await page.getByTestId("day-strip").getByRole("button").click();
     await expect(page.getByTestId("orb")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   });

@@ -21,11 +21,16 @@ Last updated: 2026-11-06.
 - [ ] After them: a visual check that Money, People, Home and Nutrition still match the new pages
 
 ## 2. AI training and access management (after the redesigns are complete)
-Make the assistant able to do anything a person can do anywhere in the website.
-- [ ] Coverage audit: every page, button and action has an assistant tool (new pages from step 1 included)
-- [ ] Access management: what the assistant may read and change per page and per action, with clear confirmation for risky changes, undo, and an owner setting to switch parts off
-- [ ] Training: prompts, tool descriptions and examples tuned so it picks the right tool and handles real requests, checked with bounded live probes
-- [ ] Every action it takes updates the screen and data correctly and is isolated to the signed-in user
+Goal: the best possible assistant. It must be able to do **everything a person can do anywhere in the website**, by chat, correctly and safely. Nothing in the app may be reachable only by clicking.
+- [ ] Full coverage audit, page by page and button by button, including the redesigned pages. Every action needs a tool, for example:
+  - Nutrition: log any food by amount, record individual micronutrients and vitamins, set targets and profile, plan, recipes, water, reports
+  - Money: expenses, income, transfers between accounts and places, **moving money between currencies** with the right rates, budgets, recurring items, places and accounts in any currency
+  - People and debts, Groceries and kitchen, Fitness and Body, Tasks, Calendar, Settings
+- [ ] Every missing tool built; every tool covers all the fields the page itself offers (no half features)
+- [ ] Access management: what the assistant may read and change per page and per action, confirmation for risky changes, undo, and an owner setting to switch parts off
+- [ ] Training: prompts, tool descriptions and examples tuned so it picks the right tool and handles real, messy requests, checked with bounded live probes that read the data back
+- [ ] Every action updates the screen and the data correctly and is isolated to the signed-in user
+- [ ] A test list of realistic requests per page, with the expected data change, kept in the repo
 
 ## 3. Quality and open decisions
 - [ ] Screen reader and keyboard pass, including a real NVDA run [D-05]

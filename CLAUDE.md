@@ -3,6 +3,7 @@
 FastAPI + MySQL backend (`backend/`), React (CRA/craco) + Tailwind + framer-motion frontend (`frontend/`), Windows. Branch `feature/roadmap-completion`. Orchid/plum "Purple Main Theme" (`docs/design-system/PURPLE_MAIN_THEME.md`).
 
 ## Finding things (cheap first)
+- "What's next / what should we do" with no task given: read `LAUNCH_TODO.md` (the ordered list of what is missing, ending in launch) and propose the first unticked item. It says what and in what order; how and style are decided with the owner then. Update it (tick, date) as items finish.
 - Architecture or "where is X": use the graphify query tools on `graphify-out/` (query, path, explain). Never read `graph.json` (7.6 MB). Read `GRAPH_REPORT.md` (~14k tokens) only for broad orientation.
 - Status, what is open: `APPLICATION_COMPLETION_ROADMAP.md` (~27k tokens). Grep the row you need (`^| D-`, `^| F-`); do not read it whole unless asked.
 - Past decisions and traps: the memory index is already loaded; open only the note that matches the task.

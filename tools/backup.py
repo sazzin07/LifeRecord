@@ -162,8 +162,15 @@ def make_backup(args, dest: Path):
         built = Path(tmp) / name
         with zipfile.ZipFile(built, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(sql_path, "liferecord.sql")
+            written = 0
             for f in files:
-                zf.write(f, "storage/" + f.relative_to(storage).as_posix())
+                try:
+                    zf.write(f, "storage/" + f.relative_to(storage).as_posix())
+                except FileNotFoundError:
+                    continue   # its owner deleted it while the backup was running: it is not part of this backup, and one gone photo must not fail the whole run
+                written += 1
+            manifest["files"] = written
+            manifest["files_gone_while_running"] = len(files) - written
             zf.writestr("MANIFEST.json", json.dumps(manifest, indent=1))
         if args.encrypt == "dpapi":
             import local_secrets
@@ -180,7 +187,7 @@ def make_backup(args, dest: Path):
         print(f"pruned {old}")
     size = (dest / name).stat().st_size
     enc = "encrypted with Windows DPAPI" if args.encrypt == "dpapi" else "NOT encrypted"
-    return 0, f"Backup written: {dest / name} ({size / 1024 / 1024:.1f} MB, {enc}; {len(counts)} tables, {manifest['rows']} rows, {len(files)} files)"
+    return 0, f"Backup written: {dest / name} ({size / 1024 / 1024:.1f} MB, {enc}; {len(counts)} tables, {manifest['rows']} rows, {manifest['files']} files)"
 
 
 if __name__ == "__main__":

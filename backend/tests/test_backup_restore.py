@@ -48,6 +48,20 @@ def test_files_that_are_not_ours_are_never_planned_for_deletion():
     assert backup.plan_retention(["notes.txt", "liferecord-latest.zip", "photo.jpg"], now, daily=14, weekly=8) == []
 
 
+def _check_when_quiet(first, again, check, tries=3):
+    """restore_check compares the backup with the live database and says so when rows changed in between ("if the app was in use while the
+    backup ran, back up again"). With two parallel test workers another test can write in that very moment, so back up again a couple of times;
+    a backup that is really wrong fails every time."""
+    target = first
+    for n in range(tries):
+        checked = check(target)
+        if checked.returncode == 0 or "app was in use" not in checked.stdout:
+            return checked
+        if n < tries - 1:
+            target = again()
+    return checked
+
+
 @isolated_only
 def test_a_backup_can_be_restored_and_every_table_matches(tmp_path):
     user = create_verified_user("export")
@@ -65,7 +79,12 @@ def test_a_backup_can_be_restored_and_every_table_matches(tmp_path):
     text = made.stdout + made.stderr
     assert os.environ["ADMIN_DATABASE_PASSWORD"] not in text and os.environ["ADMIN_DATABASE_PASSWORD"] not in json.dumps(manifest)
 
-    checked = subprocess.run([sys.executable, str(TOOLS / "restore_check.py"), "--backup", str(archives[0])], capture_output=True, text=True, timeout=600)
+    def again():  # a fresh backup in a folder of its own
+        d = tmp_path / f"again{len(list(tmp_path.glob('again*')))}"
+        subprocess.run([sys.executable, str(TOOLS / "backup.py"), "--dest", str(d), "--encrypt", "none"], check=True, capture_output=True, timeout=300)
+        return next(d.glob("liferecord-*.zip"))
+
+    checked = _check_when_quiet(archives[0], again, lambda a: subprocess.run([sys.executable, str(TOOLS / "restore_check.py"), "--backup", str(a)], capture_output=True, text=True, timeout=600))
     assert checked.returncode == 0, checked.stdout[-1500:] + checked.stderr[-1500:]
     assert "ALL TABLES MATCH" in checked.stdout
     assert not [n for n in _scratch_schemas() if "restore" in n]  # the rehearsal schema is gone again
@@ -137,7 +156,10 @@ def test_the_default_backup_is_encrypted_restorable_and_logged(tmp_path):
     assert len(sealed) == 1 and not zipfile.is_zipfile(sealed[0])
     assert b"CREATE TABLE" not in sealed[0].read_bytes() and b"MANIFEST" not in sealed[0].read_bytes()
     assert "OK" in (dest / "backup.log").read_text(encoding="utf-8")
-    checked = subprocess.run([sys.executable, str(TOOLS / "restore_check.py"), "--dest", str(dest)], capture_output=True, text=True, timeout=600)
+    def again():  # the newest backup in the folder is the one that is checked
+        subprocess.run([sys.executable, str(TOOLS / "backup.py"), "--dest", str(dest)], check=True, capture_output=True, text=True, timeout=300)
+
+    checked = _check_when_quiet(None, again, lambda _: subprocess.run([sys.executable, str(TOOLS / "restore_check.py"), "--dest", str(dest)], capture_output=True, text=True, timeout=600))
     assert checked.returncode == 0, checked.stdout[-1500:] + checked.stderr[-1500:]
     assert "ALL TABLES MATCH" in checked.stdout
     # a run that cannot work (a login that is refused) says so in the log instead of dying silently

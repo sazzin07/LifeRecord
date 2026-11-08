@@ -2,7 +2,7 @@
 
 A short, ordered task list. It says WHAT is missing and in WHAT ORDER. It does not say how or in what style: that is decided with the owner when we reach each step.
 Details and evidence for each item are in `APPLICATION_COMPLETION_ROADMAP.md` (row id in brackets). Tick a box when done and add the date.
-Last updated: 2026-11-06.
+Last updated: 2026-11-08 (Groceries finished: cooking time, side rail, phone and tablet pass; hand checks and a later pass listed under it).
 
 ## Order
 1. Page redesigns
@@ -13,7 +13,18 @@ Last updated: 2026-11-06.
 6. Launch path
 
 ## 1. Page redesigns (complete redesign of each, one at a time, in this order)
-- [ ] Groceries
+- [x] Groceries: the whole prototype is in the real app and tested (2026-11-07), and finished on 2026-11-08 with a design critique and a phone and tablet pass. Today, welcome and build animation, Kitchen cards and Mix your meal, 3D Storage room (flat view as fallback), Shopping (trip card, Plan, In the shop, shelves, recurring), cart, Catalog as a dialog, the add bar, server-saved layout, assistant tools. Details in the Status sections of `docs/superpowers/plans/2026-11-06-groceries-port.md`.
+  - [x] 2026-11-08: recipes have an optional cooking time (migration, editor, cards, assistant tools, "Under 20 min" in Mix, which now has its own labelled row)
+  - [x] 2026-11-08: the sections moved off the top: a retractable rail down the left side (three-bar button folds it to icons, the choice is remembered), a drawer on a phone; the cart is a round fixed button beside the quick-add "+" (in the page heading on a phone); Catalog is in the rail or drawer; Customise shares the space-filter row
+  - [x] 2026-11-08: touch screens get 44 px controls (desktop density unchanged); darker greens and badge so text reaches 4.5:1; shorter hint in the add bar on a phone; In the shop is a calm one-line trip card with all aisles in one card; "Estimated" is said once; the item card scrolls into view
+  - [x] 2026-11-08: live-model probe of the Groceries assistant tools, `tools/live_groceries_probe.py --run` on a scratch database: 15 calls, 15 of 15 chose a right tool and the data read back as asked (every delete and bulk add waited for a yes)
+  - [x] 2026-11-08: the Nutrition day-view skeleton failure is fixed (the suggestions placeholder drew 6 rows for a card that shows 3)
+  - [x] 2026-11-08: the two side fixes were checked (`tools/backup.py` skips a photo deleted while it runs; the recurring-list edit no longer errors); the backup-restore tests now back up again when another test worker wrote rows during the comparison (it failed in full runs only)
+  - [ ] Try it by hand on a real screen with a GPU (the 3D room was checked in a software-rendered browser only), on a real phone and tablet, and with a screen reader [D-05]
+  - [ ] `design-lab/` kept on purpose (owner said keep for now); it is untracked, so deleting it cannot be undone
+  - [ ] Run the two new migrations on the live database when it is time to deploy: `d5b7f9a1c3e4` (user_layouts) and `e6c8a0b2d4f1` (recipes.cook_minutes)
+  - [ ] Later pass from the critique (design score 26/40 before these fixes; not re-scored): 3D room on a phone fills a third of the stage and the hint wraps into a narrow column; Customise uses "M" and "S" size buttons; a missing price shows three ways (0.00, a dash, "Unknown"); cooking and "Used one" give no undo; the READY stamp is on every recipe whose ingredients are in stock; Flat view truncates long names and eggs and Cheddar show the milk glyph; the shell's top-left menu icon and the new three-bar button sit close together on a phone
+  - [ ] Quick-add suggestion list was not seen by the design reviewer when typing in its browser; the e2e test passes, check by hand
 - [ ] Fitness
 - [ ] Body
 - [ ] Tasks

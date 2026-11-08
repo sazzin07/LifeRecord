@@ -66,6 +66,8 @@ import debts_api
 import recurring_api
 import two_factor_api
 import profile_api
+import layouts_api
+import ai_tools_groceries
 import nutrition_api
 import nutrition_plan_api
 import nutrition_suggest_api
@@ -816,6 +818,7 @@ class RecipeBody(BaseModel):
     carbs: Optional[float] = Field(default=None, ge=0, le=5000)
     fat: Optional[float] = Field(default=None, ge=0, le=5000)
     notes: str = Field(default="", max_length=2000)
+    cook_minutes: Optional[int] = Field(default=None, ge=1, le=1440)  # whole minutes; leaving it out of a save keeps the saved time, null clears it
 
 
 class AIChatBody(BaseModel):
@@ -4274,7 +4277,8 @@ async def update_recurring_list(rid: str, body: RecurringListUpdate, user: dict 
         raise HTTPException(404, "Recurring list not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "items" in updates:
-        updates["items"] = [i.model_dump() for i in updates["items"]]
+        # model_dump() above already turned every item into a plain dict
+        updates["items"] = [i if isinstance(i, dict) else i.model_dump() for i in updates["items"]]
     if updates:
         updates["updated_at"] = now_iso()
         await db.execute(update(RecurringList).where(RecurringList.id == rid, RecurringList.user_id == user["_id"]).values(**updates))
@@ -4330,7 +4334,7 @@ async def create_recipe(body: RecipeBody, user: dict = Depends(get_current_user)
     r = Recipe(id=new_id(), user_id=user["_id"], name=body.name, servings=body.servings,
                ingredients=[i.model_dump() for i in body.ingredients],
                calories=body.calories, protein=body.protein, carbs=body.carbs,
-               fat=body.fat, notes=body.notes, created_at=now_iso())
+               fat=body.fat, notes=body.notes, cook_minutes=body.cook_minutes, created_at=now_iso())
     db.add(r)
     await nutrition.apply_recipe_nutrition(db, user["_id"], r)
     await db.commit()
@@ -4344,6 +4348,8 @@ async def update_recipe(rid: str, body: RecipeBody, user: dict = Depends(get_cur
     if not r:
         raise HTTPException(404, "Recipe not found")
     for field, value in body.model_dump().items():  # ingredients are already plain dicts here
+        if field == "cook_minutes" and field not in body.model_fields_set:
+            continue  # a save that does not mention the time (an older screen, the assistant) must not wipe it
         setattr(r, field, value)
     await nutrition.apply_recipe_nutrition(db, user["_id"], r)
     await db.commit()
@@ -4878,8 +4884,8 @@ AI_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "suggest_recipes_from_inventory",
-        "description": "Rank the user's recipes by what can be cooked from current inventory: coverage, missing ingredients (with the shortfall quantity) and which ingredients are about to expire. Read-only.",
-        "parameters": {"type": "object", "properties": {}},
+        "description": "Rank the user's recipes by what can be cooked from current inventory: coverage, missing ingredients (with the shortfall quantity), which ingredients are about to expire and each recipe's cooking time in minutes (cook_minutes, null when not given). Pass max_minutes to keep only recipes that take at most that long; recipes with no time are left out then. Read-only.",
+        "parameters": {"type": "object", "properties": {"max_minutes": {"type": "integer", "description": "Only recipes that take at most this many minutes (1 to 1440)."}}},
     }},
     {"type": "function", "function": {
         "name": "add_missing_ingredients",
@@ -4892,6 +4898,7 @@ AI_TOOLS = [
     }},
 ]
 AI_TOOLS += ai_tools_extra.EXTRA_TOOLS
+AI_TOOLS += ai_tools_groceries.GROCERIES_TOOLS
 AI_TOOLS += ai_tools_nutrition.NUTRITION_TOOLS
 AI_TOOLS += ai_tools_people.PEOPLE_TOOLS
 AI_TOOLS += ai_tools_settings.SETTINGS_TOOLS
@@ -5583,6 +5590,8 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             return await ai_tools_people.dispatch_people(sys.modules[__name__], db, user, name, args, created, ctx, session_id, previewed_this_turn)
         if name in ai_tools_nutrition.NUTRITION_NAMES:
             return await ai_tools_nutrition.dispatch_nutrition(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
+        if name in ai_tools_groceries.GROCERIES_NAMES:
+            return await ai_tools_groceries.dispatch_groceries(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name in ai_tools_extra.EXTRA_NAMES:
             return await ai_tools_extra.dispatch_extra(sys.modules[__name__], db, name, args, created, user, session_id, previewed_this_turn)
         if name in ("create_expense", "record_income") and not str(args.get("account") or "").strip():
@@ -5933,12 +5942,21 @@ async def dispatch_tool(db: AsyncSession, name: str, args: dict, created: list, 
             created.append({"collection": "appliances", "id": a["id"]})
             return a
         if name == "suggest_recipes_from_inventory":
-            ranked = await recipe_suggestions(limit=10, user=user, db=db)
+            ranked = await recipe_suggestions(limit=100, user=user, db=db)
+            if args.get("max_minutes") not in (None, ""):
+                try:
+                    cap = int(args["max_minutes"])
+                except (TypeError, ValueError):
+                    return {"error": "max_minutes must be a whole number of minutes."}
+                if not 1 <= cap <= 1440:
+                    return {"error": "max_minutes must be between 1 and 1440."}
+                ranked = [e for e in ranked if e["recipe"].get("cook_minutes") and e["recipe"]["cook_minutes"] <= cap]
             return {"suggestions": [{
                 "recipe_id": e["recipe"]["id"], "recipe": e["recipe"]["name"], "servings": e["recipe"].get("servings"),
+                "cook_minutes": e["recipe"].get("cook_minutes"),
                 "coverage_percent": e["coverage"], "can_cook_now": e["can_cook_now"],
                 "missing_ingredients": e["missing"], "uses_soon_to_expire": e["uses_expiring"],
-            } for e in ranked]}
+            } for e in ranked[:10]]}
         if name == "add_missing_ingredients":
             rid = args.get("recipe_id")
             if not rid:
@@ -6199,6 +6217,7 @@ nutrition_insights_ns = nutrition_insights_api.register(api_router, sys.modules[
 account_api.register(api_router, sys.modules[__name__])
 two_factor_api.register(api_router, sys.modules[__name__])
 profile_api.register(api_router, sys.modules[__name__])
+layouts_api.register(api_router, sys.modules[__name__])
 debts_api.register(api_router, sys.modules[__name__])
 recurring_api.register(api_router, sys.modules[__name__])
 app.include_router(api_router)

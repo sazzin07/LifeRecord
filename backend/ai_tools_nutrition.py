@@ -38,7 +38,8 @@ def _fn(name, description, props=None, required=None):
 _S = {"type": "string"}
 _N = {"type": "number"}
 _B = {"type": "boolean"}
-_DATE = {"type": "string", "description": "YYYY-MM-DD, or today / yesterday / tomorrow. Omit for today."}
+_COOK_MINUTES = {"type": "integer", "description": "How many whole minutes the recipe takes to cook (1 to 1440). On update, leave it out to keep the saved time, or send 0 to remove it."}
+_DATE ={"type": "string", "description": "YYYY-MM-DD, or today / yesterday / tomorrow. Omit for today."}
 _TIME = {"type": "string", "description": "Local time HH:MM (24-hour). Omit if unknown."}
 _MEAL = {"type": "string", "enum": ["breakfast", "lunch", "dinner", "snack", "other"],
          "description": "Omit to use the meal that fits the current time."}
@@ -180,9 +181,9 @@ NUTRITION_TOOLS = [
     _fn("create_recipe",
         "Save a recipe. Link each ingredient to a food (food_id from search_foods) so its nutrition is calculated per serving; ingredients without a link are listed "
         "as missing, never counted as zero. Typed whole-recipe calories/protein/carbs/fat are only used when no ingredient is linked.",
-        {"name": _S, "servings": _N, "ingredients": _INGREDIENTS, "calories": _N, "protein": _N, "carbs": _N, "fat": _N, "notes": _S}, ["name"]),
-    _fn("update_recipe", "Change a saved recipe (found by name or id): rename it, change servings, replace its ingredients, or edit its notes.",
-        {"recipe": _S, "new_name": _S, "servings": _N, "ingredients": _INGREDIENTS, "calories": _N, "protein": _N, "carbs": _N, "fat": _N, "notes": _S}, ["recipe"]),
+        {"name": _S, "servings": _N, "cook_minutes": _COOK_MINUTES, "ingredients": _INGREDIENTS, "calories": _N, "protein": _N, "carbs": _N, "fat": _N, "notes": _S}, ["name"]),
+    _fn("update_recipe", "Change a saved recipe (found by name or id): rename it, change servings or cooking time, replace its ingredients, or edit its notes.",
+        {"recipe": _S, "new_name": _S, "servings": _N, "cook_minutes": _COOK_MINUTES, "ingredients": _INGREDIENTS, "calories": _N, "protein": _N, "carbs": _N, "fat": _N, "notes": _S}, ["recipe"]),
 ]
 NUTRITION_NAMES = {t["function"]["name"] for t in NUTRITION_TOOLS}
 # the read-only subset a scheduled report may use
@@ -300,7 +301,7 @@ def _recipe_line(r: dict) -> dict:
                  "protein_g": _r(r["protein"] / servings) if r.get("protein") is not None else None,
                  "carbs_g": _r(r["carbs"] / servings) if r.get("carbs") is not None else None,
                  "fat_g": _r(r["fat"] / servings) if r.get("fat") is not None else None})
-    return {"id": r["id"], "name": r["name"], "servings": servings,
+    return {"id": r["id"], "name": r["name"], "servings": servings, "cook_minutes": r.get("cook_minutes"),
             "ingredients": [{"name": i["name"], "quantity": i.get("quantity"), "unit": i.get("unit"), "linked_to_food": bool(i.get("food_id")), "food_id": i.get("food_id")}
                             for i in (r.get("ingredients") or [])],
             "per_serving": per, "nutrition": ("calculated from linked ingredients" if n else "typed by the user" if r.get("calories") is not None else "none yet"),
@@ -756,7 +757,7 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
         body = srv.RecipeBody(name=args.get("name"), servings=int(_num(args.get("servings"), "servings") or 1),
                               ingredients=[srv.RecipeIngredient(**{k: v for k, v in i.items() if k in ("name", "quantity", "unit", "food_id")}) for i in args.get("ingredients") or []],
                               calories=_num(args.get("calories"), "calories"), protein=_num(args.get("protein"), "protein"), carbs=_num(args.get("carbs"), "carbs"),
-                              fat=_num(args.get("fat"), "fat"), notes=args.get("notes") or "")
+                              fat=_num(args.get("fat"), "fat"), notes=args.get("notes") or "", cook_minutes=_num(args.get("cook_minutes"), "cook_minutes"))
         r = await srv.create_recipe(body, user, db)
         created.append({"collection": "recipes", "id": r["id"]})
         return {"created": _recipe_line(r)}
@@ -772,7 +773,8 @@ async def _dispatch(srv, db, name, args, created, user, session_id, previewed) -
                               protein=_num(args["protein"], "protein") if "protein" in args else (float(r.protein) if r.protein is not None else None),
                               carbs=_num(args["carbs"], "carbs") if "carbs" in args else (float(r.carbs) if r.carbs is not None else None),
                               fat=_num(args["fat"], "fat") if "fat" in args else (float(r.fat) if r.fat is not None else None),
-                              notes=args["notes"] if "notes" in args else (r.notes or ""))
+                              notes=args["notes"] if "notes" in args else (r.notes or ""),
+                              cook_minutes=(_num(args["cook_minutes"], "cook_minutes") or None) if "cook_minutes" in args else r.cook_minutes)   # 0 or null removes it
         srv.remember_before(created, "recipes", r)
         return {"updated": _recipe_line(await srv.update_recipe(r.id, body, user, db))}
 

@@ -334,6 +334,7 @@ class Recipe(Base):
     carbs = Column(DECIMAL(8, 1), nullable=True)
     fat = Column(DECIMAL(8, 1), nullable=True)
     notes = Column(Text, nullable=True)
+    cook_minutes = Column(Integer, nullable=True)  # how long it takes to cook, optional; the Groceries "Under 20 min" choice reads it
     created_at = Column(String(32), nullable=False)
     nutrients = Column(JSON, nullable=True)  # per serving, calculated from the ingredients when they are linked to foods
     quality = Column(String(16), nullable=True)
@@ -735,6 +736,16 @@ class UserPreference(Base):
     animations = Column(Boolean, nullable=False, default=True)
     week_start = Column(String(10), nullable=False, default="monday")
     money_period = Column(String(10), nullable=False, default="week")
+    updated_at = Column(String(32), nullable=False)
+
+
+class UserLayout(Base):
+    """How a person arranged a page (the Groceries Today widgets and the space it is focused on), kept on the server so every browser and
+    the assistant see the same arrangement. One row per person and page; no row means "never arranged"."""
+    __tablename__ = "user_layouts"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    page = Column(String(32), primary_key=True)
+    layout = Column(JSON, nullable=False)
     updated_at = Column(String(32), nullable=False)
 
 

@@ -131,6 +131,7 @@ TABLE_EXEMPT = {
                     "test_debts.py::test_nobody_reaches_another_persons_records tries every one of them with another account's ids",
     "user_avatars": "one row per user, reached only through /auth/me/photo with the signed-in user's own id, never a path or id from outside "
                     "(test_profile_settings.py::test_a_profile_photo_is_private_to_its_owner)",
+    "user_layouts": "one row per user and page, read and written only through /layouts/{page} with the signed-in user's own id; covered by test_groceries_layout_and_ai.py::test_one_persons_layout_is_never_seen_by_another_and_needs_a_signed_in_user",
     "user_preferences": "one row per user, read and written only through GET/PUT /preferences with the signed-in user's own id "
                         "(test_profile_settings.py::test_nobody_sees_or_changes_another_persons_preferences)",
     "idempotency_keys": "internal: keyed by (user, key); a key belongs to the person who sent it (test_debts.py::test_the_same_key_for_two_people_is_two_requests)",
@@ -163,6 +164,9 @@ TABLE_EXEMPT = {
 
 # Routes that take a path parameter which is not the id of a user-owned object.
 ROUTE_EXEMPT = {
+    ("GET", "/layouts/{}"): "a page name (groceries), not a row id; the row is looked up with the signed-in user's id, covered by test_groceries_layout_and_ai.py::test_one_persons_layout_is_never_seen_by_another_and_needs_a_signed_in_user",
+    ("PUT", "/layouts/{}"): "a page name (groceries), not a row id; the row is looked up with the signed-in user's id, covered by test_groceries_layout_and_ai.py::test_one_persons_layout_is_never_seen_by_another_and_needs_a_signed_in_user",
+    ("DELETE", "/layouts/{}"): "a page name (groceries), not a row id; the row is looked up with the signed-in user's id, covered by test_groceries_layout_and_ai.py::test_one_persons_layout_is_never_seen_by_another_and_needs_a_signed_in_user",
     ("DELETE", "/auth/sessions/{}"): "a session id; covered by test_session_list.py::test_nobody_can_list_or_end_another_persons_sessions",
     ("GET", "/nutrition/foods/barcode/{}"): "a barcode, not an id; looks up shared reference data and the caller's own foods",
     ("PUT", "/nutrition/targets/{}"): "a nutrient key; covered by test_the_profile_and_targets_of_one_user_never_reach_another",

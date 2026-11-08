@@ -279,6 +279,9 @@ def _extras(a):
     # Saved preferences (exported).
     _db("INSERT INTO user_preferences (user_id,theme,animations,week_start,money_period,updated_at) VALUES (%s,'dark',1,'monday','week',%s)",
         (a["id"], dt.datetime.now(dt.timezone.utc).isoformat()))
+    # A saved page layout (exported).
+    _db("INSERT INTO user_layouts (user_id,page,layout,updated_at) VALUES (%s,'groceries',%s,%s)",
+        (a["id"], '{"widgets": [{"id": "list", "size": "m"}], "focus": "all"}', dt.datetime.now(dt.timezone.utc).isoformat()))
     # A line of the debt ledger, and a remembered request key (internal, never exported).
     _db("INSERT INTO debt_entries (id,user_id,person_id,person_name,direction,kind,amount_cents,currency,description,origin,created_ms,created_at) "
         "VALUES (%s,%s,%s,'Populated','they_owe','add',1250,'EUR','populate','manual',%s,%s)", (str(uuid.uuid4()), a["id"], str(uuid.uuid4()), now_ms, dt.datetime.now(dt.timezone.utc).isoformat()))

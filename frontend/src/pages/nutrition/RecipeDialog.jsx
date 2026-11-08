@@ -85,7 +85,7 @@ function FindFood({ onPick }) {
  * whole-recipe numbers typed in by hand.
  */
 export function RecipeDialog({ open, onOpenChange, editing }) {
-  const [f, setF] = useState({ name: "", servings: "1", ingredients: [], calories: "", protein: "", carbs: "", fat: "", notes: "" });
+  const [f, setF] = useState({ name: "", servings: "1", cook_minutes: "", ingredients: [], calories: "", protein: "", carbs: "", fat: "", notes: "" });
   const [finding, setFinding] = useState(null);
   const [swapping, setSwapping] = useState(null); // the ingredient whose alternatives are shown
   const [preview, setPreview] = useState(null);
@@ -95,7 +95,7 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
   useEffect(() => {
     if (!open) return;
     setFinding(null); setSwapping(null); setPreview(null);
-    const base = { name: editing?.name || "", servings: String(editing?.servings || 1), calories: editing?.calories ?? "", protein: editing?.protein ?? "", carbs: editing?.carbs ?? "", fat: editing?.fat ?? "", notes: editing?.notes || "" };
+    const base = { name: editing?.name || "", servings: String(editing?.servings || 1), cook_minutes: editing?.cook_minutes ? String(editing.cook_minutes) : "", calories: editing?.calories ?? "", protein: editing?.protein ?? "", carbs: editing?.carbs ?? "", fat: editing?.fat ?? "", notes: editing?.notes || "" };
     const ings = (editing?.ingredients || []).map((i) => ({ ...blankIngredient(), name: i.name, quantity: String(i.quantity ?? 1), unit: i.unit || "unit", food_id: i.food_id || null }));
     setF({ ...base, ingredients: ings });
     ings.filter((i) => i.food_id).forEach((i) => api.get(`/nutrition/foods/${i.food_id}`).then(({ data }) => setF((x) => ({ ...x, ingredients: x.ingredients.map((it) => (it.key === i.key ? { ...it, food: data } : it)) }))).catch(() => {}));
@@ -130,7 +130,7 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
   const num = (v) => (v === "" || v == null ? null : parseFloat(v));
   const submit = async (e) => {
     e.preventDefault(); setBusy(true);
-    const payload = { name: f.name, servings: parseInt(f.servings, 10) || 1, notes: f.notes,
+    const payload = { name: f.name, servings: parseInt(f.servings, 10) || 1, notes: f.notes, cook_minutes: f.cook_minutes === "" ? null : parseInt(f.cook_minutes, 10),
       calories: linked.length ? null : num(f.calories), protein: linked.length ? null : num(f.protein), carbs: linked.length ? null : num(f.carbs), fat: linked.length ? null : num(f.fat),
       ingredients: f.ingredients.filter((i) => i.name.trim()).map((i) => ({ name: i.name, quantity: parseFloat(i.quantity) || 1, unit: i.unit || "unit", food_id: i.food_id || null })) };
     try {
@@ -148,9 +148,10 @@ export function RecipeDialog({ open, onOpenChange, editing }) {
           <DialogDescription>Link ingredients to foods and the nutrition per serving is calculated for you. Ingredient names also match your Groceries stock when you cook.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="mt-1 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="col-span-2"><Label htmlFor="rc-name" className="text-xs">Recipe name</Label><Input id="rc-name" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="mt-1 h-10" data-testid="recipe-name" /></div>
             <div><Label htmlFor="rc-serv" className="text-xs">Servings</Label><Input id="rc-serv" type="number" min={1} required value={f.servings} onChange={(e) => setF({ ...f, servings: e.target.value })} className="mt-1 h-10" data-testid="recipe-servings" /></div>
+            <div><Label htmlFor="rc-mins" className="text-xs">Cook time (min)</Label><Input id="rc-mins" type="number" inputMode="numeric" min={1} max={1440} step={1} placeholder="optional" value={f.cook_minutes} onChange={(e) => setF({ ...f, cook_minutes: e.target.value })} className="mt-1 h-10" data-testid="recipe-minutes" /></div>
           </div>
 
           <div className="space-y-2">

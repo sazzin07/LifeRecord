@@ -109,7 +109,12 @@ export function Suggestions({ date }) {
       </div>
 
       {loading ? (
-        <Busy label="Loading suggestions" className="p-5"><SkRows n={6} lead="square" figure={false} /></Busy>
+        <>
+          <Busy label="Loading suggestions" className="p-5"><SkRows n={SHOWN} lead="square" figure={false} rowClass="py-[34px]" /></Busy>
+          {/* the strip for "Show more" and the footnote the loaded card ends with, so the cards below do not jump when it arrives */}
+          <div className="h-9 border-t border-line" aria-hidden="true" />
+          <p className="border-t border-line px-5 py-2 text-[11px] text-muted-foreground" aria-hidden="true"><span className="sk-ph">About these ideas</span></p>
+        </>
       ) : !data ? (
         <div className="flex flex-wrap items-center justify-between gap-2 p-5 text-sm text-slate-600" role="alert">
           <span>Suggestions could not be loaded just now.</span>

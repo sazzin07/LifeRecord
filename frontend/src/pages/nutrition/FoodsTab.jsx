@@ -4,6 +4,7 @@ import { ArrowLeftRight, CalendarPlus, ChefHat, Flame, Loader2, Pencil, Plus, Se
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/useFetch";
+import { cookTimeLabel } from "@/lib/cookTime";
 import { Card, EmptyState } from "@/components/common";
 import { InfoTip } from "@/components/InfoTip";
 import { Button } from "@/components/ui/button";
@@ -246,7 +247,7 @@ export function FoodsTab({ onLog, onPlan, onPlanRecipe, date }) {
               <div key={r.id} data-testid={`recipe-${r.id}`} className="min-w-0 rounded-xl border border-line p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0"><p className="truncate text-sm font-semibold">{r.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{r.servings} serving{r.servings > 1 ? "s" : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{r.servings} serving{r.servings > 1 ? "s" : ""}{cookTimeLabel(r.cook_minutes) ? ` · ${cookTimeLabel(r.cook_minutes)}` : ""}{r.calories != null ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : " · no nutrition yet"}</p>
                     {r.nutrition_meta?.linked > 0 && (
                       <p className={r.nutrition_meta.complete ? "mt-0.5 text-[11px] text-green-700 dark:text-green-400" : "mt-0.5 text-[11px] text-amber-700 dark:text-amber-400"} data-testid={`recipe-calc-${r.id}`}
                         title={r.nutrition_meta.missing?.length ? `Not counted: ${r.nutrition_meta.missing.join(", ")}` : undefined}>

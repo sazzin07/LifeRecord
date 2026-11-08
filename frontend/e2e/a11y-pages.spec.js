@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures";
 import { openQuickAdd, openAssistant } from "./support/dock";
 import { audit, prepare, settle, THEMES, WIDTHS } from "./support/a11y";
+import { openCatalog, openGroceriesTab } from "./support/groceries";
 
 // D-01: axe-core on every signed-in page and its main dialogs, at desktop/tablet/phone widths in both themes, as the
 // standard test account (John, who has data on every page). Nutrition has its own spec (nutrition-a11y.spec.js); new
@@ -12,7 +13,7 @@ const PAGES = [["home", "/"], ["money", "/money"], ["people", "/people"], ["fitn
 // An audit visits many pages (and, for the grocery catalog, ~500 cards), so it gets more than the default 30 seconds.
 test.describe.configure({ timeout: 300_000 });
 
-const GROCERY_TABS = ["Overview", "Storage", "Shopping", "Catalog", "Kitchen"];
+const GROCERY_TABS = ["Today", "Storage", "Shopping", "Kitchen"];
 
 for (const theme of THEMES) {
   for (const [size, viewport] of WIDTHS) {
@@ -36,12 +37,19 @@ for (const theme of THEMES) {
         await page.goto(`/people/${people[0].id}`);
         await settle(page);
         await audit(page, `person detail, ${theme}, ${size}`);
+        // The Storage tab draws a 3D room; with reduced motion it only redraws when something moves, which keeps a software-rendered browser responsive.
+        await page.emulateMedia({ reducedMotion: "reduce" });
         await page.goto("/groceries");
         for (const tab of GROCERY_TABS) {
-          await page.getByRole("tab", { name: tab }).click();
+          await openGroceriesTab(page, tab);
           await settle(page);
-          await audit(page, `groceries ${tab}, ${theme}, ${size}`, { longList: tab === "Catalog" });
+          await audit(page, `groceries ${tab}, ${theme}, ${size}`);
         }
+        // The catalog is a dialog over the page
+        await openCatalog(page);
+        await expect(page.getByRole("dialog", { name: "Catalog" })).toBeVisible();
+        await settle(page);
+        await audit(page, `groceries Catalog, ${theme}, ${size}`, { longList: true });
       });
 
       test("dialogs and panels", async ({ authenticatedPage: page }) => {

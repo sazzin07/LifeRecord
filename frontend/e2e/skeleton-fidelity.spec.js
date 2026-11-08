@@ -54,16 +54,16 @@ test("Profile: password, two-step, devices and your data keep their size while l
   await compare(page, "/profile", "main section.mny-card", { release: (p) => expect(p.getByTestId("sessions-list")).toBeVisible({ timeout: 15000 }) });
 });
 
-test("Groceries overview: each section's placeholder is the size and place of the real one", async ({ authenticatedPage: page }) => {
-  await compare(page, "/groceries", 'main [role="tabpanel"] .card-ambient, main [role="tabpanel"] button.rounded-2xl', {
+test("Groceries Today: the opening card and each widget's placeholder are the size and place of the real one", async ({ authenticatedPage: page }) => {
+  await compare(page, "/groceries", 'main [role="tabpanel"] .gt-hero, main [role="tabpanel"] .gt-w', {
     release: (p) => expect(p.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 }),
-    flexible: [], yTolerance: 140, hTolerance: 140, window: 200,   // the lists of what to use soon / what is running low are as tall as the stock
+    flexible: [], yTolerance: 200, hTolerance: 200, window: 260,   // the lists of what to use soon / what is running low are as tall as the stock, and beside the section rail the widgets are narrower, so their text wraps more
   });
 });
 
 test("Nutrition day view: the ledger, the meals and the side cards match their placeholders", async ({ authenticatedPage: page }) => {
   await compare(page, "/nutrition", "main .card-ambient", {
     release: (p) => expect(p.locator("main [data-skeleton]")).toHaveCount(0, { timeout: 15000 }),
-    flexible: ["day-ledger", "sug-title", "meal-breakfast", "meal-lunch", "meal-dinner", "meal-snack", "meal-other"], yTolerance: 60,   // as tall as the day's entries
+    flexible: ["day-ledger", "sug-title", "meal-breakfast", "meal-lunch", "meal-dinner", "meal-snack", "meal-other"], yTolerance: 130,   // as tall as the day's entries; the suggestions card is as tall as the ideas there are today (none to three, a row each about 108px), and every card under it moves with it
   });
 });

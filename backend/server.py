@@ -1460,7 +1460,9 @@ async def shopping_payload(db: AsyncSession, user_id: str, list_id: Optional[str
             recommendation = (f"{best_single['store']} is your best single stop, covering {best_single['covers']} of "
                               f"{priced_count} priced items (~€{best_single['total']:.2f}).")
     if unknown:
-        recommendation += f" No known price yet for: {', '.join(unknown)}."
+        # "known" means a store price has been recorded for the item; an item can still show a price you typed in
+        names = ", ".join(unknown[:4]) + (f" and {len(unknown) - 4} more" if len(unknown) > 4 else "")
+        recommendation += f" No store price recorded yet for {names}."
 
     # Budget summary for the requested/current list
     active_list = list_map.get(list_id) if list_id else None

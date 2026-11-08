@@ -92,8 +92,8 @@ function ItemCard({ g, units, current, listId, onClose, onEdit }) {
       <div className="gt-tags">
         <button type="button" className="gt-btn" onClick={toList}><ShoppingCart aria-hidden="true" />Add to list</button>
         <button type="button" className="gt-btn" onClick={() => onEdit(g)}><Pencil aria-hidden="true" />Edit</button>
-        <button type="button" className="gt-btn" onClick={() => setAsking(true)}><Trash2 aria-hidden="true" />Discard</button>
         <button type="button" className="gt-btn" onClick={onClose}>Close</button>
+        <button type="button" className="gt-btn gt-danger" onClick={() => setAsking(true)}><Trash2 aria-hidden="true" />Discard</button>
       </div>
       <ConfirmDialog
         open={asking}

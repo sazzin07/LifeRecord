@@ -1,4 +1,4 @@
-import { EMPTY_MIX, QUICK_MINUTES, applyMix, cookTimeLabel, isQuick, leftIf, leftIfQuick, toggleInclude, toggleQuick } from "./kitchenMix";
+import { EMPTY_MIX, QUICK_MINUTES, applyMix, cookSummary, cookTimeLabel, isQuick, leftIf, leftIfQuick, toggleInclude, toggleQuick } from "./kitchenMix";
 
 const rec = (name, ingredients, extra = {}) => ({ recipe: { id: name, name, servings: 2, calories: 800, protein: 40, ingredients: ingredients.map((n) => ({ name: n })), ...extra } });
 const omelette = rec("Omelette", ["Free-range eggs", "Butter"], { cook_minutes: 12 });
@@ -49,5 +49,21 @@ describe("cooking time in Mix your meal", () => {
     expect(cookTimeLabel(null)).toBeNull();
     expect(cookTimeLabel(undefined)).toBeNull();
     expect(cookTimeLabel(0)).toBeNull();
+  });
+});
+
+describe("what cooking uses up, said before it happens", () => {
+  const row = (name, needed, unit, status, have = needed) => ({ name, needed, unit, status, have });
+  test("a recipe with everything in stock lists each ingredient with its amount and says it cannot be undone here", () => {
+    const t = cookSummary({ can_cook_now: true, missing: [], ingredients: [row("Rice", 0.2, "kg", "ok"), row("Whole milk", 0.5, "L", "ok")] });
+    expect(t).toBe("Uses up rice 0.2 kg, whole milk 0.5 L. It logs one serving as a meal, and cooking cannot be undone from here.");
+  });
+  test("a recipe that is short uses what is there and names what is missing", () => {
+    const t = cookSummary({ can_cook_now: false, missing: [{ name: "Basil" }], ingredients: [row("Pasta", 200, "g", "short", 150), row("Basil", 1, "unit", "missing", 0)] });
+    expect(t).toBe("You are missing basil. Cooking still uses up pasta 150 g, logs one serving as a meal, and cannot be undone from here.");
+  });
+  test("nothing in stock still says what cooking does", () => {
+    const t = cookSummary({ can_cook_now: false, missing: [{ name: "Basil" }], ingredients: [row("Basil", 1, "unit", "missing", 0)] });
+    expect(t).toBe("You are missing basil. Cooking logs one serving as a meal and cannot be undone from here.");
   });
 });

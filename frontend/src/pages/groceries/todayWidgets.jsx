@@ -102,10 +102,10 @@ function List({ shopping, selectedListId, actions, setTab }) {
           <ul className="gt-list">
             {todo.slice(0, 4).map((i) => (
               <li key={i.id} className="gt-row">
-                <input type="checkbox" className="h-5 w-5 accent-[var(--accent-ink)]" checked={false} onChange={() => actions.tick(i)} aria-label={`${i.name} in the basket`} />
+                <label className="gt-tick"><input type="checkbox" className="h-5 w-5 accent-[var(--accent-ink)]" checked={false} onChange={() => actions.tick(i)} aria-label={`${i.name} in the basket`} /></label>
                 <Sticker name={i.name} category={i.category} size={32} />
                 <span className="grow"><span className="name">{i.name}</span><span className="gt-note">{quantityText(i.quantity, i.unit)}</span></span>
-                <span className="tabular-nums">{eur((Number(i.estimated_price) || 0) * Number(i.quantity))}</span>
+                {Number(i.estimated_price) ? <span className="tabular-nums">{eur(Number(i.estimated_price) * Number(i.quantity))}</span> : <span className="gt-noprice">No price</span>}
               </li>
             ))}
           </ul>
@@ -195,7 +195,7 @@ function Cook({ recipeIdeas, actions, setTab }) {
   const soon = top.uses_expiring?.[0];
   return (
     <div className="gt-cook">
-      <h4 className="gt-cook-t">{top.recipe.name}</h4>
+      <h3 className="gt-cook-t">{top.recipe.name}</h3>
       <p className="gt-note">serves {top.recipe.servings}{cookTimeLabel(top.recipe.cook_minutes) ? ` · ${cookTimeLabel(top.recipe.cook_minutes)}` : ""}{top.recipe.calories ? ` · ${Math.round(top.recipe.calories / (top.recipe.servings || 1))} kcal each` : ""}{soon ? ` · uses ${soon.name.toLowerCase()} first` : ""}</p>
       <div className="gt-ings">{ingredientChips(top)}</div>
       <div className="flex flex-wrap gap-2">

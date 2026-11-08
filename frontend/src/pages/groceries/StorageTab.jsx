@@ -121,7 +121,7 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
 
   return (
     <div className="gt space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="gt-store-head">
         <p className="text-sm text-slate-500">
           {showFlat ? (selected ? "Tap a chip for quick actions, or another space to switch." : "Tap a door to step inside.") : "Open a door, drag food between units, or pick a space below."}
           {issue === "failed" && " The 3D room could not start here, so this is the flat view."}
@@ -129,11 +129,11 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
         </p>
         <div className="flex items-center gap-2">
           {issue !== "failed" && (
-            <Button size="sm" variant="outline" onClick={() => setFlatView(!showFlat)} aria-pressed={showFlat}>
+            <Button size="sm" variant="outline" className="gt-tap" onClick={() => setFlatView(!showFlat)} aria-pressed={showFlat}>
               {showFlat ? <><Box className="h-4 w-4 mr-1" />3D room</> : <><Rows3 className="h-4 w-4 mr-1" />Flat view</>}
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setLocDialog({ open: true, location: null })}><Plus className="h-4 w-4 mr-1" />Add space</Button>
+          <Button size="sm" variant="outline" className="gt-tap" onClick={() => setLocDialog({ open: true, location: null })}><Plus className="h-4 w-4 mr-1" />Add space</Button>
         </div>
       </div>
 

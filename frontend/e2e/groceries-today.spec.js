@@ -97,7 +97,8 @@ test.describe("Groceries Today", () => {
     await fresh.api.post("/api/recipes", { data: { name: "Milky rice", servings: 2, ingredients: [{ name: "Whole milk", quantity: 1, unit: "L" }, { name: "Rice", quantity: 1, unit: "kg" }] } });
     await page.goto("/groceries");
     await page.getByRole("button", { name: "Cook Milky rice" }).click();
-    await expect(page.getByRole("alertdialog")).toContainText("uses up the ingredients");
+    await expect(page.getByRole("alertdialog")).toContainText("Uses up");                           // it names the food and the amounts
+    await expect(page.getByRole("alertdialog")).toContainText("cannot be undone from here");
     await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
     const quantity = async () => Number((await (await fresh.api.get("/api/groceries")).json()).find((g) => g.name === "Whole milk").quantity);
     expect(await quantity()).toBe(2);

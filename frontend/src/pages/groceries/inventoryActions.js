@@ -16,8 +16,14 @@ export async function adjustQuantity(g, dir) {
   const step = stepFor(g.unit);
   const qty = Number(g.quantity);
   try {
-    if (dir < 0) await api.post(`/groceries/${g.id}/consume`, { quantity: Math.min(step, qty) });
-    else await api.put(`/groceries/${g.id}`, { quantity: Math.round((qty + step) * 100) / 100 });
+    if (dir < 0) {
+      const used = Math.min(step, qty);
+      await api.post(`/groceries/${g.id}/consume`, { quantity: used });
+      toast.success(`Used ${+used.toFixed(2)}${g.unit && g.unit !== "unit" ? ` ${g.unit}` : ""} of ${g.name}`, {
+        duration: 8000,
+        action: { label: "Undo", onClick: async () => { try { await api.put(`/groceries/${g.id}`, { quantity: qty }); refreshAll(); } catch { toast.error("Could not undo that"); } } },
+      });
+    } else await api.put(`/groceries/${g.id}`, { quantity: Math.round((qty + step) * 100) / 100 });
     refreshAll();
   } catch (err) { fail(err, "Could not update quantity"); }
 }

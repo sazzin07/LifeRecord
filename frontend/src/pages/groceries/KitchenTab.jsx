@@ -19,7 +19,7 @@ import { Glyph } from "./glyphs";
 import { CAT_META } from "./shared";
 import { Pill } from "./pills";
 import { MixPanel } from "./MixPanel";
-import { EMPTY_MIX, GOALS, applyMix, cookTimeLabel, perServing, voice } from "./kitchenMix";
+import { EMPTY_MIX, GOALS, applyMix, cookSummary, cookTimeLabel, perServing, voice } from "./kitchenMix";
 import { CoverRing } from "./todayParts";
 
 const APPLIANCE_KINDS = [
@@ -251,7 +251,7 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
             <Pill role="group" aria-label="Show recipes">
               {[["all", "All recipes"], ["ready", "Ready to cook"]].map(([f, label]) => <button key={f} type="button" className="gt-pill-b" aria-pressed={filter === f} onClick={() => setFilter(f)}>{label}</button>)}
             </Pill>
-            <Button asChild size="sm" variant="ghost"><Link to="/nutrition"><BookOpen className="mr-1.5 h-4 w-4" />Manage recipes</Link></Button>
+            <Button asChild size="sm" variant="ghost" className="gt-tap"><Link to="/nutrition"><BookOpen className="mr-1.5 h-4 w-4" />Manage recipes</Link></Button>
           </div>
         </div>
         {base.length > 0 && <MixPanel mix={mix} setMix={setMix} base={base} list={shown} />}
@@ -271,7 +271,7 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
             <h2 id="appliances-heading" className="text-lg font-semibold leading-tight">Appliances</h2>
             <p className="text-xs text-muted-foreground">What you can cook with.</p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setApplianceDialog({ open: true, appliance: null })}><Plus className="mr-1.5 h-4 w-4" />Add appliance</Button>
+          <Button size="sm" variant="outline" className="gt-tap" onClick={() => setApplianceDialog({ open: true, appliance: null })}><Plus className="mr-1.5 h-4 w-4" />Add appliance</Button>
         </div>
         {appliances.length === 0 ? (
           <EmptyState icon={CookingPot} title="No appliances yet" sub="Add your oven, hob or air fryer so suggestions fit your kitchen." />
@@ -283,10 +283,10 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
                 <Card key={a.id} className="group relative p-4" data-testid="appliance-card">
                   <span className="mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-accent text-accent-foreground"><K.icon className="h-5 w-5" /></span>
                   <p className="truncate text-sm font-semibold">{a.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{a.notes || K.label}</p>
-                  <div className="absolute right-2 top-2 flex gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${a.name}`} onClick={() => setApplianceDialog({ open: true, appliance: a })}><Pencil className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" aria-label={`Remove ${a.name}`} onClick={() => setDeleteAppliance(a)}><Trash2 className="h-4 w-4" /></Button>
+                  {(a.notes || a.name.trim().toLowerCase() !== K.label.toLowerCase()) && <p className="truncate text-xs text-muted-foreground">{a.notes || K.label}</p>}
+                  <div className="gt-appl-acts absolute right-2 top-2 flex gap-0.5">
+                    <Button variant="ghost" size="icon" className="gt-tap h-8 w-8" aria-label={`Edit ${a.name}`} onClick={() => setApplianceDialog({ open: true, appliance: a })}><Pencil className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="gt-tap h-8 w-8 text-red-500" aria-label={`Remove ${a.name}`} onClick={() => setDeleteAppliance(a)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </Card>
               );
@@ -301,9 +301,7 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
         open={!!cookFor}
         onOpenChange={(v) => !v && setCookFor(null)}
         title={`Cook ${cookFor?.recipe.name}?`}
-        description={cookFor && (cookFor.can_cook_now
-          ? "This uses up the ingredients from your inventory and logs one serving as a meal."
-          : `You are missing ${cookFor.missing.map((m) => m.name.toLowerCase()).join(", ")}. Cooking still uses whatever you do have and logs one serving as a meal.`)}
+        description={cookFor && cookSummary(cookFor)}
         onConfirm={cook}
         confirmText="Cook it"
         variant="primary"

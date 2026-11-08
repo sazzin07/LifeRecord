@@ -34,6 +34,15 @@ New-Item -ItemType Directory -Force -Path "$PSScriptRoot\logs" | Out-Null
 # Ensure liferecord database exists (check first to avoid MySQL warning)
 & "$backendDir\.venv\Scripts\python.exe" "$PSScriptRoot\tools\ensure_db.py"
 
+# Bring the database schema up to date before the backend serves anything: code that is newer than the schema makes pages fail with server errors
+# (the live database was found behind twice). The migrations are additive and guarded, and running them again when nothing is pending does nothing.
+Push-Location $backendDir
+$prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"   # alembic logs progress on stderr, which is not a failure
+& "$backendDir\.venv\Scripts\python.exe" -m alembic upgrade head 2>&1 | ForEach-Object { "$_" }
+$ErrorActionPreference = $prevEap
+if ($LASTEXITCODE -ne 0) { Write-Warning "Database migrations did not finish (see the message above). Pages that need the new columns will fail until they do." }
+Pop-Location
+
 # 2. Backend
 if (-not (Test-Port 8000)) {
     Start-Process -FilePath "$backendDir\.venv\Scripts\python.exe" -ArgumentList "-m","uvicorn","server:app","--host","0.0.0.0","--port","8000","--log-level","info" -WorkingDirectory $backendDir -WindowStyle Hidden -RedirectStandardOutput "$PSScriptRoot\logs\backend.log" -RedirectStandardError "$PSScriptRoot\logs\backend.err.log"

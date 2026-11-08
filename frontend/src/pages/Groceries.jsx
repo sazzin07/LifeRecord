@@ -691,7 +691,7 @@ export default function Groceries() {
 
       <QuickAdd tab={tab} products={products} inventory={inventory} recipeIdeas={recipeIdeas} listItems={listItems} listId={selectedListId} locations={locations} spaceId={selectedSpaceId} setTab={setTab} />
 
-      <div role="tabpanel" id="gpanel" aria-label={activeTab.label} className="gt-panel">
+      <div role="tabpanel" id="gpanel" aria-label={activeTab.label} className="gt-tabpanel">
           {tab !== "today" && tab !== "shopping" && !TAB_NEEDS[tab].every((k) => have[k]) ? (
             TAB_NEEDS[tab].some((k) => failed[k] && !have[k]) ? <ErrorBlock what={tab} onRetry={load} /> : <TabSkeleton tab={tab} />
           ) : tab === "shopping" && !TAB_NEEDS.shopping.every((k) => have[k]) ? (

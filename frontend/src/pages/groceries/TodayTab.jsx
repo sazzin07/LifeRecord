@@ -12,6 +12,7 @@ import { WIDGET_IDS, useGroceriesLayout } from "./useGroceriesLayout";
 import { KIND_LOOK, WIDGETS, WIDGET_BODY, kindLook } from "./todayWidgets";
 import { CountUp, RingArcs, dayWords, daysOf, freshStats, plural, stepOf } from "./todayParts";
 import { Welcome } from "./Welcome";
+import { cookSummary } from "./kitchenMix";
 
 const NEEDS = { needs: ["inventory"], kitchen: ["inventory", "locations"], list: ["shopping"], low: ["inventory"], risk: ["inventory"], cook: ["recipeIdeas"], week: ["inventory"] };
 const NEXT_SIZE = { s: "m", m: "l", l: "s" };
@@ -100,12 +101,19 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
   const freezer = useMemo(() => locations.find((l) => l.kind === "freezer") || null, [locations]);
   const hidden = WIDGET_IDS.filter((id) => !layout.widgets.some((w) => w.id === id));
 
-  const act = useCallback(async (fn, ok) => {
-    try { await fn(); if (ok) toast.success(ok); refreshAll(); } catch (err) { toast.error(err.response?.data?.detail || "That did not work. Try again."); }
+  // `undo` puts the change back: the message then carries an Undo button for a few seconds
+  const act = useCallback(async (fn, ok, undo) => {
+    try {
+      await fn();
+      if (ok) toast.success(ok, undo ? { duration: 8000, action: { label: "Undo", onClick: async () => { try { await undo(); refreshAll(); } catch { toast.error("Could not undo that"); } } } } : undefined);
+      refreshAll();
+    } catch (err) { toast.error(err.response?.data?.detail || "That did not work. Try again."); }
   }, []);
   const actions = useMemo(() => ({
-    consume: (g) => act(() => api.post(`/groceries/${g.id}/consume`, { quantity: Math.min(stepOf(g.unit), Number(g.quantity)) }), `Used one ${g.name}`),
-    freeze: (g, f) => act(() => api.post(`/groceries/${g.id}/move`, { storage_location: f.name }), `Moved ${g.name} to ${f.name}`),
+    consume: (g) => act(() => api.post(`/groceries/${g.id}/consume`, { quantity: Math.min(stepOf(g.unit), Number(g.quantity)) }), `Used one ${g.name}`,
+      () => api.put(`/groceries/${g.id}`, { quantity: Number(g.quantity) })),
+    freeze: (g, f) => act(() => api.post(`/groceries/${g.id}/move`, { storage_location: f.name }), `Moved ${g.name} to ${f.name}`,
+      g.storage_location ? () => api.post(`/groceries/${g.id}/move`, { storage_location: g.storage_location }) : undefined),
     tick: (i) => act(() => api.post(`/shopping/${i.id}/toggle`)),
     cook: (e) => setCookFor(e),   // cooking uses up stock and logs a meal, so it asks first
     addMissing: (e) => act(() => api.post(`/recipes/${e.recipe.id}/add-missing`, { list_id: selectedListId || undefined }), `Added what ${e.recipe.name} needs to your list`),
@@ -183,7 +191,7 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
                   <button type="button" className="gt-btn icon" disabled={i === layout.widgets.length - 1} onClick={() => move(w.id, 1)} aria-label={`Move ${meta.title} later`}><ChevronRight aria-hidden="true" /></button>
                 </span>
                 <span>
-                  <button type="button" className="gt-btn" onClick={() => setWidgets(layout.widgets.map((x) => (x.id === w.id ? { ...x, size: NEXT_SIZE[x.size] } : x)))} aria-label={`Change size of ${meta.title}, now ${SIZE_NAME[w.size]}`}><Maximize2 aria-hidden="true" />{w.size.toUpperCase()}</button>
+                  <button type="button" className="gt-btn" onClick={() => setWidgets(layout.widgets.map((x) => (x.id === w.id ? { ...x, size: NEXT_SIZE[x.size] } : x)))} aria-label={`Change size of ${meta.title}, now ${SIZE_NAME[w.size]}`}><Maximize2 aria-hidden="true" />{SIZE_NAME[w.size][0].toUpperCase() + SIZE_NAME[w.size].slice(1)}</button>
                   <button type="button" className="gt-btn icon" onClick={() => setWidgets(layout.widgets.filter((x) => x.id !== w.id))} aria-label={`Remove ${meta.title}`}><X aria-hidden="true" /></button>
                 </span>
               </div>
@@ -201,8 +209,7 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
       {!layout.widgets.length && <div className="gt-card gt-empty"><strong>Everything is hidden</strong><button type="button" className="gt-btn cta" onClick={reset}>Restore defaults</button></div>}
       {!ready && <span className="sr-only" role="status">Loading your layout</span>}
       <ConfirmDialog open={!!cookFor} onOpenChange={(v) => !v && setCookFor(null)} title={`Cook ${cookFor?.recipe.name}?`} confirmText="Cook it" variant="primary" onConfirm={cook}
-        description={cookFor && (cookFor.can_cook_now ? "This uses up the ingredients from your inventory and logs one serving as a meal."
-          : `You are missing ${cookFor.missing.map((m) => m.name.toLowerCase()).join(", ")}. Cooking still uses whatever you do have and logs one serving as a meal.`)} />
+        description={cookFor && cookSummary(cookFor)} />
     </div>
   );
 }

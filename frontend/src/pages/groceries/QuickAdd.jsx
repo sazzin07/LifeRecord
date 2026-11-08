@@ -98,12 +98,15 @@ export function QuickAdd({ tab, products, inventory, recipeIdeas, listItems, lis
       <button type="submit" className="gt-btn cta lg" disabled={busy || !text.trim()}><Plus aria-hidden="true" />Add</button>
       {choices.length > 0 && (
         <div className="gt-ac" id="gt-cmd-ac" role="listbox" aria-label="Suggestions">
-          {choices.map((c, i) => (
+          {choices.map((c, i) => {
+            const p = parseAdd(text), how = p.u !== "unit" ? `${+p.n.toFixed(2)} ${p.u} ` : p.n !== 1 ? `${+p.n.toFixed(2)} × ` : "";
+            return (
             <button key={c.name} id={`gt-cmd-o${i}`} type="button" role="option" aria-selected={active === i} tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()} onClick={async () => { const p = parseAdd(text); if (await toList(c.name, p.n, p.u !== "unit" ? p.u : c.unit, c.category)) clear(); }}>
-              <Sticker name={c.name} category={c.category} size={30} /><span>{c.name}</span>
+              <Sticker name={c.name} category={c.category} size={30} /><span>{how}{c.name}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </form>

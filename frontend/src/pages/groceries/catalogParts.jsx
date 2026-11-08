@@ -51,7 +51,7 @@ export function DietMarks({ tags, max = 3, nowrap = false, className }) {
     <span className={cn("flex gap-1", nowrap ? "flex-nowrap overflow-hidden" : "flex-wrap", className)}>
       {shown.map((t) => (
         <span key={t} className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
-          t === "vegan" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
+          t === "vegan" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-muted text-slate-700 dark:text-slate-300")}>
           {DIET_TAGS.find((d) => d.key === t)?.label || t}
         </span>
       ))}

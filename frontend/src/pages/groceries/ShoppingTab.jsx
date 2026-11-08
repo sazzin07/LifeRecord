@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChefHat, Clock, History, Loader2, Pencil, Plus, Receipt, Repeat, RotateCcw, Search, ShoppingCart, SlidersHorizontal, Sparkles, Store, Trash2, X } from "lucide-react";
 import { eur } from "@/lib/api";
 import { ConfidenceBadge } from "@/components/common";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { BudgetField } from "./BudgetField";
-import { Pill } from "./pills";
+import { Pill, useScrollFade } from "./pills";
 import { CAT_META, CATS, catOf, isLow, quantityText } from "./shared";
 import { stepFor } from "./inventoryActions";
 import { Sticker, cap1, plural } from "./todayParts";
@@ -32,7 +32,7 @@ export function ShopRow({ it, variant = "plan", done, onToggle, onQty, onEdit, o
         : <label className="gt-tick"><input type="checkbox" className="gt-check" checked={!!done} onChange={() => onToggle(it.id)} aria-label={`${it.name} in the basket`} /></label>}
       <Sticker name={it.name} category={catOf({ category: it.category })} size={store ? 56 : variant === "cart" ? 34 : 40} />
       <span className="grow">
-        <span className="name">{it.name}{variant === "plan" && conf.type !== "estimated" && <ConfidenceBadge type={conf.type}>{conf.label}</ConfidenceBadge>}</span>
+        <span className="name">{it.name}{variant === "plan" && conf.type === "known" && <ConfidenceBadge type={conf.type}>{conf.label}</ConfidenceBadge>}</span>
         <span className="gt-note">
           {quantityText(it.quantity, it.unit)}
           {variant === "plan" && it.best ? <> · <Store className="gt-inl" aria-hidden="true" />{it.best.store} {eur(it.best.price)}</> : null}
@@ -46,7 +46,7 @@ export function ShopRow({ it, variant = "plan", done, onToggle, onQty, onEdit, o
           <button type="button" className="gt-btn icon quiet" onClick={() => onQty(it, 1)} aria-label={`More ${it.name}`}>+</button>
         </span>
       )}
-      <span className="gt-price">{it.estimated_price ? eur((Number(it.estimated_price) || 0) * qty) : "—"}{variant === "plan" && it.estimated_price ? <small>{eur(it.estimated_price)} / {it.unit || "unit"}</small> : null}</span>
+      <span className="gt-price">{it.estimated_price ? eur((Number(it.estimated_price) || 0) * qty) : <span className="gt-noprice">No price</span>}{variant === "plan" && it.estimated_price ? <small>{eur(it.estimated_price)} / {it.unit || "unit"}</small> : null}</span>
       {variant === "plan" && (
         <span className="gt-acts">
           <button type="button" className="gt-btn icon quiet" onClick={() => onHistory(it)} aria-label="Price history"><History aria-hidden="true" /></button>
@@ -98,6 +98,8 @@ export function ShoppingTab({
   onSpawn, onEditRecurring, onDeleteRecurring, onBulkDelete, onSubmit, onSelectAll, onDeselectAll,
 }) {
   const [mode, setMode] = useState("plan");
+  const route = useRef(null);
+  useScrollFade(route);   // the aisle chips scroll sideways: an edge fade says there are more
   const [basketOpen, setBasketOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("all");
@@ -239,7 +241,7 @@ export function ShoppingTab({
       ) : (
         <>
           {lanes.length > 0 && (
-            <nav className="gt-route" aria-label="Aisles on this trip">
+            <nav ref={route} className="gt-route" aria-label="Aisles on this trip">
               {lanes.map(([a, l]) => {
                 const left = l.filter((it) => !selectedIds.has(it.id)).length;
                 return (

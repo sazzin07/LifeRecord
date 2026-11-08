@@ -79,6 +79,22 @@ export function applyMix(list, mix) {
   });
 }
 
+const amount = (n) => String(+Number(n).toFixed(2));
+
+/** What cooking will do, said before it does it: the food it uses up with amounts, what is missing, and that it cannot be undone from the page. */
+export function cookSummary(e) {
+  const rows = e.ingredients || [];
+  const used = rows
+    .filter((i) => i.status !== "missing" && Number(i.status === "short" ? i.have : i.needed) > 0)
+    .map((i) => `${i.name.toLowerCase()} ${amount(i.status === "short" ? i.have : i.needed)} ${i.unit}`);
+  const gone = (e.missing || []).map((m) => m.name.toLowerCase());
+  if (e.can_cook_now) return `Uses up ${used.join(", ")}. It logs one serving as a meal, and cooking cannot be undone from here.`;
+  const lead = `You are missing ${gone.join(", ")}.`;
+  return used.length
+    ? `${lead} Cooking still uses up ${used.join(", ")}, logs one serving as a meal, and cannot be undone from here.`
+    : `${lead} Cooking logs one serving as a meal and cannot be undone from here.`;
+}
+
 /** A friendly line about where a recipe stands. */
 export function voice(e) {
   const miss = e.missing.map((m) => m.name.toLowerCase());

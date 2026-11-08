@@ -563,3 +563,34 @@ button.gt-row:hover, .gt-row.on { background: var(--hover); }
 }
 
 .gt-tick { display: inline-grid; place-items: center; flex: none; cursor: pointer; }
+
+/* the second critique: wording, the Storage header, appliance actions on touch screens, a mode switch that fills its row, edge fades, more touch sizes */
+.gt-noprice { font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.gt-danger { color: var(--gt-red); border-color: color-mix(in srgb, var(--gt-red) 45%, transparent); margin-left: auto; }
+.gt-store-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; }
+.gt-store-head > p { flex: 1 1 16rem; min-width: 0; margin: 0; }
+.gt-store-head > div { flex: none; }
+.gt-appl-acts { transition: opacity 0.2s; }
+@media (hover: hover) and (min-width: 640px) {   /* only a mouse hides them until it arrives; a finger cannot hover */
+  .gt-appl-acts { opacity: 0; }
+  .group:hover .gt-appl-acts, .group:focus-within .gt-appl-acts { opacity: 1; }
+}
+@container (max-width: 560px) { .gt-mode { display: flex; width: 100%; } .gt-mode .gt-pill-b { flex: 1; justify-content: center; } .gt-mix-head .gt-btn { white-space: nowrap; } }
+.gt-pill[data-fade-r], .gt-route[data-fade-r] { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.gt-pill[data-fade-l], .gt-route[data-fade-l] { -webkit-mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(270deg, #000 calc(100% - 32px), transparent); }
+.gt-pill[data-fade-l][data-fade-r], .gt-route[data-fade-l][data-fade-r] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+@media (pointer: coarse) {
+  .gt-tap { min-height: 44px; min-width: 44px; }
+  .gt-cmd > input, .gt-shopbar input, .gt-shopbar [role="combobox"], .gt-trip-aside input { min-height: 44px; }
+  .gt-bulk label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .gt-drawer { animation: none !important; transition: none !important; } }
+/* the basket bar on a narrow screen: the count on one line, the thumbnails give way, Done shopping keeps its size */
+.gt-bk-t b { white-space: nowrap; }
+@container (max-width: 480px) {
+  .gt-basket-stack { display: none; }
+  .gt-basket-bar { gap: 8px; padding-left: 16px; }
+  .gt-basket-bar > .gt-btn { flex: none; white-space: nowrap; padding: 0 16px; }
+}
+/* the 3D room on a phone: a tall narrow stage left the units small under a big empty wall; a shorter stage lets the camera come closer */
+@container (max-width: 520px) { .gt-k3d { height: clamp(300px, 46vh, 400px); } }

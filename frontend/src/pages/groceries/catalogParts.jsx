@@ -64,7 +64,7 @@ function StockNote({ stock, onList, className }) {
   if (stock) {
     return <span className={cn("whitespace-nowrap rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-medium text-white", className)}>{+Number(stock.quantity).toFixed(2)} {stock.unit || ""} in stock</span>;
   }
-  if (onList) return <span className={cn("whitespace-nowrap rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-medium text-white", className)}>On your list</span>;
+  if (onList) return <span className={cn("whitespace-nowrap rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-medium text-amber-950", className)}>On your list</span>;
   return null;
 }
 

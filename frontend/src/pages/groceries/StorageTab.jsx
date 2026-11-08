@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Plus, Rows3 } from "lucide-react";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -7,9 +7,27 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { KitchenScene, ELSEWHERE_ID } from "./KitchenScene";
+import { Busy } from "@/components/skeletons";
+import { KitchenScene } from "./KitchenScene";
 import { StoragePanel } from "./StoragePanel";
-import { groupByLocation } from "./shared";
+import { ELSEWHERE_ID, groupByLocation } from "./shared";
+
+// three.js is large: it loads only when this tab opens, in a chunk of its own.
+const StorageStage = lazy(() => import("./StorageStage"));
+const FLAT_KEY = "lr-groceries-flat";
+const readFlat = () => { try { return localStorage.getItem(FLAT_KEY) === "1"; } catch { return false; } };
+
+/** Same box as the room, so nothing moves when the room arrives. */
+function StageSkeleton() {
+  return (
+    <Busy label="Loading the kitchen">
+      <div className="gt-stage" data-skeleton="" aria-hidden="true">
+        <div className="gt-scene"><div className="gt-k3d"><span className="sk-ph" style={{ position: "absolute", inset: 0 }} /></div><div className="gt-chipbar"><span className="gt-chip sk-ph">Fridge 0</span></div><div className="gt-cap"><span className="sk-ph">Your kitchen</span></div></div>
+        <div className="gt-side"><div className="gt-card"><p className="gt-eyebrow"><span className="sk-ph">Open a unit</span></p></div></div>
+      </div>
+    </Busy>
+  );
+}
 
 const KIND_OPTIONS = [
   { value: "fridge", label: "Fridge" },
@@ -45,8 +63,13 @@ function LocationDialog({ location, open, setOpen, onSave }) {
 }
 
 // Selection lives in the page so it survives switching tabs (e.g. jumping in from the Overview).
-export function StorageTab({ locations, inventory, selectedId, setSelectedId, detailsOpen, setDetailsOpen, onAddItem, onEditItem }) {
+export function StorageTab({ locations, inventory, selectedId, setSelectedId, detailsOpen, setDetailsOpen, onAddItem, onEditItem, selectedListId }) {
   const [locDialog, setLocDialog] = useState({ open: false, location: null });
+  const [flat, setFlat] = useState(readFlat);          // the flat view: chosen, or because the room could not start
+  const [issue, setIssue] = useState(null);       // "failed": no WebGL or the context was lost; "slow": the room cannot keep up here
+  const [tried, setTried] = useState(false);       // after "3D room" is pressed on purpose the speed check stays out of the way
+  const showFlat = flat || !!issue;
+  const setFlatView = (v) => { setFlat(v); setTried(!v && !!issue); setIssue(null); try { localStorage.setItem(FLAT_KEY, v ? "1" : "0"); } catch { /* storage may be blocked */ } };
   const panelRef = useRef(null);
   const { groups, elsewhere } = useMemo(() => groupByLocation(locations, inventory), [locations, inventory]);
 
@@ -61,7 +84,7 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
 
   // Esc zooms back out, unless a dialog or popover is open (they close themselves on Esc first).
   useEffect(() => {
-    if (!selectedId) return undefined;
+    if (!showFlat || !selectedId) return undefined;
     const onKey = (e) => {
       if (e.key === "Escape" && !document.querySelector('[role="dialog"],[role="alertdialog"],[data-radix-popper-content-wrapper]')) {
         setSelectedId(null);
@@ -70,7 +93,7 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [selectedId, setSelectedId, setDetailsOpen]);
+  }, [showFlat, selectedId, setSelectedId, setDetailsOpen]);
 
   useEffect(() => {
     if (detailsOpen && panelRef.current) {
@@ -97,25 +120,54 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
   };
 
   return (
-    <div className="space-y-4">
+    <div className="gt space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
-          {selected ? "Tap a chip for quick actions, or another space to switch." : "Tap a door to step inside."}
+          {showFlat ? (selected ? "Tap a chip for quick actions, or another space to switch." : "Tap a door to step inside.") : "Open a door, drag food between units, or pick a space below."}
+          {issue === "failed" && " The 3D room could not start here, so this is the flat view."}
+          {issue === "slow" && " The 3D room was too slow on this device, so this is the flat view."}
         </p>
-        <Button size="sm" variant="outline" onClick={() => setLocDialog({ open: true, location: null })}><Plus className="h-4 w-4 mr-1" />Add space</Button>
+        <div className="flex items-center gap-2">
+          {issue !== "failed" && (
+            <Button size="sm" variant="outline" onClick={() => setFlatView(!showFlat)} aria-pressed={showFlat}>
+              {showFlat ? <><Box className="h-4 w-4 mr-1" />3D room</> : <><Rows3 className="h-4 w-4 mr-1" />Flat view</>}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => setLocDialog({ open: true, location: null })}><Plus className="h-4 w-4 mr-1" />Add space</Button>
+        </div>
       </div>
-      <p className="sr-only" aria-live="polite">{selected ? `${selected.name} open, ${selected.items.length} items` : "Showing all storage spaces"}</p>
 
-      <KitchenScene
-        units={units}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onBack={back}
-        detailsOpen={detailsOpen}
-        onToggleDetails={() => setDetailsOpen((v) => !v)}
-        onEditItem={onEditItem}
-        onAddItem={() => onAddItem(selected?.location?.name)}
-      />
+      {showFlat ? (
+        <>
+          <p className="sr-only" aria-live="polite">{selected ? `${selected.name} open, ${selected.items.length} items` : "Showing all storage spaces"}</p>
+          <KitchenScene
+            units={units}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onBack={back}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((v) => !v)}
+            onEditItem={onEditItem}
+            onAddItem={() => onAddItem(selected?.location?.name)}
+          />
+        </>
+      ) : (
+        <Suspense fallback={<StageSkeleton />}>
+          <StorageStage
+            units={units}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((v) => !v)}
+            onEditItem={onEditItem}
+            onAddItem={onAddItem}
+            onFailed={() => setIssue("failed")}
+            onSlow={() => setIssue("slow")}
+            noProbe={tried}
+            selectedListId={selectedListId}
+          />
+        </Suspense>
+      )}
 
       {selected && detailsOpen && (
         <div ref={panelRef} className="scroll-mt-4">

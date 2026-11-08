@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 import { CAT_META, isLow, daysUntil, expiryLabel, quantityText } from "./shared";
 import { adjustQuantity } from "./inventoryActions";
 
-export const ELSEWHERE_ID = "__elsewhere";
-
 /**
  * Visual identity per storage kind. Each unit has three footprints that the same element animates between:
  *   wall - one of several doors on the kitchen wall

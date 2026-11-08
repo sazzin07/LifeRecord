@@ -1,14 +1,17 @@
 {
- "note": "Gzip sizes in bytes: the measured size plus 10 %. Raise a number only on purpose, with a reason in the commit. main.css raised to 26,500 on 2026-11-05: measured 23.9 kB after the Nutrition refinement and the styles/ split, plus the usual margin; the old dark:/slate classes were left in place on purpose.",
- "set_on": "2026-11-01",
- "total_gzip": 784897,
+ "note": "Gzip sizes in bytes: the measured size plus 10 %. Raise a number only on purpose, with a reason in the commit. Reset on 2026-11-07 for the Groceries port: the lazy chunk is the three.js kitchen (about 128 kB gzip, loaded only when the Storage tab opens, tree-shaken to the classes the scene uses); the total also takes in the Shopping, Cart and Catalog dialog code and the Groceries CSS chunks. HEAD was already 13 kB over the old total (779.9 kB against 766.5 kB) before this work. main.css was 26,500 on 2026-11-05 (Nutrition refinement and the styles/ split). main.js and main.css keep their earlier limits: this work stayed under them. Raised on 2026-11-08 for the Groceries section rail, the touch-size rules and the Mix rows: the Groceries CSS chunk measured 10,120 bytes, so its limit went from 10,041 to 11,132 (measured plus 10 %).",
+ "set_on": "2026-11-07",
+ "total_gzip": 1075990,
  "largest_single_file_gzip": 351683,
  "roles": {
+  "css chunk": {
+   "gzip_largest": 11132
+  },
   "main.css": {
    "gzip_largest": 26500
   },
   "lazy chunk": {
-   "gzip_largest": 127408
+   "gzip_largest": 144058
   },
   "main.js": {
    "gzip_largest": 351683

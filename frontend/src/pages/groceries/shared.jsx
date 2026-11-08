@@ -3,6 +3,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Id of the pseudo space for food whose storage place is not one of the configured spaces. */
+export const ELSEWHERE_ID = "__elsewhere";
 export const CATS = ["Meat", "Fish", "Eggs", "Dairy", "Carbohydrates", "Fruit", "Vegetables", "Frozen", "Pantry", "Snacks", "Drinks", "Other"];
 export const UNITS = ["unit", "kg", "g", "L", "ml", "pack", "bottle", "can", "box", "bag", "bunch", "jar"];
 
@@ -62,6 +64,9 @@ export function quantityText(q, unit) {
 export function isLow(g) {
   return Number(g.low_threshold) > 0 && Number(g.quantity) <= Number(g.low_threshold);
 }
+
+/** Something to look at today: running low, or going off within three days. */
+export const needsAttention = (g) => isLow(g) || (daysUntil(g.expiration) ?? 99) <= 3;
 
 /** Whole days from today until the expiration date (negative = already expired); null when unset. */
 export function daysUntil(expiration) {

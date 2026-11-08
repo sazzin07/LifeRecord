@@ -1,39 +1,35 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import {
-  ShoppingCart, Package, Plus, Trash2, Pencil, Sparkles, Check, Store,
-  AlertTriangle, Search, X, ChevronDown, ChevronUp, ListChecks, ArrowRight,
-  RotateCcw, TrendingDown, Archive, Loader2, Receipt, Filter, Beef, Fish,
-  Egg, Milk, Wheat, Apple, Carrot, Snowflake, Cookie, Wine, MoreHorizontal,
-  History, Repeat, Lightbulb, TrendingUp, Minus, LayoutDashboard, Refrigerator, BookMarked, ChefHat
-} from "lucide-react";
+import { ShoppingCart, Plus, Trash2, Store, History, Repeat, LayoutDashboard, Refrigerator, BookMarked, ChefHat, Menu } from "lucide-react";
 import { api, eur } from "@/lib/api";
 import { currencySymbol } from "@/lib/money";
 import { refreshAll } from "@/lib/useFetch";
-import { Card, SectionHeading, EmptyState, Label, ConfidenceBadge } from "@/components/common";
+import { Card, SectionHeading, Label } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { CATS, UNITS, CatIcon, quantityText } from "./groceries/shared";
+import { CATS, UNITS, quantityText } from "./groceries/shared";
 import { StorageTab } from "./groceries/StorageTab";
-import { OverviewTab } from "./groceries/OverviewTab";
-import { BudgetField } from "./groceries/BudgetField";
+import { ShoppingTab } from "./groceries/ShoppingTab";
+import { CartDock, cartCount } from "./groceries/CartDock";
+import { QuickAdd } from "./groceries/QuickAdd";
+import { stepFor } from "./groceries/inventoryActions";
 import { CatalogTab } from "./groceries/CatalogTab";
 import { useAuth } from "@/context/AuthContext";
 import { readCache, writeCache } from "@/lib/swrCache";
 import { GROCERY_PARTS, GROCERIES_CACHE_KEY, watchGroceries } from "@/lib/groceriesData";
 import { Busy, ErrorBlock, Sk, SkChart, SkLines, SkRows } from "@/components/skeletons";
 import { KitchenTab } from "./groceries/KitchenTab";
+import { TodayTab } from "./groceries/TodayTab";
+import { Rail, RailDrawer } from "./groceries/Rail";
+import { useMediaQuery } from "@/lib/useMediaQuery";
+import "@/styles/groceries.css";
 import { toast } from "sonner";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Hint } from "@/components/ui/hint";
 
 const PRICE_CONF = {
   known: { type: "exact", label: "Known price" },
@@ -362,6 +358,20 @@ function RecurringDialog({ open, setOpen, onSave, editing }) {
 }
 
 /** What each tab needs before it can draw: a section shows its placeholder only until ITS requests are back. */
+const GROCERY_TABS = [
+  { id: "today", label: "Today", icon: LayoutDashboard },
+  { id: "storage", label: "Storage", icon: Refrigerator },
+  { id: "shopping", label: "Shopping", icon: ShoppingCart },
+  { id: "kitchen", label: "Kitchen", icon: ChefHat },
+];
+
+const RAIL_KEY = "lr-groceries-rail";
+/** The rail starts open on a wide screen and folded to icons on a smaller one; what the person chooses is remembered on this device. */
+function readRail() {
+  try { const v = localStorage.getItem(RAIL_KEY); if (v === "open" || v === "closed") return v === "open"; } catch { /* none saved */ }
+  return typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 1024px)").matches : true;
+}
+
 const TAB_NEEDS = {
   storage: ["locations", "inventory"],
   shopping: ["shopping", "suggestions", "recurring"],
@@ -375,9 +385,10 @@ function TabSkeleton({ tab }) {
   return (
     <div className="space-y-4" role="status" aria-busy="true" aria-label={`Loading ${tab}`}>
       {tab === "shopping" ? (
-        <div className="flex flex-col gap-5 lg:flex-row">
-          <div className="space-y-4 lg:w-64"><Sk className="h-40 !rounded-2xl" /><Sk className="h-28 !rounded-2xl" /></div>
-          <div className="min-w-0 flex-1"><Card className="p-4"><SkRows n={6} lead="square" /></Card></div>
+        <div className="space-y-4">
+          <Sk className="h-[132px] !rounded-[28px]" />
+          <Sk className="h-11 w-72 max-w-full !rounded-full" />
+          <Card className="p-4"><SkRows n={6} lead="square" /></Card>
         </div>
       ) : (
         <>
@@ -390,7 +401,7 @@ function TabSkeleton({ tab }) {
 }
 
 export default function Groceries() {
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("today");
   const { user } = useAuth();
   // Last-seen data (per user) renders instantly; the fetch below then replaces it with the real thing.
   const cached = useMemo(() => readCache(user?.id, GROCERIES_CACHE_KEY), [user?.id]);
@@ -413,9 +424,6 @@ export default function Groceries() {
   const [recurring, setRecurring] = useState(cached?.recurring ?? []);
   const [lowStock, setLowStock] = useState(cached?.lowStock ?? []);
 
-  const [searchShop, setSearchShop] = useState("");
-  const [catShopFilter, setCatShopFilter] = useState("all");
-
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [groceryDialogOpen, setGroceryDialogOpen] = useState(false);
   const [editingGrocery, setEditingGrocery] = useState(null);
@@ -431,17 +439,25 @@ export default function Groceries() {
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState(null);
   const [deleteRecurringId, setDeleteRecurringId] = useState(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const phone = useMediaQuery("(max-width: 639px)");   // the same breakpoint the app shell uses for its phone ball
+  const [railOpen, setRailOpen] = useState(readRail);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const toggleRail = () => setRailOpen((v) => { try { localStorage.setItem(RAIL_KEY, v ? "closed" : "open"); } catch { /* the choice just is not remembered */ } return !v; });
 
   const setters = useMemo(() => ({
     inventory: setInventory, shopping: setShopping, lowStock: setLowStock, suggestions: setSuggestions, recurring: setRecurring,
     locations: setLocations, products: setProducts, recipeIdeas: setRecipeIdeas, appliances: setAppliances,
   }), []);
   // Every piece is its own request: each one lands in the page the moment it is back, so a slow one never holds the others.
+  const selVer = useRef(0);   // bumped by every tick: a refresh that started before a tick must not undo it with older data
   const loadSeq = useRef(0);   // a slow answer to an older request (made before a list was chosen) must never overwrite a newer one
   const load = useCallback(async () => {
     const fresh = {};
     let listId = selectedListId;
     const mine = ++loadSeq.current;
+    const ver = selVer.current;
     try {
       await Promise.all(Object.keys(GROCERY_PARTS).map(async (k) => {
         try {
@@ -457,7 +473,7 @@ export default function Groceries() {
               listId = active?.id || data.lists[0].id;
               setSelectedListId(listId);
             }
-            setSelectedIds(new Set((data?.items || []).filter((i) => i.selected).map((i) => i.id)));
+            if (ver === selVer.current) setSelectedIds(new Set((data?.items || []).filter((i) => i.selected).map((i) => i.id)));
           }
         } catch { setFailed((f) => ({ ...f, [k]: true })); }
       }));
@@ -477,28 +493,21 @@ export default function Groceries() {
   const currentList = useMemo(() => (shopping?.lists || []).find((l) => l.id === selectedListId), [shopping, selectedListId]);
   const listItems = useMemo(() => (shopping?.items || []).filter((it) => it.list_id === selectedListId), [shopping, selectedListId]);
 
-  const filteredShopItems = useMemo(() => {
-    let rows = [...listItems];
-    const q = searchShop.trim().toLowerCase();
-    if (q) rows = rows.filter((it) => it.name.toLowerCase().includes(q) || (it.category || "").toLowerCase().includes(q));
-    if (catShopFilter !== "all") rows = rows.filter((it) => it.category === catShopFilter);
-    return rows.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
-  }, [listItems, searchShop, catShopFilter]);
-
-  const toggleSelect = async (id) => {
-    try {
-      await api.post(`/shopping/${id}/toggle`);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id); else next.add(id);
-        return next;
-      });
-      refreshAll();
-    } catch (err) { toast.error(err.response?.data?.detail || "Could not update selection"); }
+  const changeQuantity = async (it, dir) => {
+    const step = stepFor(it.unit), next = Math.max(step, Math.round((Number(it.quantity) + dir * step) * 100) / 100);
+    try { await api.put(`/shopping/${it.id}`, { quantity: next }); refreshAll(); } catch (err) { toast.error(err.response?.data?.detail || "Could not change the quantity"); }
   };
 
-  const selectAll = () => setSelectedIds(new Set(filteredShopItems.map((i) => i.id)));
-  const deselectAll = () => setSelectedIds(new Set());
+  const flip = (prev, id) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; };
+  // The tick shows at once and is undone if the server says no.
+  const toggleSelect = async (id) => {
+    selVer.current += 1;
+    setSelectedIds((prev) => flip(prev, id));
+    try {
+      await api.post(`/shopping/${id}/toggle`);
+      refreshAll();
+    } catch (err) { setSelectedIds((prev) => flip(prev, id)); toast.error(err.response?.data?.detail || "Could not update selection"); }
+  };
 
   const saveGrocery = async (payload) => {
     try {
@@ -658,224 +667,76 @@ export default function Groceries() {
   const selectedForSubmit = useMemo(() => listItems.filter((it) => selectedIds.has(it.id)), [listItems, selectedIds]);
   const estimatedTotal = useMemo(() => selectedForSubmit.reduce((s, it) => s + (it.estimated_price || 0) * Number(it.quantity), 0), [selectedForSubmit]);
   const selectedCount = selectedIds.size;
-  const allSelected = filteredShopItems.length > 0 && filteredShopItems.every((i) => selectedIds.has(i.id));
+  const activeTab = GROCERY_TABS.find((t) => t.id === tab) || GROCERY_TABS[0];
+  const cartTodo = cartCount(listItems, selectedIds);
 
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        title="Groceries"
-        sub="Inventory, shopping lists and smart restocking"
-      />
+    <div className="gt-shell">
+      {!phone && <Rail tabs={GROCERY_TABS} value={tab} onChange={setTab} open={railOpen} onToggle={toggleRail} onCatalog={() => setCatalogOpen(true)} />}
+      <div className="gt-main space-y-6">
+      <div className="gt-headrow">
+        {phone && (
+          <button type="button" className="gt-icon-btn" onClick={() => setDrawerOpen(true)} aria-haspopup="dialog" data-testid="gt-drawer-open">
+            <Menu aria-hidden="true" /><span className="sr-only">Sections, now {activeTab.label}</span>
+          </button>
+        )}
+        <SectionHeading title="Groceries" sub={phone ? activeTab.label : "Inventory, shopping lists and smart restocking"} />
+        {phone && tab !== "shopping" && (
+          <button type="button" className="gt-icon-btn" onClick={() => setCartOpen(true)} aria-haspopup="dialog" data-testid="cart-open">
+            <ShoppingCart aria-hidden="true" /><span className="sr-only">Cart{cartTodo > 0 ? `, ${cartTodo} to get` : ""}</span>
+            {cartTodo > 0 && <b aria-hidden="true">{cartTodo}</b>}
+          </button>
+        )}
+      </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-11 w-full justify-start overflow-x-auto scrollbar-hide sm:w-auto">
-          <TabsTrigger value="overview" className="flex-1 shrink-0 sm:flex-none gap-1.5"><LayoutDashboard className="h-4 w-4" />Overview</TabsTrigger>
-          <TabsTrigger value="storage" className="flex-1 shrink-0 sm:flex-none gap-1.5"><Refrigerator className="h-4 w-4" />Storage</TabsTrigger>
-          <TabsTrigger value="shopping" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ShoppingCart className="h-4 w-4" />Shopping</TabsTrigger>
-          <TabsTrigger value="catalog" className="flex-1 shrink-0 sm:flex-none gap-1.5"><BookMarked className="h-4 w-4" />Catalog</TabsTrigger>
-          <TabsTrigger value="kitchen" className="flex-1 shrink-0 sm:flex-none gap-1.5"><ChefHat className="h-4 w-4" />Kitchen</TabsTrigger>
-        </TabsList>
-        <TabsContent value={tab} className="mt-6">
-          {tab !== "overview" && tab !== "shopping" && !TAB_NEEDS[tab].every((k) => have[k]) ? (
+      <QuickAdd tab={tab} products={products} inventory={inventory} recipeIdeas={recipeIdeas} listItems={listItems} listId={selectedListId} locations={locations} spaceId={selectedSpaceId} setTab={setTab} />
+
+      <div role="tabpanel" id="gpanel" aria-label={activeTab.label} className="gt-panel">
+          {tab !== "today" && tab !== "shopping" && !TAB_NEEDS[tab].every((k) => have[k]) ? (
             TAB_NEEDS[tab].some((k) => failed[k] && !have[k]) ? <ErrorBlock what={tab} onRetry={load} /> : <TabSkeleton tab={tab} />
           ) : tab === "shopping" && !TAB_NEEDS.shopping.every((k) => have[k]) ? (
             TAB_NEEDS.shopping.some((k) => failed[k] && !have[k]) ? <ErrorBlock what="the shopping lists" onRetry={load} /> : <TabSkeleton tab="shopping" />
-          ) : tab === "overview" ? (
-            <OverviewTab have={have} failed={failed} onRetry={load} lowStock={lowStock} inventory={inventory} shopping={shopping} locations={locations} setTab={setTab} recipeIdeas={recipeIdeas}
-              onOpenSpace={(id) => { if (id) { setSelectedSpaceId(id); setTab("storage"); } }}
-              onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
-          ) : tab === "catalog" ? (
-            <CatalogTab products={products} inventory={inventory} listItems={listItems} selectedListName={currentList?.name}
-              onAddToInventory={(p) => { setEditingGrocery(null); setDefaultLocation(""); setPrefill({ name: p.name, unit: p.default_unit || "unit", category: CATS.includes(p.category) ? p.category : "Other", quantity: p.typical_quantity ?? "", is_favorite: !!p.is_favorite }); setGroceryDialogOpen(true); }}
-              onAddToList={(p) => addSuggestion({ name: p.name, default_quantity: p.typical_quantity || 1, unit: p.default_unit, category: p.category })} />
+          ) : tab === "today" ? (
+            <TodayTab have={have} failed={failed} onRetry={load} inventory={inventory} locations={locations} shopping={shopping} selectedListId={selectedListId} recipeIdeas={recipeIdeas}
+              setTab={setTab} onOpenSpace={(id) => { setSelectedSpaceId(id); setTab("storage"); }} onAddToList={(g) => addSuggestion({ name: g.name, default_quantity: g.default_quantity || 1, unit: g.unit, category: g.category, price: g.price })} />
           ) : tab === "kitchen" ? (
             <KitchenTab suggestions={recipeIdeas} appliances={appliances} lists={shopping?.lists || []} selectedListId={selectedListId} />
           ) : tab === "storage" ? (
-            <StorageTab locations={locations} inventory={inventory}
+            <StorageTab locations={locations} inventory={inventory} selectedListId={selectedListId}
               selectedId={selectedSpaceId} setSelectedId={setSelectedSpaceId} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen}
               onAddItem={(loc) => { setEditingGrocery(null); setPrefill(null); setDefaultLocation(loc || ""); setGroceryDialogOpen(true); }}
               onEditItem={(g) => { setEditingGrocery(g); setPrefill(null); setGroceryDialogOpen(true); }} />
           ) : (
-            <>
-              <div className="flex flex-col lg:flex-row gap-5">
-                {/* Left sidebar */}
-                <div className="lg:w-64 space-y-4">
-                  <Card className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <Label>Lists</Label>
-                      <Button variant="ghost" size="sm" className="h-8" aria-label="New list" onClick={() => setListDialogOpen(true)}><Plus className="h-4 w-4" /></Button>
-                    </div>
-                    <div className="space-y-1">
-                      {shopping?.lists?.map((lst) => (
-                        <button key={lst.id} onClick={() => setSelectedListId(lst.id)}
-                          className={cn("w-full text-left px-3 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center justify-between",
-                            selectedListId === lst.id
-                              ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                              : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-300")}>
-                          <span className="truncate">{lst.name}</span>
-                          {selectedListId === lst.id && <ChevronDown className="h-4 w-4" />}
-                        </button>
-                      ))}
-                      {!shopping?.lists?.length && <p className="text-sm text-slate-400 px-2">No lists yet.</p>}
-                    </div>
-                  </Card>
-
-                  {currentList && (
-                    <Card className="p-3 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label>List budget</Label>
-                        <Button variant="ghost" size="sm" className="h-8 text-red-500 hover:text-red-600" aria-label={`Delete list ${currentList.name}`} onClick={() => setDeleteListId(currentList.id)}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                      <BudgetField summary={shopping?.budget_summary} listId={selectedListId} onCommit={updateBudget} />
-                    </Card>
-                  )}
-
-                  <Card className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <Label className="flex items-center gap-1"><Repeat className="h-3.5 w-3.5" /> Recurring</Label>
-                      <Button variant="ghost" size="sm" className="h-8" aria-label="New recurring list" onClick={() => { setEditingRecurring(null); setRecurringOpen(true); }}><Plus className="h-4 w-4" /></Button>
-                    </div>
-                    <div className="space-y-1.5">
-                      {recurring.map((rl) => (
-                        <div key={rl.id} className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <span className="text-sm truncate">{rl.name}</span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                            <Hint label="Spawn now"><Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Spawn now" onClick={() => spawnRecurring(rl.id)}><RotateCcw className="h-3.5 w-3.5" /></Button></Hint>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${rl.name}`} onClick={() => { setEditingRecurring(rl); setRecurringOpen(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" aria-label={`Delete ${rl.name}`} onClick={() => setDeleteRecurringId(rl.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                          </div>
-                        </div>
-                      ))}
-                      {!recurring.length && <p className="text-xs text-slate-400 px-1">No recurring templates.</p>}
-                    </div>
-                  </Card>
-                </div>
-
-                {/* Main shopping area */}
-                <div className="flex-1 space-y-4">
-                  <div className="flex flex-col sm:flex-row gap-3 justify-between">
-                    <div className="flex gap-2 flex-1">
-                      <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search list..." value={searchShop} onChange={(e) => setSearchShop(e.target.value)} className="pl-9" />
-                        {searchShop && <button onClick={() => setSearchShop("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><X className="h-3.5 w-3.5" /></button>}
-                      </div>
-                      <Select value={catShopFilter} onValueChange={setCatShopFilter}>
-                        <SelectTrigger className="w-36" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          {CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={generateList} disabled={generating || !selectedListId}>
-                        {generating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />} Generate
-                      </Button>
-                      <Button size="sm" onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-700 hover:bg-emerald-800 text-white">
-                        <Plus className="h-4 w-4 mr-1" /> Add item
-                      </Button>
-                    </div>
-                  </div>
-
-                  {filteredShopItems.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                      <div className="flex items-center gap-3">
-                        <Checkbox id="select-all" checked={allSelected} onCheckedChange={() => allSelected ? deselectAll() : selectAll()} />
-                        <Label htmlFor="select-all">{allSelected ? "Deselect all" : "Select all"}</Label>
-                        <span className="text-xs text-slate-400">{selectedCount} selected</span>
-                      </div>
-                      {selectedCount > 0 && (
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => setBulkDeleteOpen(true)}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
-                          <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800 text-white" onClick={() => setSubmitOpen(true)}>
-                            <Receipt className="h-4 w-4 mr-1" /> Submit {selectedCount}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {filteredShopItems.length === 0 && !loading ? (
-                    <EmptyState icon={ShoppingCart} title="Your list is empty"
-                      sub={currentList ? "Add items, generate from inventory, or pick from suggestions." : "Create a list to get started."}
-                      action={currentList ? (
-                        <div className="flex gap-2 flex-wrap justify-center">
-                          <Button variant="outline" onClick={generateList} disabled={generating}>
-                            {generating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />} Generate
-                          </Button>
-                          <Button onClick={() => { setEditingItem(null); setItemDialogOpen(true); }} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" /> Add item</Button>
-                        </div>
-                      ) : <Button onClick={() => setListDialogOpen(true)} className="bg-emerald-700 hover:bg-emerald-800 text-white"><Plus className="h-4 w-4 mr-1" /> Create list</Button>} />
-                  ) : (
-                    <div className="space-y-2">
-                      {filteredShopItems.map((it) => {
-                        const selected = selectedIds.has(it.id);
-                        const conf = it.known ? PRICE_CONF.known : it.estimated_price ? PRICE_CONF.estimated : PRICE_CONF.unknown;
-                        return (
-                          <div key={it.id} className={cn("group flex items-center gap-3 p-3 rounded-xl border transition-all",
-                            selected ? "bg-emerald-50/60 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800" : "bg-card border-border hover:border-slate-300 dark:hover:border-slate-600")}>
-                            <Checkbox checked={selected} onCheckedChange={() => toggleSelect(it.id)} aria-label={`Select ${it.name}`} className="shrink-0" />
-                            <CatIcon category={it.category || "Other"} />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={cn("font-medium text-sm", selected && "line-through text-slate-400")}>{it.name}</span>
-                                <ConfidenceBadge type={conf.type}>{conf.label}</ConfidenceBadge>
-                              </div>
-                              <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
-                                <span>{quantityText(it.quantity, it.unit)}</span>
-                                {it.best ? <span className="flex items-center gap-1"><Store className="h-3 w-3" />{it.best.store} {eur(it.best.price)}</span> : null}
-                                {it.note && <span className="truncate max-w-[200px]">{it.note}</span>}
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-sm font-semibold">{eur((it.estimated_price || 0) * Number(it.quantity))}</p>
-                              {it.estimated_price && <p className="text-xs text-slate-400">{eur(it.estimated_price)} / {it.unit || "unit"}</p>}
-                            </div>
-                            <div className="flex gap-1">
-                              <Hint label="Price history"><Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Price history" onClick={() => setPriceItem(it)}><History className="h-4 w-4" /></Button></Hint>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit ${it.name}`} onClick={() => { setEditingItem(it); setItemDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" aria-label={`Delete ${it.name}`} onClick={() => setDeleteItemId(it.id)}><Trash2 className="h-4 w-4" /></Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {shopping?.recommendation && (
-                    <Card className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800">
-                      <div className="flex items-start gap-3">
-                        <Sparkles className="h-5 w-5 text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
-                        <p className="text-sm text-indigo-800 dark:text-indigo-300">{shopping.recommendation}</p>
-                      </div>
-                    </Card>
-                  )}
-
-                  {suggestions.length > 0 && (
-                    <Card className="p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Lightbulb className="h-4 w-4 text-amber-500" />
-                        <Label>Suggestions</Label>
-                        <span className="text-xs text-slate-400">Frequently bought or favorite</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {suggestions.map((s) => (
-                          <button key={s.id} onClick={() => addSuggestion(s)}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-medium hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
-                            <Plus className="h-3 w-3 text-emerald-600" /> {s.name}
-                            <span className="text-slate-400">· {s.reason}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </Card>
-                  )}
-                </div>
-              </div>
-            </>
+            <ShoppingTab
+              shopping={shopping} items={listItems} selectedListId={selectedListId} setSelectedListId={setSelectedListId} currentList={currentList}
+              selectedIds={selectedIds} inventory={inventory} lowStock={lowStock} suggestions={suggestions} recipeIdeas={recipeIdeas} recurring={recurring}
+              loading={loading} generating={generating}
+              onToggle={toggleSelect} onQty={changeQuantity} onNewList={() => setListDialogOpen(true)} onDeleteList={setDeleteListId} onBudget={updateBudget}
+              onGenerate={generateList} onAddItem={() => { setEditingItem(null); setItemDialogOpen(true); }}
+              onEditItem={(it) => { setEditingItem(it); setItemDialogOpen(true); }} onDeleteItem={setDeleteItemId} onHistory={setPriceItem} onSuggest={addSuggestion}
+              onSpawn={spawnRecurring} onEditRecurring={(rl) => { setEditingRecurring(rl); setRecurringOpen(true); }} onDeleteRecurring={setDeleteRecurringId}
+              onBulkDelete={() => setBulkDeleteOpen(true)} onSubmit={() => setSubmitOpen(true)}
+              onSelectAll={(rows) => setSelectedIds(new Set(rows.map((i) => i.id)))} onDeselectAll={() => setSelectedIds(new Set())}
+            />
           )}
-        </TabsContent>
-      </Tabs>
+      </div>
+      </div>
+      {phone && <RailDrawer open={drawerOpen} onOpenChange={setDrawerOpen} tabs={GROCERY_TABS} value={tab} onChange={setTab} onCatalog={() => setCatalogOpen(true)} />}
+      <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
+        <DialogContent className="gt max-w-6xl max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Catalog</DialogTitle>
+            <DialogDescription>Every product you know: put it on a list, in your kitchen, or keep your own.</DialogDescription>
+          </DialogHeader>
+          {TAB_NEEDS.catalog.every((k) => have[k]) ? (
+            <CatalogTab products={products} inventory={inventory} listItems={listItems} selectedListName={currentList?.name}
+                  onAddToInventory={(p) => { setEditingGrocery(null); setDefaultLocation(""); setPrefill({ name: p.name, unit: p.default_unit || "unit", category: CATS.includes(p.category) ? p.category : "Other", quantity: p.typical_quantity ?? "", is_favorite: !!p.is_favorite }); setGroceryDialogOpen(true); }}
+                  onAddToList={(p) => addSuggestion({ name: p.name, default_quantity: p.typical_quantity || 1, unit: p.default_unit, category: p.category })} />
+          ) : TAB_NEEDS.catalog.some((k) => failed[k] && !have[k]) ? <ErrorBlock what="the catalog" onRetry={load} /> : <TabSkeleton tab="catalog" />}
+        </DialogContent>
+      </Dialog>
+      {tab !== "shopping" && <CartDock items={listItems} listName={currentList?.name} selectedIds={selectedIds} onToggle={toggleSelect} onQty={changeQuantity} onDelete={setDeleteItemId} onSubmit={() => setSubmitOpen(true)}
+        open={cartOpen} onOpenChange={setCartOpen} showButton={!phone} />}
 
       <GroceryDialog item={editingGrocery} prefill={prefill} locations={locations} defaultLocation={defaultLocation} open={groceryDialogOpen} setOpen={setGroceryDialogOpen} onSave={saveGrocery} />
       <ShoppingItemDialog item={editingItem} listId={selectedListId} open={itemDialogOpen} setOpen={setItemDialogOpen} onSave={saveShoppingItem} />

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle, BookOpen, Check, ChefHat, CircleHelp, Coffee, CookingPot, Flame, Microwave, Pencil, Plus,
-  Sandwich, Soup, Timer, Trash2, Wind, Zap, ShoppingCart,
+  Sandwich, Soup, Timer, Trash2, Wind, Zap, ShoppingCart, Leaf, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -15,6 +15,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
+import { Glyph } from "./glyphs";
+import { CAT_META } from "./shared";
+import { Pill } from "./pills";
+import { MixPanel } from "./MixPanel";
+import { EMPTY_MIX, GOALS, applyMix, cookTimeLabel, perServing, voice } from "./kitchenMix";
+import { CoverRing } from "./todayParts";
 
 const APPLIANCE_KINDS = [
   { value: "oven", label: "Oven", icon: Flame },
@@ -30,7 +36,7 @@ const APPLIANCE_KINDS = [
 const kindMeta = (k) => APPLIANCE_KINDS.find((x) => x.value === k) || APPLIANCE_KINDS[APPLIANCE_KINDS.length - 1];
 
 const STATUS = {
-  ok: { icon: Check, tone: "text-green-600 dark:text-green-400", label: () => "In stock" },
+  ok: { icon: Check, tone: "text-green-700 dark:text-green-400", label: () => "In stock" },
   short: { icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400", label: (r) => `Need ${+r.shortfall.toFixed(2)} ${r.unit} more` },
   missing: { icon: Plus, tone: "text-red-600 dark:text-red-400", label: () => "Not in stock" },
   check_units: { icon: CircleHelp, tone: "text-slate-500", label: () => "In stock, units differ" },
@@ -38,39 +44,54 @@ const STATUS = {
 
 const fmt = (n) => (Number.isInteger(n) ? String(n) : String(+n.toFixed(2)));
 
-function RecipeCard({ e, onAddMissing, onCook }) {
-  const r = e.recipe;
-  const tone = e.can_cook_now ? "bg-emerald-500" : e.coverage >= 60 ? "bg-amber-500" : "bg-red-400";
+const TILT = [-9, 6, -5, 8, -7, 4];
+
+/* The recipe's ingredients laid out on a plate a little askew; they fan out when you reach for the card. Missing ones are greyed and dashed. */
+function Plate({ e, size }) {
+  const miss = new Set(e.missing.map((m) => m.name.toLowerCase()));
+  const ings = e.recipe.ingredients || [];
+  const tone = CAT_META[Glyph.category(ings[0]?.name)]?.color || "#8b6a9d";
   return (
-    <Card className="flex flex-col gap-3 p-4" data-testid="recipe-card">
-      <div className="flex items-start justify-between gap-3">
+    <div className="gt-plate" style={{ "--c": tone }}>
+      <span className="gt-dish" aria-hidden="true" />
+      {ings.map((ing, k) => (
+        <img key={ing.name} className={cn("gt-rp", miss.has(ing.name.toLowerCase()) && "miss")} alt="" width={size} height={size} src={Glyph.url(ing.name, "")}
+          style={{ "--k": k, "--o": (k - (ings.length - 1) / 2).toFixed(2), "--r": `${TILT[k % TILT.length]}deg` }} />
+      ))}
+      {e.can_cook_now && <span className="gt-stamp">Ready!</span>}
+    </div>
+  );
+}
+
+function RecipeCard({ e, onAddMissing, onCook, feature = false, goal = null }) {
+  const r = e.recipe, per = perServing(r);
+  const hot = (id) => (goal === id || (id === "energy" && goal === "light") ? "hl" : "");
+  return (
+    <article className={cn("gt-card gt-rcard", e.can_cook_now && "ready", feature && "feature")} data-testid="recipe-card" aria-label={r.name}>
+      <Plate e={e} size={feature ? 68 : 56} />
+      <div className="gt-rc-head">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold leading-tight">{r.name}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {r.servings} serving{r.servings !== 1 ? "s" : ""}{r.calories ? ` · ${Math.round(r.calories / (r.servings || 1))} kcal each` : ""}
-          </p>
+          {feature && <p className="gt-eyebrow gt-feat-eyebrow"><Sparkles aria-hidden="true" />{goal ? `Best for ${GOALS.find((g) => g.id === goal).label.toLowerCase().replace("most ", "")}` : e.can_cook_now ? "Tonight's pick" : "Closest to ready"}</p>}
+          <h3 className="gt-rc-name">{r.name}</h3>
+          <p className="gt-note">{r.servings} serving{r.servings !== 1 ? "s" : ""}{cookTimeLabel(r.cook_minutes) && ` · ${cookTimeLabel(r.cook_minutes)}`}</p>
         </div>
-        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
-          e.can_cook_now ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
-          {e.can_cook_now ? "Ready to cook" : `${e.missing.length} missing`}
-        </span>
+        <CoverRing pct={Math.round(e.coverage)} ready={e.can_cook_now} />
       </div>
-
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round(e.coverage)} aria-valuemin={0} aria-valuemax={100} aria-label="Ingredients in stock">
-        <div className={cn("h-full rounded-full transition-all duration-500", tone)} style={{ width: `${e.coverage}%` }} />
-      </div>
-
+      <p className="gt-voice">{voice(e)}</p>
+      <p className="gt-stats-row">
+        <span className={cn("gt-st", hot("protein"))}><b>{per.protein ?? "—"}</b> g protein</span>
+        <span className={cn("gt-st", hot("energy"))}><b>{per.kcal ?? "—"}</b> kcal</span>
+        <span className="gt-note">per serving</span>
+      </p>
+      <span className={cn("gt-tag", e.can_cook_now ? "green" : "plain")} style={{ alignSelf: "flex-start" }}>{e.can_cook_now ? "Ready to cook" : `${e.missing.length} missing`}</span>
       {e.uses_expiring.length > 0 && (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-          Uses up {e.uses_expiring.map((u) => `${u.name.toLowerCase()} (${u.expires_in <= 0 ? "today" : `${u.expires_in}d`})`).join(", ")} before it goes off.
-        </p>
+        <p className="gt-use-first"><Leaf aria-hidden="true" />Uses up {e.uses_expiring.map((u) => `${u.name.toLowerCase()} (${u.expires_in <= 0 ? "today" : `${u.expires_in}d`})`).join(", ")} before it goes off.</p>
       )}
-
-      <ul className="space-y-1.5">
+      <ul className="gt-ing-list">
         {e.ingredients.map((i) => {
           const S = STATUS[i.status];
           return (
-            <li key={i.name} className="flex items-center gap-2 text-sm">
+            <li key={i.name}>
               <S.icon className={cn("h-4 w-4 shrink-0", S.tone)} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{i.name} <span className="text-muted-foreground">{fmt(i.needed)} {i.unit}</span></span>
               <span className={cn("shrink-0 text-xs", S.tone)}>{S.label(i)}</span>
@@ -78,14 +99,11 @@ function RecipeCard({ e, onAddMissing, onCook }) {
           );
         })}
       </ul>
-
-      <div className="mt-auto flex flex-wrap gap-2 pt-1">
-        <Button size="sm" onClick={() => onCook(e)}><ChefHat className="mr-1.5 h-4 w-4" />Cook this</Button>
-        {e.missing.length > 0 && (
-          <Button size="sm" variant="outline" onClick={() => onAddMissing(e)}><ShoppingCart className="mr-1.5 h-4 w-4" />Add {e.missing.length} to a list</Button>
-        )}
+      <div className="gt-rc-act">
+        <button type="button" className="gt-btn cta" onClick={() => onCook(e)}><ChefHat aria-hidden="true" />Cook this</button>
+        {e.missing.length > 0 && <button type="button" className="gt-btn" onClick={() => onAddMissing(e)}><ShoppingCart aria-hidden="true" />Add {e.missing.length} to a list</button>}
       </div>
-    </Card>
+    </article>
   );
 }
 
@@ -185,12 +203,14 @@ function ApplianceDialog({ appliance, open, setOpen, onSave }) {
 
 export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
   const [filter, setFilter] = useState("all");
+  const [mix, setMix] = useState(EMPTY_MIX);
   const [addFor, setAddFor] = useState(null);
   const [cookFor, setCookFor] = useState(null);
   const [applianceDialog, setApplianceDialog] = useState({ open: false, appliance: null });
   const [deleteAppliance, setDeleteAppliance] = useState(null);
 
-  const shown = useMemo(() => (filter === "ready" ? suggestions.filter((s) => s.can_cook_now) : suggestions), [suggestions, filter]);
+  const base = useMemo(() => (filter === "ready" ? suggestions.filter((s) => s.can_cook_now) : suggestions), [suggestions, filter]);
+  const shown = useMemo(() => applyMix(base, mix), [base, mix]);
   const activeLists = lists.filter((l) => !l.archived);
 
   const cook = async () => {
@@ -220,28 +240,27 @@ export function KitchenTab({ suggestions, appliances, lists, selectedListId }) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="gt space-y-8">
       <section aria-labelledby="cook-heading" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="cook-heading" className="text-lg font-semibold leading-tight">Cook with what you have</h2>
             <p className="text-xs text-muted-foreground">Ranked by what is in stock, with a boost for recipes that use food about to expire.</p>
           </div>
-          <div className="flex items-center gap-2">
-            {["all", "ready"].map((f) => (
-              <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} className={cn("rounded-full", filter === f && "bg-emerald-700 text-white hover:bg-emerald-700")} onClick={() => setFilter(f)}>
-                {f === "all" ? "All recipes" : "Ready to cook"}
-              </Button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill role="group" aria-label="Show recipes">
+              {[["all", "All recipes"], ["ready", "Ready to cook"]].map(([f, label]) => <button key={f} type="button" className="gt-pill-b" aria-pressed={filter === f} onClick={() => setFilter(f)}>{label}</button>)}
+            </Pill>
             <Button asChild size="sm" variant="ghost"><Link to="/nutrition"><BookOpen className="mr-1.5 h-4 w-4" />Manage recipes</Link></Button>
           </div>
         </div>
+        {base.length > 0 && <MixPanel mix={mix} setMix={setMix} base={base} list={shown} />}
         {shown.length === 0 ? (
-          <EmptyState icon={ChefHat} title={suggestions.length ? "Nothing is ready to cook yet" : "No recipes yet"}
-            sub={suggestions.length ? "Switch to All recipes to see what you are missing." : "Add a recipe on the Nutrition page and it will show up here."} />
+          <EmptyState icon={ChefHat} title={base.length ? "No recipe has all of that" : suggestions.length ? "Nothing is ready to cook yet" : "No recipes yet"}
+            sub={base.length ? "Take one of the choices off and the recipes come back." : suggestions.length ? "Switch to All recipes to see what you are missing." : "Add a recipe on the Nutrition page and it will show up here."} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {shown.map((e) => <RecipeCard key={e.recipe.id} e={e} onAddMissing={setAddFor} onCook={setCookFor} />)}
+          <div className="gt-recipes">
+            {shown.map((e, i) => <RecipeCard key={e.recipe.id} e={e} feature={i === 0} goal={mix.goal} onAddMissing={setAddFor} onCook={setCookFor} />)}
           </div>
         )}
       </section>

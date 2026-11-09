@@ -155,18 +155,48 @@ test.describe("Groceries Shopping", () => {
     await expect(row).toBeVisible();
     await expect.poll(async () => Number((await (await fresh.api.get("/api/shopping")).json()).items.find((i) => i.name === "Olive oil")?.quantity)).toBe(2);
 
-    await row.getByRole("button", { name: "Edit Olive oil" }).click();
+    await row.getByRole("button", { name: "More actions for Olive oil" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
     await page.getByPlaceholder("Item name").fill("Olive oil extra virgin");
     await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
     await expect(page.getByTestId("shop-row").filter({ hasText: "Olive oil extra virgin" })).toBeVisible();
 
-    await page.getByTestId("shop-row").first().getByRole("button", { name: "Price history" }).click();
+    await page.getByTestId("shop-row").first().getByRole("button", { name: /^More actions for/ }).click();
+    await page.getByRole("menuitem", { name: "Price history" }).click();
     await expect(page.getByRole("dialog")).toContainText(/price history/i);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Delete Olive oil extra virgin" }).click();
+    await page.getByRole("button", { name: "More actions for Olive oil extra virgin" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
     await expect.poll(async () => (await (await fresh.api.get("/api/shopping")).json()).items.length).toBe(0);
+  });
+
+  test("Suggest with AI fills the list from the kitchen, says why, and Undo takes the whole batch back (no model here, so the stock rule answers)", async ({ freshUserPage: { page, fresh } }) => {
+    await setup(fresh, [{ name: "Whole milk", quantity: 1, unit: "L", category: "Dairy" }]);
+    await fresh.api.post("/api/groceries", { data: { name: "Rice", quantity: 1, unit: "kg", category: "Carbohydrates", storage_location: "Pantry", low_threshold: 5 } });
+    const names = async () => (await (await fresh.api.get("/api/shopping")).json()).items.map((i) => i.name).sort();
+    await open(page);
+    await page.getByRole("button", { name: "Suggest with AI" }).click();
+    const banner = page.locator(".gt-gen");
+    await expect(banner).toContainText(/Added 1 item|The assistant added 1 item/, { timeout: 60000 });
+    await expect.poll(names).toEqual(["Rice", "Whole milk"]);
+    await expect(page.getByTestId("shop-row").filter({ hasText: /^Rice/ })).toContainText("Running low");
+    await banner.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(names).toEqual(["Whole milk"]);
+    await expect(banner).toHaveCount(0);
+  });
+
+  test("the whole row ticks an item, not only its circle; the row's own buttons keep their job", async ({ freshUserPage: { page, fresh } }) => {
+    await setup(fresh, SHOP);
+    await open(page);
+    const row = page.getByTestId("shop-row").filter({ hasText: "Apples" });
+    await row.locator(".name").click();
+    await expect(row.getByRole("checkbox")).toBeChecked();
+    await row.getByRole("button", { name: "More Apples" }).click();   // the stepper does not toggle the row
+    await expect(row.getByRole("checkbox")).toBeChecked();
+    await row.locator(".name").click();
+    await expect(row.getByRole("checkbox")).not.toBeChecked();
   });
 
   test("recurring lists: spawn one now, edit and delete it", async ({ freshUserPage: { page, fresh } }) => {

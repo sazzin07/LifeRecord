@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Glyph } from "./glyphs";
-import { daysUntil } from "./shared";
+import { daysUntil, needsYou as stockNeedsYou } from "./shared";
 
 /* Small pieces and figures the Today page shares between its hero and its widgets. */
 export const qtyOf = (g) => Number(g.quantity) || 0;
 export const daysOf = (g) => daysUntil(g.expiration);
-export const needsYou = (g) => qtyOf(g) > 0 && daysOf(g) !== null && daysOf(g) <= 3;
+export const needsYou = stockNeedsYou;   // one definition, shared with Storage (see shared.jsx)
 export const worth = (g) => (Number(g.price) || 0) * qtyOf(g);
 export const stepOf = (unit) => (unit === "g" || unit === "ml" ? 100 : unit === "kg" || unit === "L" || unit === "l" ? 0.5 : 1);
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -52,16 +52,29 @@ export function Sticker({ name, category, size = 36, className = "gt-sticker" })
   return <img className={className} alt="" width={size} height={size} src={Glyph.url(name, category)} />;
 }
 
-/** Three arcs of one ring on a 100-unit path, so each share is a plain percentage. */
+/** The shares of one ring on a 100-unit path, so each is a plain percentage. The ring is drawn once, whole, and a single clockwise sweep
+ *  uncovers it (a mask), so it always finishes as a closed circle however many shares it has; later changes slide the arcs into place. */
 export function RingArcs({ parts, total }) {
+  const id = useId().replace(/:/g, "");
   const used = parts.filter((p) => p.n > 0);
-  const gap = used.length > 1 ? 1.6 : 0;
+  const gap = used.length > 1 ? 1 : 0;
   let at = 0;
-  return used.map((p) => {
-    const len = Math.max(0.5, (p.n / total) * 100 - gap), start = at;
-    at += (p.n / total) * 100;
-    return <circle key={p.key} className="gt-ring-arc" cx="64" cy="64" r="52" pathLength="100" style={{ "--len": len.toFixed(2), "--at": (-start).toFixed(2), stroke: p.color }} />;
-  });
+  return (
+    <>
+      <defs>
+        <mask id={`gt-ring-${id}`} maskUnits="userSpaceOnUse" x="-8" y="-8" width="144" height="144">
+          <circle className="gt-ring-sweep" cx="64" cy="64" r="52" pathLength="100" />
+        </mask>
+      </defs>
+      <g mask={`url(#gt-ring-${id})`}>
+        {used.map((p) => {
+          const len = Math.max(0.5, (p.n / total) * 100 - gap), start = at + gap / 2;
+          at += (p.n / total) * 100;
+          return <circle key={p.key} className="gt-ring-arc" cx="64" cy="64" r="52" pathLength="100" style={{ "--len": len.toFixed(2), "--at": (-start).toFixed(2), stroke: p.color }} />;
+        })}
+      </g>
+    </>
+  );
 }
 
 /** How much of a recipe's ingredients are in stock. */

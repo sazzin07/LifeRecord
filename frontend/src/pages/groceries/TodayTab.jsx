@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize2, Plus, RotateCcw, ShoppingCart, SlidersHorizontal, X, ChefHat } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Maximize2, Plus, RotateCcw, ShoppingCart, SlidersHorizontal, Trash2, X, ChefHat } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
@@ -9,12 +9,16 @@ import { cn } from "@/lib/utils";
 import { locationOf } from "./shared";
 import { Pill } from "./pills";
 import { WIDGET_IDS, useGroceriesLayout } from "./useGroceriesLayout";
+import { WidgetBoard } from "./todayBoard";
 import { KIND_LOOK, WIDGETS, WIDGET_BODY, kindLook } from "./todayWidgets";
 import { CountUp, RingArcs, dayWords, daysOf, freshStats, plural, stepOf } from "./todayParts";
 import { Welcome } from "./Welcome";
 import { cookSummary } from "./kitchenMix";
 
 const NEEDS = { needs: ["inventory"], kitchen: ["inventory", "locations"], list: ["shopping"], low: ["inventory"], risk: ["inventory"], cook: ["recipeIdeas"], week: ["inventory"] };
+/** What an inventory row needs to be put back exactly as it was (the Undo of throwing food away). */
+const restoreBody = (g) => ({ name: g.name, quantity: Number(g.quantity), unit: g.unit, category: g.category, storage_location: g.storage_location, expiration: g.expiration || null,
+  price: g.price ?? null, store: g.store || null, low_threshold: Number(g.low_threshold) || 0, notes: g.notes || "", is_favorite: !!g.is_favorite });
 const NEXT_SIZE = { s: "m", m: "l", l: "s" };
 const SIZE_NAME = { s: "small", m: "medium", l: "large" };
 
@@ -41,7 +45,7 @@ function TodaySkeleton({ widgets }) {
       <div className="gt-widgets">
         {widgets.map((w) => (
           <div key={w.id} className="gt-w" data-size={w.size}>
-            <div className="gt-card"><p className="gt-eyebrow"><span className="sk-ph">Widget title</span></p>{Array.from({ length: w.size === "s" ? 3 : 4 }, (_, i) => row(i))}</div>
+            <div className="gt-w-in"><div className="gt-card"><p className="gt-eyebrow"><span className="sk-ph">Widget title</span></p>{Array.from({ length: w.size === "s" ? 3 : 4 }, (_, i) => row(i))}</div></div>
           </div>
         ))}
       </div>
@@ -49,7 +53,7 @@ function TodaySkeleton({ widgets }) {
   );
 }
 
-function Hero({ items, recipeIdeas, shopping, selectedListId, where, actions, setTab }) {
+function Hero({ items, recipeIdeas, shopping, selectedListId, where, actions, setTab, onTrash }) {
   const st = freshStats(items);
   const n = st.gone.length + st.soon.length;
   const pct = st.live.length ? Math.round((st.fresh / st.live.length) * 100) : 0;
@@ -72,6 +76,7 @@ function Hero({ items, recipeIdeas, shopping, selectedListId, where, actions, se
             ? <button type="button" className="gt-btn cta lg" onClick={() => actions.cook(pick)}><ChefHat aria-hidden="true" />Cook {pick.recipe.name}</button>
             : <button type="button" className="gt-btn cta lg" onClick={() => actions.addMissing(pick)}><ShoppingCart aria-hidden="true" />Add {pick.missing.length} for {pick.recipe.name}</button>)}
           <button type="button" className="gt-btn lg" onClick={() => setTab("shopping")}><ShoppingCart aria-hidden="true" />{toBuy ? `${plural(toBuy, "item", "items")} to buy` : "Shopping list"}</button>
+          {st.gone.length > 0 && <button type="button" className="gt-btn lg trash" onClick={() => onTrash(st.gone)}><Trash2 aria-hidden="true" />Throw away {st.gone.length === 1 ? "the expired item" : `${st.gone.length} expired`}</button>}
         </div>
       </div>
       <div className="gt-viz">
@@ -94,8 +99,9 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
   const { layout, ready, save, reset } = useGroceriesLayout();
   const [editing, setEditing] = useState(false);
   const [cookFor, setCookFor] = useState(null);
+  const [trashFor, setTrashFor] = useState(null);   // the expired items waiting for a yes before they are thrown away
+  const [said, setSaid] = useState("");
   const [welcoming, setWelcoming] = useState(false);   // the welcome stays on screen while it builds, even once the first space exists
-  const drag = useRef(null);
   const focus = layout.focus !== "all" && locations.some((l) => l.id === layout.focus) ? layout.focus : "all";
   const items = useMemo(() => (focus === "all" ? inventory : inventory.filter((g) => locationOf(locations, g)?.id === focus)), [inventory, locations, focus]);
   const freezer = useMemo(() => locations.find((l) => l.kind === "freezer") || null, [locations]);
@@ -114,11 +120,22 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
       () => api.put(`/groceries/${g.id}`, { quantity: Number(g.quantity) })),
     freeze: (g, f) => act(() => api.post(`/groceries/${g.id}/move`, { storage_location: f.name }), `Moved ${g.name} to ${f.name}`,
       g.storage_location ? () => api.post(`/groceries/${g.id}/move`, { storage_location: g.storage_location }) : undefined),
+    discard: (g) => act(() => api.post(`/groceries/${g.id}/discard`, {}), `Threw away ${g.name}`, () => api.post("/groceries", restoreBody(g))),
     tick: (i) => act(() => api.post(`/shopping/${i.id}/toggle`)),
     cook: (e) => setCookFor(e),   // cooking uses up stock and logs a meal, so it asks first
     addMissing: (e) => act(() => api.post(`/recipes/${e.recipe.id}/add-missing`, { list_id: selectedListId || undefined }), `Added what ${e.recipe.name} needs to your list`),
   }), [act, selectedListId]);
 
+  const throwAway = async () => {
+    const gs = trashFor;
+    setTrashFor(null);
+    try {
+      const done = [];
+      for (const g of gs) { await api.post(`/groceries/${g.id}/discard`, {}); done.push(g); }
+      toast.success(`Threw away ${plural(done.length, "expired item", "expired items")}`, { duration: 9000, action: { label: "Undo", onClick: async () => { try { for (const g of done) await api.post("/groceries", restoreBody(g)); refreshAll(); } catch { toast.error("Could not put them back"); } } } });
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not throw those away"); }
+    refreshAll();
+  };
   const cook = async () => {
     const e = cookFor;
     setCookFor(null);
@@ -130,21 +147,6 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
   };
   const setWidgets = (widgets) => save({ ...layout, widgets });
   const setFocus = (id) => save({ ...layout, focus: id });
-  const move = (id, dir) => {
-    const ws = [...layout.widgets], i = ws.findIndex((w) => w.id === id), j = i + dir;
-    if (j < 0 || j >= ws.length) return;
-    [ws[i], ws[j]] = [ws[j], ws[i]];
-    setWidgets(ws);
-  };
-  const dropOn = (id) => {
-    const from = drag.current;
-    drag.current = null;
-    if (!from || from === id) return;
-    const ws = [...layout.widgets], a = ws.findIndex((w) => w.id === from), b = ws.findIndex((w) => w.id === id);
-    ws.splice(b, 0, ws.splice(a, 1)[0]);
-    setWidgets(ws);
-  };
-
   if (!(have.locations && have.inventory)) {
     return <div className="gt gt-fresh">{(failed.locations || failed.inventory) ? <ErrorBlock what="your kitchen" onRetry={onRetry} /> : <TodaySkeleton widgets={layout.widgets} />}</div>;
   }
@@ -157,7 +159,6 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
   return (
     <div className="gt gt-fresh">
       <div className="gt-toolbar">
-        <span />
         <Pill role="group" aria-label="Show one space, or everywhere">
           {spaces.map((s) => {
             const Icon = s.kind === "all" ? KIND_LOOK.custom.icon : kindLook(s.kind).icon;
@@ -169,27 +170,23 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
 
       {editing && (
         <div className="gt-card gt-tray">
-          <span className="gt-note">Drag a widget to reorder, or use the arrows. {hidden.length ? "Add back:" : "Nothing hidden."}</span>
+          <span className="gt-note">Drag a widget by its handle to move it. {hidden.length ? "Add back:" : "Nothing hidden."}</span>
           {hidden.map((id) => <button key={id} type="button" className="gt-btn" onClick={() => setWidgets([...layout.widgets, { id, size: "m" }])}><Plus aria-hidden="true" />{WIDGETS[id].title}</button>)}
           <button type="button" className="gt-btn" onClick={reset}><RotateCcw aria-hidden="true" />Restore defaults</button>
         </div>
       )}
 
-      <Hero items={items} recipeIdeas={recipeIdeas} shopping={shopping} selectedListId={selectedListId} where={where} actions={actions} setTab={setTab} />
+      <Hero items={items} recipeIdeas={recipeIdeas} shopping={shopping} selectedListId={selectedListId} where={where} actions={actions} setTab={setTab} onTrash={setTrashFor} />
 
-      <div className="gt-widgets" id="gt-widgets">
-        {layout.widgets.map((w, i) => {
+      <WidgetBoard widgets={layout.widgets} editing={editing} onReorder={setWidgets} announce={setSaid}
+        renderTile={(w, i, grip) => {
           const meta = WIDGETS[w.id], Body = WIDGET_BODY[w.id], Icon = meta.icon;
           const waiting = !NEEDS[w.id].every((k) => have[k]);
           const broke = NEEDS[w.id].some((k) => failed[k] && !have[k]);
           return (
-            <div key={w.id} className={cn("gt-w", editing && "editing")} data-size={w.size} draggable={editing}
-              onDragStart={() => { drag.current = w.id; }} onDragOver={(e) => editing && e.preventDefault()} onDrop={() => dropOn(w.id)}>
+            <>
               <div className="gt-w-tools">
-                <span>
-                  <button type="button" className="gt-btn icon" disabled={i === 0} onClick={() => move(w.id, -1)} aria-label={`Move ${meta.title} earlier`}><ChevronLeft aria-hidden="true" /></button>
-                  <button type="button" className="gt-btn icon" disabled={i === layout.widgets.length - 1} onClick={() => move(w.id, 1)} aria-label={`Move ${meta.title} later`}><ChevronRight aria-hidden="true" /></button>
-                </span>
+                <span>{grip(meta.title)}</span>
                 <span>
                   <button type="button" className="gt-btn" onClick={() => setWidgets(layout.widgets.map((x) => (x.id === w.id ? { ...x, size: NEXT_SIZE[x.size] } : x)))} aria-label={`Change size of ${meta.title}, now ${SIZE_NAME[w.size]}`}><Maximize2 aria-hidden="true" />{SIZE_NAME[w.size][0].toUpperCase() + SIZE_NAME[w.size].slice(1)}</button>
                   <button type="button" className="gt-btn icon" onClick={() => setWidgets(layout.widgets.filter((x) => x.id !== w.id))} aria-label={`Remove ${meta.title}`}><X aria-hidden="true" /></button>
@@ -200,14 +197,16 @@ export function TodayTab({ inventory, locations, shopping, selectedListId, recip
                 {broke ? <ErrorBlock what={meta.title.toLowerCase()} onRetry={onRetry} />
                   : waiting ? <div data-skeleton="" aria-hidden="true"><p><span className="sk-ph">A line of content here</span></p><p><span className="sk-ph">Another line of content</span></p></div>
                     : <Body items={items} inventory={inventory} locations={locations} freezer={freezer} shopping={shopping} selectedListId={selectedListId} recipeIdeas={recipeIdeas}
-                      actions={actions} setTab={setTab} focus={focus} setFocus={setFocus} onAddToList={onAddToList} onOpenSpace={onOpenSpace} />}
+                      actions={actions} setTab={setTab} focus={focus} setFocus={setFocus} onAddToList={onAddToList} onOpenSpace={onOpenSpace} onTrash={setTrashFor} />}
               </section>
-            </div>
+            </>
           );
-        })}
-      </div>
+        }} />
       {!layout.widgets.length && <div className="gt-card gt-empty"><strong>Everything is hidden</strong><button type="button" className="gt-btn cta" onClick={reset}>Restore defaults</button></div>}
       {!ready && <span className="sr-only" role="status">Loading your layout</span>}
+      <span className="sr-only" role="status" aria-live="polite">{said}</span>
+      <ConfirmDialog open={!!trashFor} onOpenChange={(v) => !v && setTrashFor(null)} title={trashFor?.length === 1 ? "Throw away this item?" : `Throw away ${trashFor?.length} expired items?`} confirmText="Throw away" variant="danger" onConfirm={throwAway}
+        description={trashFor && `${trashFor.slice(0, 4).map((g) => g.name).join(", ")}${trashFor.length > 4 ? ` and ${trashFor.length - 4} more` : ""} · ${eur(trashFor.reduce((s, g) => s + (Number(g.price) || 0) * (Number(g.quantity) || 0), 0))} of food. You can undo it for a few seconds.`} />
       <ConfirmDialog open={!!cookFor} onOpenChange={(v) => !v && setCookFor(null)} title={`Cook ${cookFor?.recipe.name}?`} confirmText="Cook it" variant="primary" onConfirm={cook}
         description={cookFor && cookSummary(cookFor)} />
     </div>

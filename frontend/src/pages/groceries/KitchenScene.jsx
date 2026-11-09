@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Minus, Pencil, Plus } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { CAT_META, isLow, daysUntil, expiryLabel, quantityText } from "./shared";
+import { CAT_META, attentionWords, isLow, daysUntil, expiryLabel, quantityText } from "./shared";
 import { adjustQuantity } from "./inventoryActions";
 
 /**
@@ -15,7 +15,7 @@ import { adjustQuantity } from "./inventoryActions";
  */
 const KINDS = {
   fridge: {
-    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-60 md:h-80",
+    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-60 md:h-64",
     hero: "w-64 md:w-72", heroH: "h-[26rem] md:h-[27rem]",
     mini: "w-14", miniH: "h-24",
     shelves: 4, hinge: "left", doors: 1,
@@ -33,7 +33,7 @@ const KINDS = {
     inside: "from-cyan-100 to-white dark:from-cyan-950 dark:to-slate-900", glow: "rgba(165,243,252,0.6)",
   },
   pantry: {
-    wall: "w-[calc(50%-0.75rem)] md:w-52", wallH: "h-60 md:h-80",
+    wall: "w-[calc(50%-0.75rem)] md:w-52", wallH: "h-60 md:h-64",
     hero: "w-64 md:w-80", heroH: "h-[26rem] md:h-[27rem]",
     mini: "w-16", miniH: "h-24",
     shelves: 4, hinge: "split", doors: 2,
@@ -174,7 +174,7 @@ function Door({ cfg, side, open, mode, name, count, alerts }) {
         <span className={cn("absolute bottom-3 rounded-md bg-white/80 px-2 py-1 text-left shadow-sm dark:bg-slate-900/70", cfg.doors === 2 ? "left-2" : "left-3 right-6")}>
           <span className="block truncate text-xs font-semibold leading-tight text-slate-800 dark:text-slate-100">{name}</span>
           <span className="block text-[10px] text-slate-500 dark:text-slate-300">
-            {count} item{count !== 1 ? "s" : ""}{alerts > 0 && <span className="font-semibold text-red-600 dark:text-red-400"> · {alerts} need attention</span>}
+            {count} item{count !== 1 ? "s" : ""}{alerts && <span className="font-semibold text-red-600 dark:text-red-400"> · {alerts}</span>}
           </span>
         </span>
       )}
@@ -186,7 +186,7 @@ function Unit({ unit, mode, onSelect, onEdit, onMore }) {
   const { id, name, kind, items } = unit;
   const cfg = kindOf(kind);
   const hero = mode === "hero";
-  const alerts = items.filter(needsAttention).length;
+  const alerts = attentionWords(items);
   const testid = `unit-${name.toLowerCase().replace(/\s+/g, "-")}`;
   const ref = useRef(null);
   // The button you pressed turns into the open unit, so hand focus to it without scrolling the page.
@@ -236,7 +236,7 @@ function Unit({ unit, mode, onSelect, onEdit, onMore }) {
           type="button"
           onClick={() => onSelect(id)}
           aria-label={mode === "wall"
-            ? `Open ${name}, ${items.length} item${items.length !== 1 ? "s" : ""}${alerts ? `, ${alerts} need attention` : ""}`
+            ? `Open ${name}, ${items.length} item${items.length !== 1 ? "s" : ""}${alerts ? `, ${alerts}` : ""}`
             : `Switch to ${name}, ${items.length} item${items.length !== 1 ? "s" : ""}`}
           className="absolute inset-0 z-10 rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 ring-offset-background"
         />
@@ -251,7 +251,7 @@ function Unit({ unit, mode, onSelect, onEdit, onMore }) {
  */
 export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen, onToggleDetails, onEditItem, onAddItem }) {
   const selected = units.find((u) => u.id === selectedId) || null;
-  const alerts = selected ? selected.items.filter(needsAttention).length : 0;
+  const alerts = selected ? attentionWords(selected.items) : "";
   return (
     <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-stone-100 to-stone-200 px-4 pb-0 pt-6 dark:from-slate-900 dark:to-slate-950 md:px-8"
       role="group" aria-label="Kitchen storage">
@@ -282,7 +282,7 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
                     <p className="text-center text-sm font-semibold leading-tight">
                       {u.name}
                       <span className="block text-xs font-normal text-slate-500">
-                        {u.items.length} item{u.items.length !== 1 ? "s" : ""}{alerts > 0 && <span className="font-semibold text-red-600 dark:text-red-400"> · {alerts} need attention</span>}
+                        {u.items.length} item{u.items.length !== 1 ? "s" : ""}{alerts && <span className="font-semibold text-red-600 dark:text-red-400"> · {alerts}</span>}
                       </span>
                     </p>
                     <Button size="icon" variant="outline" className="h-8 w-8 bg-background/80" onClick={onAddItem} aria-label={`Add item to ${u.name}`}><Plus className="h-4 w-4" /></Button>

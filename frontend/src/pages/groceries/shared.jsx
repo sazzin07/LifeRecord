@@ -57,26 +57,13 @@ export function CatIcon({ category, className }) {
 export function quantityText(q, unit) {
   const val = Number(q || 0);
   if (val === 0) return "—";
-  if (val === Math.floor(val)) return `${Math.floor(val)} ${unit || ""}`.trim();
+  const u = unit === "unit" && val !== 1 ? "units" : unit || "";   // "4 units", not "4 unit"
+  if (val === Math.floor(val)) return `${Math.floor(val)} ${u}`.trim();
   return `${val.toFixed(2)} ${unit || ""}`.trim();
 }
 
-export function isLow(g) {
-  return Number(g.low_threshold) > 0 && Number(g.quantity) <= Number(g.low_threshold);
-}
-
-/** Something to look at today: running low, or going off within three days. */
-export const needsAttention = (g) => isLow(g) || (daysUntil(g.expiration) ?? 99) <= 3;
-
-/** Whole days from today until the expiration date (negative = already expired); null when unset. */
-export function daysUntil(expiration) {
-  if (!expiration) return null;
-  const d = new Date(`${expiration}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d - today) / 86400000);
-}
+import { attentionWords, daysUntil, isLow, needsAttention, needsYou } from "./attention";
+export { attentionWords, daysUntil, isLow, needsAttention, needsYou };
 
 export function expiryLabel(expiration) {
   const n = daysUntil(expiration);

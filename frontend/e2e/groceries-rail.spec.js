@@ -122,6 +122,8 @@ test.describe("Groceries on a touch screen", () => {
     };
     await check("heading buttons", '[data-testid="gt-drawer-open"], [data-testid="cart-open"]', 2);
     await check("add bar", ".gt-cmd > input, .gt-cmd > .gt-btn", 2);
+    for (const part of [".gt-hero .gt-btn", ".gt-toolbar .gt-pill-b", ".gt-tick"]) await expect(page.locator(part).first()).toBeVisible({ timeout: 20000 });   // Today draws in stages after its welcome moment; count controls only once it has
+    await page.waitForTimeout(1500);   // the widgets scale in; a box measured mid-entrance is a pixel short
     await check("Today", ".gt-toolbar .gt-pill-b, .gt-toolbar > .gt-btn, .gt-hero .gt-btn, .gt-tick", 6);
     await page.getByTestId("gt-drawer-open").click();
     await check("drawer", '[data-testid="gt-drawer"] .gt-rail-b', 5);
@@ -133,6 +135,42 @@ test.describe("Groceries on a touch screen", () => {
     await openGroceriesTab(page, "Shopping");
     await check("Shopping", ".gt-mode .gt-pill-b, .gt-listbar .gt-pill-b, .gt-listbar .gt-btn, .gt-qs .gt-btn, .gt-acts .gt-btn, .gt-slist .gt-tick, .gt-shopbar input, .gt-shopbar [role=combobox], .gt-bulk label, .gt-trip-aside input", 14);
     expect(bad, `controls under 44px:\n${JSON.stringify(bad, null, 1)}`).toEqual({});
+  });
+});
+
+test.describe("Groceries on a touch tablet", () => {
+  test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true, contextOptions: { reducedMotion: "reduce" } });
+  test.describe.configure({ timeout: 120000 });
+
+  test("Today's actions and the Storage chips are at least 44px, and the page ends clear of the corner buttons", async ({ freshUserPage: { page, fresh } }) => {
+    await household(fresh);
+    await page.goto("/groceries");
+    for (const part of [".gt-hero .gt-btn", ".gt-toolbar .gt-pill-b"]) await expect(page.locator(part).first()).toBeVisible({ timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const small = async (selector) => page.locator(selector).filter({ visible: true }).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 43.5 || r.width < 43.5).map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`));
+    expect(await small(".gt-hero .gt-btn, .gt-toolbar .gt-pill-b, .gt-tick")).toEqual([]);
+    await openGroceriesTab(page, "Storage");
+    await expect(page.locator(".gt-chipbar .gt-chip").first()).toBeVisible({ timeout: 30000 });
+    expect(await small(".gt-chipbar .gt-chip")).toEqual([]);
+    expect(await page.locator(".gt-main").evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThanOrEqual(96);
+  });
+});
+
+test.describe("Groceries cart on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("a cart row keeps its stepper clear of the name and price", async ({ freshUserPage: { page, fresh } }) => {
+    await household(fresh);
+    await page.goto("/groceries");
+    await page.getByTestId("cart-open").click();
+    const row = page.getByRole("dialog", { name: "Your cart" }).getByTestId("shop-row").first();
+    await expect(row).toBeVisible();
+    await expect.poll(async () => (await page.getByRole("dialog", { name: "Your cart" }).boundingBox()).x, { timeout: 5000 }).toBeLessThan(20);   // the drawer has finished sliding in
+    const box = (sel) => row.locator(sel).first().boundingBox();
+    const [name, steps, price] = [await box(".name"), await box(".gt-qs"), await box(".gt-price")];
+    expect(steps.y).toBeGreaterThanOrEqual(name.y + name.height - 1);     // the stepper sits under the name, not on it
+    expect(steps.y).toBeGreaterThanOrEqual(price.y + price.height - 1);
+    expect(steps.x + steps.width).toBeLessThanOrEqual(390);
   });
 });
 
@@ -162,4 +200,24 @@ test.describe("Groceries navigation accessibility (axe, WCAG A and AA)", () => {
       await audit(page, `drawer, ${theme}`);
     });
   }
+});
+
+test.describe("Groceries rail stays on screen", () => {
+  test.use({ viewport: { width: 1280, height: 800 }, contextOptions: { reducedMotion: "reduce" } });
+  test("it is centred vertically and does not move when the page scrolls", async ({ freshUserPage: { page, fresh } }) => {
+    const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    await fresh.api.post("/api/storage-locations", { data: { name: "Fridge", kind: "fridge", sort_order: 0 } });
+    for (let i = 0; i < 12; i++) await fresh.api.post("/api/groceries", { data: { name: `Food ${i}`, quantity: 1, unit: "unit", category: "Dairy", storage_location: "Fridge", expiration: day(1 + (i % 3)), price: 1 } });
+    await page.goto("/groceries");
+    const rail = page.getByTestId("gt-rail");
+    await expect(rail).toBeVisible();
+    const box = async () => rail.boundingBox();
+    await expect.poll(async () => { const b = await box(); return Math.abs(b.y + b.height / 2 - 400); }).toBeLessThan(30);
+    const before = await box();
+    await page.mouse.wheel(0, 900);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    const after = await box();
+    expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(2);
+  });
 });

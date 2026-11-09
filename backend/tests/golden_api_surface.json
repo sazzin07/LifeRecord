@@ -208,6 +208,7 @@
  "POST /api/shopping/bulk-delete",
  "POST /api/shopping/bulk-update",
  "POST /api/shopping/generate",
+ "POST /api/shopping/generate-ai",
  "POST /api/shopping/lists",
  "POST /api/shopping/lists/{lid}/submit",
  "POST /api/shopping/recurring",

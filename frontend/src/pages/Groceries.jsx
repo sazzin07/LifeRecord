@@ -435,6 +435,7 @@ export default function Groceries() {
   const [deleteListId, setDeleteListId] = useState(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(null);   // {ids, listId, source, note}: the last batch the assistant added, until it is kept, undone or dismissed
   const [priceItem, setPriceItem] = useState(null);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState(null);
@@ -569,13 +570,32 @@ export default function Groceries() {
     } catch (err) { toast.error(err.response?.data?.detail || "Could not delete list"); }
   };
 
+  // The assistant reads the kitchen and proposes the list. What it added is remembered (`generated`) so the whole batch can be taken back.
+  const undoGenerate = async (batch) => {
+    try {
+      await api.post("/shopping/bulk-delete", { ids: batch.ids });
+      setGenerated(null);
+      toast.success(`Took back ${batch.ids.length === 1 ? "the item" : `the ${batch.ids.length} items`} it added`);
+      refreshAll();
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not undo that"); }
+  };
   const generateList = async () => {
     setGenerating(true);
+    setGenerated(null);
     try {
-      await api.post("/shopping/generate", null, { params: { days: 7, list_id: selectedListId || undefined } });
-      toast.success("List generated from inventory");
+      const { data } = await api.post("/shopping/generate-ai", null, { params: { days: 7, list_id: selectedListId || undefined }, timeout: 70000 });
+      const ids = data.created_ids || [];
+      if (!ids.length) {
+        toast(data.note || "Your list already covers what you need", { description: "Nothing new to add right now." });
+      } else {
+        const batch = { ids, listId: selectedListId, source: data.source, note: data.note };
+        setGenerated(batch);
+        toast.success(`Added ${ids.length === 1 ? "1 item" : `${ids.length} items`} to your list`, {
+          description: data.note || undefined, duration: 12000, action: { label: "Undo", onClick: () => undoGenerate(batch) },
+        });
+      }
       refreshAll();
-    } catch (err) { toast.error(err.response?.data?.detail || "Could not generate"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not make a list just now"); }
     finally { setGenerating(false); }
   };
 
@@ -674,6 +694,7 @@ export default function Groceries() {
     <div className="gt-shell">
       {!phone && <Rail tabs={GROCERY_TABS} value={tab} onChange={setTab} open={railOpen} onToggle={toggleRail} onCatalog={() => setCatalogOpen(true)} />}
       <div className="gt-main space-y-6">
+      <div className="gt-head2">
       <div className="gt-headrow">
         {phone && (
           <button type="button" className="gt-icon-btn" onClick={() => setDrawerOpen(true)} aria-haspopup="dialog" data-testid="gt-drawer-open">
@@ -690,6 +711,7 @@ export default function Groceries() {
       </div>
 
       <QuickAdd tab={tab} products={products} inventory={inventory} recipeIdeas={recipeIdeas} listItems={listItems} listId={selectedListId} locations={locations} spaceId={selectedSpaceId} setTab={setTab} />
+      </div>
 
       <div role="tabpanel" id="gpanel" aria-label={activeTab.label} className="gt-tabpanel">
           {tab !== "today" && tab !== "shopping" && !TAB_NEEDS[tab].every((k) => have[k]) ? (
@@ -710,7 +732,8 @@ export default function Groceries() {
             <ShoppingTab
               shopping={shopping} items={listItems} selectedListId={selectedListId} setSelectedListId={setSelectedListId} currentList={currentList}
               selectedIds={selectedIds} inventory={inventory} lowStock={lowStock} suggestions={suggestions} recipeIdeas={recipeIdeas} recurring={recurring}
-              loading={loading} generating={generating}
+              loading={loading} generating={generating} generated={generated && generated.listId === selectedListId ? generated : null}
+              onUndoGenerate={() => generated && undoGenerate(generated)} onKeepGenerated={() => setGenerated(null)}
               onToggle={toggleSelect} onQty={changeQuantity} onNewList={() => setListDialogOpen(true)} onDeleteList={setDeleteListId} onBudget={updateBudget}
               onGenerate={generateList} onAddItem={() => { setEditingItem(null); setItemDialogOpen(true); }}
               onEditItem={(it) => { setEditingItem(it); setItemDialogOpen(true); }} onDeleteItem={setDeleteItemId} onHistory={setPriceItem} onSuggest={addSuggestion}
@@ -723,7 +746,7 @@ export default function Groceries() {
       </div>
       {phone && <RailDrawer open={drawerOpen} onOpenChange={setDrawerOpen} tabs={GROCERY_TABS} value={tab} onChange={setTab} onCatalog={() => setCatalogOpen(true)} />}
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>
-        <DialogContent className="gt max-w-6xl max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto">
+        <DialogContent className="gt gt-catalog max-w-6xl max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Catalog</DialogTitle>
             <DialogDescription>Every product you know: put it on a list, in your kitchen, or keep your own.</DialogDescription>

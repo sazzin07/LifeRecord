@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { createKitchen3D } from "./kitchen3d";
 import { adjustQuantity, moveItems, discardItems } from "./inventoryActions";
-import { ELSEWHERE_ID, catOf, daysUntil, expiryLabel, isLow, needsAttention, quantityText } from "./shared";
+import { ELSEWHERE_ID, attentionWords, catOf, daysUntil, expiryLabel, isLow, needsAttention, quantityText } from "./shared";
 import { Sticker, plural } from "./todayParts";
 import { kindLook } from "./todayWidgets";
 
@@ -141,13 +141,13 @@ function Overview({ units, onOpen }) {
       <p className="gt-eyebrow">Open a unit</p>
       <ul className="gt-list">
         {units.map((u) => {
-          const a = u.items.filter(needsAttention).length;
+          const a = attentionWords(u.items);
           const look = kindLook(u.kind);
           return (
             <li key={u.id}>
               <button type="button" className="gt-row" onClick={() => onOpen(u.id)}>
                 <span className="gt-unit" style={{ "--u1": look.u1, "--u2": look.u2 }} aria-hidden="true"><look.icon /></span>
-                <span className="grow"><span className="name">{u.name}</span><span className="gt-note">{plural(u.items.length, "item", "items")}{a > 0 && <> · <b className="warn">{a} need{a === 1 ? "s" : ""} attention</b></>}</span></span>
+                <span className="grow"><span className="name">{u.name}</span><span className="gt-note">{plural(u.items.length, "item", "items")}{a && <> · <b className="warn">{a}</b></>}</span></span>
               </button>
             </li>
           );
@@ -291,7 +291,7 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
   const openCount = k ? k.openCount() : 0;
   const isOpen = (u) => !!k && k.isOpen(toScene(u.id));
   const curOpen = !!cur && isOpen(cur);
-  const att = units.reduce((n, u) => n + u.items.filter(needsAttention).length, 0);
+  const att = attentionWords(units.flatMap((u) => u.items));
   const total = units.reduce((n, u) => n + u.items.length, 0);
 
   let capacity = null;
@@ -342,7 +342,7 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
         <div className="gt-cap">
           {cur ? (
             <>
-              <div><strong>{cur.name}</strong> <span className="gt-note">{plural(cur.items.length, "item", "items")} · {cur.items.filter(needsAttention).length} need attention</span></div>
+              <div><strong>{cur.name}</strong> <span className="gt-note">{plural(cur.items.length, "item", "items")}{attentionWords(cur.items) && ` · ${attentionWords(cur.items)}`}</span></div>
               <div className="gt-cap-r">
                 <span className="gt-fill" role="img" aria-label={capacity ? capacity.word : ""}>{Array.from({ length: 10 }, (_, i) => <i key={i} className={capacity && i < capacity.lit ? "on" : ""} />)}</span>
                 <span className="gt-note">{capacity && capacity.word}</span>
@@ -371,7 +371,7 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
             </>
           ) : (
             <>
-              <div><strong>Your kitchen</strong> <span className="gt-note">{plural(units.length, "space", "spaces")} · {plural(total, "item", "items")} · {att} need attention</span></div>
+              <div><strong>Your kitchen</strong> <span className="gt-note">{plural(units.length, "space", "spaces")} · {plural(total, "item", "items")}{att && ` · ${att}`}</span></div>
               <span className="gt-cap-r">
                 <span className="gt-note">{openCount ? `${openCount} open. Click any door or drawer to shut it.` : "Everything is closed. Click a unit, a door or a drawer."}</span>
                 {openCount > 0 && <button type="button" className="gt-chip" onClick={() => { k.closeAll(); onSelect(null); setSel(null); setRev((r) => r + 1); }}>Close all</button>}

@@ -47,7 +47,7 @@ function Intro({ name, onDone }) {
 
 export function AppShell({ children }) {
   const { user, logout } = useAuth();
-  const { theme, setTheme, bindServer, pull } = useSettings();
+  const { resolvedTheme, setTheme, bindServer, pull } = useSettings();
   const nav = useNavigate();
   const loc = useLocation();
   const [intro, setIntro] = useState(true);
@@ -135,19 +135,19 @@ export function AppShell({ children }) {
           <div className="ml-auto flex items-center gap-2">
             {!phone && (
             <button type="button" data-testid="ai-trigger" aria-label="Open the assistant" aria-haspopup="dialog" onClick={() => openAI()}
-              className="group flex h-11 min-w-[2.75rem] items-center justify-center gap-2 rounded-full sm:h-10 sm:min-w-0 border border-line-strong bg-field px-3 text-sm font-semibold text-foreground transition-[background-color,border-color,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-line-strong hover:bg-hover active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4">
+              className="group flex h-11 min-w-[2.75rem] items-center justify-center gap-2 rounded-full sm:h-10 [@media(pointer:coarse)]:h-11 sm:min-w-0 border border-line-strong bg-field px-3 text-sm font-semibold text-foreground transition-[background-color,border-color,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-line-strong hover:bg-hover active:scale-[0.96] motion-reduce:transition-colors motion-reduce:active:scale-100 sm:pl-3.5 sm:pr-4">
               <Sparkles className="h-4 w-4 text-accent-ink transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:rotate-[18deg] group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:transform-none" aria-hidden="true" />
               <span className="hidden sm:inline">Assistant</span>
             </button>
             )}
-            <button data-testid="theme-toggle" aria-label={theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="grid h-11 w-11 place-items-center rounded-full border border-line-strong bg-field text-foreground transition-[border-color,background-color,transform] duration-200 hover:bg-hover active:scale-95 sm:h-10 sm:w-10">
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <button data-testid="theme-toggle" aria-label={resolvedTheme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"} onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              className="grid h-11 w-11 place-items-center rounded-full border border-line-strong bg-field text-foreground transition-[border-color,background-color,transform] duration-200 hover:bg-hover active:scale-95 sm:h-10 sm:w-10 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11">
+              {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button type="button" data-testid="header-menu" aria-label={`Account menu${user?.name ? `, ${user.name}` : ""}`}
-                  className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-line-strong bg-field text-sm font-semibold text-accent-ink transition-[border-color,transform] duration-200 hover:border-line-strong active:scale-95 sm:h-10 sm:w-10">
+                  className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-line-strong bg-field text-sm font-semibold text-accent-ink transition-[border-color,transform] duration-200 hover:border-line-strong active:scale-95 sm:h-10 sm:w-10 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11">
                   {/* Decorative: the button's label already names the person (the initials would not match it). A fixed size, so a large photo is scaled, not cropped by its own size. */}
                   <span aria-hidden="true" className="block h-[38px] w-[38px] overflow-hidden rounded-full"><UserAvatar size="h-[38px] w-[38px]" className="text-xs" decorative /></span>
                 </button>

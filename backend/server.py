@@ -68,6 +68,7 @@ import two_factor_api
 import profile_api
 import layouts_api
 import ai_tools_groceries
+import shopping_suggest
 import nutrition_api
 import nutrition_plan_api
 import nutrition_suggest_api
@@ -1508,13 +1509,25 @@ async def get_or_create_default_list(db: AsyncSession, user_id: str) -> Shopping
     return lst
 
 
-async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1,
+async def require_own_list(db: AsyncSession, user_id: str, list_id: Optional[str]) -> None:
+    """404 when a list id is given that is not this person's (rows must never point at someone else's list). No id means the default list."""
+    if list_id and not (await db.execute(select(ShoppingList.id).where(ShoppingList.id == list_id, ShoppingList.user_id == user_id))).first():
+        raise HTTPException(404, "List not found")
+
+
+async def add_shopping_item_doc(db: AsyncSession, *args, **kwargs) -> dict:
+    """Put an item on the list, or return the unbought row with that name that is already there."""
+    return (await find_or_add_shopping_item(db, *args, **kwargs))[0]
+
+
+async def find_or_add_shopping_item(db: AsyncSession, name: str, quantity: float = 1,
                                      unit: str = "unit", note: str = "", user_id: str = None,
                                      list_id: str = None, category: Optional[str] = None,
                                      estimated_price: Optional[float] = None,
                                      store: Optional[str] = None, sort_order: int = 0,
                                      storage_location: Optional[str] = None,
-                                     product_id: Optional[str] = None) -> dict:
+                                     product_id: Optional[str] = None) -> tuple:
+    """(row, created). `created` is False when the row was already on the list, so a caller that may undo its own work never touches it."""
     if not list_id:
         default_list = await get_or_create_default_list(db, user_id)
         list_id = default_list.id
@@ -1524,10 +1537,10 @@ async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1
             ShoppingItem.list_id == list_id,
             ShoppingItem.name_lower == name.lower(),
             ShoppingItem.bought == False,
-        )
-    )).scalar_one_or_none()
+        ).order_by(asc(ShoppingItem.created_at))   # nothing stops two unbought rows with one name (two tabs); take the first instead of failing every later add
+    )).scalars().first()
     if existing:
-        return to_dict(existing)
+        return to_dict(existing), False
     doc = ShoppingItem(id=new_id(), user_id=user_id, list_id=list_id, name=name, name_lower=name.lower(),
                        category=category, quantity=quantity, unit=unit,
                        estimated_price=estimated_price, store=store,
@@ -1536,33 +1549,70 @@ async def add_shopping_item_doc(db: AsyncSession, name: str, quantity: float = 1
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
-    return to_dict(doc)
+    return to_dict(doc), True
+
+
+async def _add_suggestions(db: AsyncSession, user_id: str, list_id: str, suggestions: list) -> dict:
+    """Put proposals on the list. Reports only the rows this call inserted (a row that was already there is left alone and not reported),
+    so the ids are exactly what the Undo may delete."""
+    created, reasons = [], {}
+    for s in suggestions:
+        doc, is_new = await find_or_add_shopping_item(db, s["name"], s["quantity"], s["unit"], s.get("reason") or "", user_id, list_id=list_id, category=s.get("category"))
+        if is_new:
+            created.append(doc)
+            reasons[doc["name"]] = s.get("reason", "")
+    return {"added": [d["name"] for d in created], "created_ids": [d["id"] for d in created], "reasons": reasons}
 
 
 async def generate_shopping_doc(db: AsyncSession, days: int = 7, user_id: str = None, list_id: Optional[str] = None) -> dict:
+    """The no-model way: running low, used up, and foods bought again and again. Never random leftovers from old price records."""
     if not list_id:
-        default_list = await get_or_create_default_list(db, user_id)
-        list_id = default_list.id
-    groceries = (await db.execute(
-        select(Grocery).where(Grocery.user_id == user_id)
-    )).scalars().all()
-    stock = {g.name_lower: g for g in groceries}
-    added = []
-    for g in groceries:
-        if g.low_threshold and float(g.quantity) <= float(g.low_threshold):
-            await add_shopping_item_doc(db, g.name, max(1, round(days / 2)), g.unit or "unit", "Running low", user_id, list_id=list_id)
-            added.append(g.name)
-    known_names = [r[0] async for r in await db.stream(
-        select(PriceRecord.name).where(PriceRecord.user_id == user_id).distinct()
-    )]
-    for name in known_names:
-        nl = name.lower()
-        if nl not in stock or float(stock[nl].quantity) <= 0:
-            doc = await add_shopping_item_doc(db, name, 1, "unit", "From your usual buys", user_id, list_id=list_id)
-            if doc["name"] not in added:
-                added.append(doc["name"])
+        list_id = (await get_or_create_default_list(db, user_id)).id
+    days = max(1, min(int(days), 30))
+    snap = await shopping_suggest.kitchen_snapshot(db, user_id, list_id)
+    result = await _add_suggestions(db, user_id, list_id, shopping_suggest.rule_suggestions(snap, days))
     payload = await shopping_payload(db, user_id, list_id=list_id)
-    payload["added"] = added
+    payload.update(result, source="rules")
+    return payload
+
+
+AI_SHOPPING_TIMEOUT = int(os.environ.get("AI_SHOPPING_TIMEOUT_SECONDS", "40"))
+
+
+async def _ask_model_for_list(system: str, text: str) -> str:
+    async def collect():
+        out = []
+        async for kind, value in _provider_stream([{"role": "user", "text": text}], system, new_id(), []):
+            if kind == "text":
+                out.append(value)
+        return "".join(out)
+    return await asyncio.wait_for(collect(), AI_SHOPPING_TIMEOUT)
+
+
+async def generate_shopping_ai_doc(db: AsyncSession, days: int = 7, user_id: str = None, list_id: Optional[str] = None) -> dict:
+    """The assistant reads the kitchen and proposes the list. Without a model (not set up, slow, or an unusable reply) the rule above answers
+    instead and `note` says so; either way the result carries `created_ids` for the Undo."""
+    if not list_id:
+        list_id = (await get_or_create_default_list(db, user_id)).id
+    days = max(1, min(int(days), 30))
+    snap = await shopping_suggest.kitchen_snapshot(db, user_id, list_id)
+    suggestions, source, note = None, "ai", None
+    unavailable = chat_unavailable()
+    if unavailable:
+        source, note = "rules", "The assistant is not available, so this list comes from what is running low and what you buy often."
+    else:
+        await db.commit()   # end the read transaction: no connection held through the wait, and the add below sees what the person added meanwhile
+        try:
+            system, text = shopping_suggest.ai_prompt(snap, days)
+            suggestions = shopping_suggest.parse_suggestions(await _ask_model_for_list(system, text), snap)
+        except Exception:
+            logger.exception("ai shopping list failed")
+            source, note = "rules", "The assistant could not answer just now, so this list comes from what is running low and what you buy often."
+    if suggestions is None:
+        suggestions = shopping_suggest.rule_suggestions(snap, days)
+    result = await _add_suggestions(db, user_id, list_id, suggestions)
+    payload = await shopping_payload(db, user_id, list_id=list_id)
+    payload.update(result, source=source, note=note)
     return payload
 
 
@@ -4232,7 +4282,15 @@ async def submit_purchase(lid: str, body: SubmitPurchaseBody, user: dict = Depen
 
 @api_router.post("/shopping/generate")
 async def gen_shopping(days: int = 7, list_id: Optional[str] = None, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await require_own_list(db, user["_id"], list_id)
     return await generate_shopping_doc(db, days, user_id=user["_id"], list_id=list_id)
+
+
+@api_router.post("/shopping/generate-ai")
+async def gen_shopping_ai(days: int = 7, list_id: Optional[str] = None, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await require_own_list(db, user["_id"], list_id)
+    await usage_limits.check_user_limit(user["_id"], "ai_shopping")
+    return await generate_shopping_ai_doc(db, days, user_id=user["_id"], list_id=list_id)
 
 
 @api_router.get("/prices/{name}")

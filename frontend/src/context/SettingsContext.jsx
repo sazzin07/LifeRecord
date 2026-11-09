@@ -37,12 +37,16 @@ export function SettingsProvider({ children }) {
   setWeekStartsOn(weekStart === "sunday" ? 0 : 1);
   setDefaultMoneyPeriod(moneyPeriod);
 
+  // What is really on screen: "system" resolves to the device's own light or dark, so a control can show the right one.
+  const [resolvedTheme, setResolvedTheme] = useState(() => (typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light"));
+
   useEffect(() => {
     const root = document.documentElement;
     const apply = (t) => {
       if (t === "dark") root.classList.add("dark");
       else if (t === "light") root.classList.remove("dark");
       else root.classList.toggle("dark", window.matchMedia("(prefers-color-scheme: dark)").matches);
+      setResolvedTheme(root.classList.contains("dark") ? "dark" : "light");
     };
     apply(theme);
     store("lm_theme", theme);
@@ -132,12 +136,12 @@ export function SettingsProvider({ children }) {
   };
 
   const value = useMemo(() => ({
-    theme, setTheme: (v) => setPref("theme", v),
+    theme, resolvedTheme, setTheme: (v) => setPref("theme", v),
     animations, setAnimations: (v) => setPref("animations", v),
     weekStart, setWeekStart: (v) => setPref("weekStart", v),
     moneyPeriod, setMoneyPeriod: (v) => setPref("moneyPeriod", v),
     sync, setSync, saving, savedAt, saveError, retrySave, bindServer, pull, resetAll, DEFAULTS,
-  }), [theme, animations, weekStart, moneyPeriod, sync, saving, savedAt, saveError, retrySave, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }), [theme, resolvedTheme, animations, weekStart, moneyPeriod, sync, saving, savedAt, saveError, retrySave, setPref, pull, bindServer]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;
 }

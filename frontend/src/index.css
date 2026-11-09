@@ -229,6 +229,9 @@ html { overflow-anchor: auto; }
 /* Page change: a short fade, nothing that moves layout. */
 @keyframes lm-page-in { from { opacity: 0; transform: translateY(10px); } }
 .lm-page { animation: lm-page-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* A page that holds a fixed box (the Groceries rail) fades in instead of sliding: a transform on its ancestor would make that box position itself inside the page, not the screen. */
+@keyframes lm-page-fade { from { opacity: 0; } }
+.lm-page:has(.gt-rail-slot) { animation-name: lm-page-fade; }
 .no-anim .lm-page { animation: none !important; }
 @media (prefers-reduced-motion: reduce) { .lm-page { animation: none; } }
 

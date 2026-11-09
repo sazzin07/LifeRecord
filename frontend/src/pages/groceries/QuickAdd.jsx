@@ -95,7 +95,7 @@ export function QuickAdd({ tab, products, inventory, recipeIdeas, listItems, lis
           ? (shopping ? '"3 lemons" or "500 g rice"' : space ? `Add a food, or "buy oat milk"` : '"buy oat milk"')
           : shopping ? 'Add to the list: "3 lemons", "500 g rice", or just a name' : space ? `Type a food to put it in ${space.name}, or "buy oat milk"` : 'Type "buy oat milk" to put it on the list'}
         role="combobox" aria-expanded={choices.length > 0} aria-controls="gt-cmd-ac" aria-autocomplete="list" aria-activedescendant={active >= 0 ? `gt-cmd-o${active}` : undefined} />
-      <button type="submit" className="gt-btn cta lg" disabled={busy || !text.trim()}><Plus aria-hidden="true" />Add</button>
+      <button type="submit" className="gt-btn cta" disabled={busy || !text.trim()}><Plus aria-hidden="true" />Add</button>
       {choices.length > 0 && (
         <div className="gt-ac" id="gt-cmd-ac" role="listbox" aria-label="Suggestions">
           {choices.map((c, i) => {

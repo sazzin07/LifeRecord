@@ -44,7 +44,7 @@ const G = {
   box(c) { S(c, "#c9a06a", rr(-0.7, -0.55, 1.4, 1.2, 0.1)); S(c, "#e0bf8a", poly(-0.7, -0.55, 0.7, -0.55, 0.55, -0.82, -0.55, -0.82), 0.06); line(c, "#a37e48", 0.06, (x) => { x.moveTo(0, -0.55); x.lineTo(0, 0.1); }); },
 };
 
-const RULES = [[/ice cream|gelato|sorbet/, "icecream"], [/milk|kefir|^(single |double )?cream$/, "milk"], [/egg/, "egg"], [/bread|loaf|sourdough|bun|roll|bagel|toast/, "bread"], [/banana/, "banana"], [/tomato/, "tomato"], [/spinach|lettuce|salad|kale|cabbage|leaf|herb|basil/, "leaf"],
+const RULES = [[/coffee|espresso/, "coffee"], [/baked beans|chickpea|kidney bean/, "can"], [/ice cream|gelato|sorbet/, "icecream"], [/milk|kefir|^(single |double )?cream$/, "milk"], [/egg/, "egg"], [/bread|loaf|sourdough|bun|roll|bagel|toast/, "bread"], [/banana/, "banana"], [/tomato/, "tomato"], [/spinach|lettuce|salad|kale|cabbage|leaf|herb|basil/, "leaf"],
   [/chicken|turkey|drum|thigh|wing|beef|pork|steak|mince|sausage|bacon|ham|lamb|meat/, "chicken"], [/salmon|fish|tuna|cod|prawn|shrimp|trout/, "fish"], [/cheese|cheddar|mozz|parmesan|feta/, "cheese"], [/yog|skyr|pot$/, "yoghurt"], [/peas?|bean|corn|broccoli|green/, "peas"],
   [/jam|marmalade|preserve|pickle|jar/, "jar"], [/chopped|canned|tin|soup|can$/, "can"], [/oil|vinegar|sauce|ketchup|wine/, "bottle"], [/rice|quinoa|couscous|oats$|lentil/, "rice"], [/cereal|muesli|granola|cornflake/, "cereal"], [/coffee|espresso/, "coffee"],
   [/honey|syrup/, "honey"], [/pizza/, "pizza"], [/ice cream|gelato|sorbet/, "icecream"], [/pasta|spaghetti|noodle|penne/, "pasta"], [/butter|margarine/, "butter"], [/orange juice|juice|smoothie/, "juice"], [/orange|mandarin|clementine/, "orange"],

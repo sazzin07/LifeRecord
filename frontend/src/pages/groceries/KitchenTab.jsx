@@ -38,7 +38,7 @@ const kindMeta = (k) => APPLIANCE_KINDS.find((x) => x.value === k) || APPLIANCE_
 const STATUS = {
   ok: { icon: Check, tone: "text-green-700 dark:text-green-400", label: () => "In stock" },
   short: { icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400", label: (r) => `Need ${+r.shortfall.toFixed(2)} ${r.unit} more` },
-  missing: { icon: Plus, tone: "text-red-600 dark:text-red-400", label: () => "Not in stock" },
+  missing: { icon: Plus, tone: "text-red-700 dark:text-red-400", label: () => "Not in stock" },
   check_units: { icon: CircleHelp, tone: "text-slate-500", label: () => "In stock, units differ" },
 };
 
@@ -58,7 +58,6 @@ function Plate({ e, size }) {
         <img key={ing.name} className={cn("gt-rp", miss.has(ing.name.toLowerCase()) && "miss")} alt="" width={size} height={size} src={Glyph.url(ing.name, "")}
           style={{ "--k": k, "--o": (k - (ings.length - 1) / 2).toFixed(2), "--r": `${TILT[k % TILT.length]}deg` }} />
       ))}
-      {e.can_cook_now && <span className="gt-stamp">Ready!</span>}
     </div>
   );
 }
@@ -83,22 +82,27 @@ function RecipeCard({ e, onAddMissing, onCook, feature = false, goal = null }) {
         <span className={cn("gt-st", hot("energy"))}><b>{per.kcal ?? "—"}</b> kcal</span>
         <span className="gt-note">per serving</span>
       </p>
-      <span className={cn("gt-tag", e.can_cook_now ? "green" : "plain")} style={{ alignSelf: "flex-start" }}>{e.can_cook_now ? "Ready to cook" : `${e.missing.length} missing`}</span>
+      {!e.can_cook_now && <span className="gt-tag plain" style={{ alignSelf: "flex-start" }}>{e.missing.length} missing</span>}
       {e.uses_expiring.length > 0 && (
         <p className="gt-use-first"><Leaf aria-hidden="true" />Uses up {e.uses_expiring.map((u) => `${u.name.toLowerCase()} (${u.expires_in <= 0 ? "today" : `${u.expires_in}d`})`).join(", ")} before it goes off.</p>
       )}
-      <ul className="gt-ing-list">
-        {e.ingredients.map((i) => {
-          const S = STATUS[i.status];
-          return (
-            <li key={i.name}>
-              <S.icon className={cn("h-4 w-4 shrink-0", S.tone)} aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">{i.name} <span className="text-muted-foreground">{fmt(i.needed)} {i.unit}</span></span>
-              <span className={cn("shrink-0 text-xs", S.tone)}>{S.label(i)}</span>
-            </li>
-          );
-        })}
-      </ul>
+      {/* Everything in stock is said once; only what needs a look gets its own row. */}
+      {e.ingredients.every((i) => i.status === "ok")
+        ? <p className="gt-ing-all"><Check className="h-4 w-4 shrink-0 text-green-700 dark:text-green-400" aria-hidden="true" /><span><span className="sr-only">All in stock: </span>{e.ingredients.map((i) => `${i.name} ${fmt(i.needed)} ${i.unit}`.trim()).join(" · ")}</span></p>
+        : (
+          <ul className="gt-ing-list">
+            {e.ingredients.map((i) => {
+              const S = STATUS[i.status];
+              return (
+                <li key={i.name}>
+                  <S.icon className={cn("h-4 w-4 shrink-0", S.tone)} aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{i.name} <span className="text-muted-foreground">{fmt(i.needed)} {i.unit}</span></span>
+                  {i.status !== "ok" ? <span className={cn("shrink-0 text-xs", S.tone)}>{S.label(i)}</span> : <span className="sr-only">In stock</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       <div className="gt-rc-act">
         <button type="button" className="gt-btn cta" onClick={() => onCook(e)}><ChefHat aria-hidden="true" />Cook this</button>
         {e.missing.length > 0 && <button type="button" className="gt-btn" onClick={() => onAddMissing(e)}><ShoppingCart aria-hidden="true" />Add {e.missing.length} to a list</button>}

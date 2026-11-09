@@ -1,3 +1,4 @@
+import { Pill } from "./pills";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Plus, Rows3 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -124,14 +125,14 @@ export function StorageTab({ locations, inventory, selectedId, setSelectedId, de
       <div className="gt-store-head">
         <p className="text-sm text-slate-500">
           {showFlat ? (selected ? "Tap a chip for quick actions, or another space to switch." : "Tap a door to step inside.") : "Open a door, drag food between units, or pick a space below."}
-          {issue === "failed" && " The 3D room could not start here, so this is the flat view."}
-          {issue === "slow" && " The 3D room was too slow on this device, so this is the flat view."}
+          {issue && <span role="status" className="gt-fallback">{issue === "failed" ? " The 3D room could not start here, so this is the flat view." : " The 3D room was too slow on this device, so this is the flat view. Press 3D room to try it again."}</span>}
         </p>
         <div className="flex items-center gap-2">
           {issue !== "failed" && (
-            <Button size="sm" variant="outline" className="gt-tap" onClick={() => setFlatView(!showFlat)} aria-pressed={showFlat}>
-              {showFlat ? <><Box className="h-4 w-4 mr-1" />3D room</> : <><Rows3 className="h-4 w-4 mr-1" />Flat view</>}
-            </Button>
+            <Pill role="group" aria-label="How to see your spaces">
+              <button type="button" className="gt-pill-b" aria-pressed={!showFlat} onClick={() => showFlat && setFlatView(false)}><Box aria-hidden="true" />3D room</button>
+              <button type="button" className="gt-pill-b" aria-pressed={showFlat} onClick={() => !showFlat && setFlatView(true)}><Rows3 aria-hidden="true" />Flat view</button>
+            </Pill>
           )}
           <Button size="sm" variant="outline" className="gt-tap" onClick={() => setLocDialog({ open: true, location: null })}><Plus className="h-4 w-4 mr-1" />Add space</Button>
         </div>

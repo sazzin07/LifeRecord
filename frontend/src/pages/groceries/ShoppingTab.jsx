@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, ChefHat, Clock, History, Loader2, Pencil, Plus, Receipt, Repeat, RotateCcw, Search, ShoppingCart, SlidersHorizontal, Sparkles, Store, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChefHat, Clock, History, Loader2, MoreHorizontal, Pencil, Plus, Receipt, Repeat, RotateCcw, Search, ShoppingCart, SlidersHorizontal, Sparkles, Store, Trash2, X } from "lucide-react";
 import { eur } from "@/lib/api";
 import { ConfidenceBadge } from "@/components/common";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -26,7 +27,7 @@ export function ShopRow({ it, variant = "plan", done, onToggle, onQty, onEdit, o
   const qty = Number(it.quantity) || 0, step = stepFor(it.unit);
   const store = variant === "store";
   return (
-    <li className={cn("gt-srow", variant, done && "is-done")} data-testid="shop-row" onClick={store ? (e) => { if (e.target.tagName !== "INPUT") onToggle(it.id); } : undefined}>
+    <li className={cn("gt-srow", variant, done && "is-done", onToggle && "pick")} data-testid="shop-row" onClick={onToggle ? (e) => { if (!e.target.closest("button, input, label, a, [role=menu], [role=menuitem]")) onToggle(it.id); } : undefined}>
       {store
         ? <input type="checkbox" className="gt-check" checked={!!done} onChange={() => onToggle(it.id)} aria-label={`${it.name} in the basket`} />
         : <label className="gt-tick"><input type="checkbox" className="gt-check" checked={!!done} onChange={() => onToggle(it.id)} aria-label={`${it.name} in the basket`} /></label>}
@@ -49,9 +50,16 @@ export function ShopRow({ it, variant = "plan", done, onToggle, onQty, onEdit, o
       <span className="gt-price">{it.estimated_price ? eur((Number(it.estimated_price) || 0) * qty) : <span className="gt-noprice">No price</span>}{variant === "plan" && it.estimated_price ? <small>{eur(it.estimated_price)} / {it.unit || "unit"}</small> : null}</span>
       {variant === "plan" && (
         <span className="gt-acts">
-          <button type="button" className="gt-btn icon quiet" onClick={() => onHistory(it)} aria-label="Price history"><History aria-hidden="true" /></button>
-          <button type="button" className="gt-btn icon quiet" onClick={() => onEdit(it)} aria-label={`Edit ${it.name}`}><Pencil aria-hidden="true" /></button>
-          <button type="button" className="gt-btn icon quiet bad" onClick={() => onDelete(it.id)} aria-label={`Delete ${it.name}`}><Trash2 aria-hidden="true" /></button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="gt-btn icon quiet" aria-label={`More actions for ${it.name}`}><MoreHorizontal aria-hidden="true" /></button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onHistory(it)}><History className="mr-2 h-4 w-4" aria-hidden="true" />Price history</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onEdit(it)}><Pencil className="mr-2 h-4 w-4" aria-hidden="true" />Edit</DropdownMenuItem>
+              <DropdownMenuItem className="text-red-600 focus:text-red-600" onSelect={() => onDelete(it.id)}><Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       )}
       {variant === "cart" && <button type="button" className="gt-btn icon quiet bad" onClick={() => onDelete(it.id)} aria-label={`Remove ${it.name} from the list`}><X aria-hidden="true" /></button>}
@@ -94,7 +102,7 @@ function Shelf({ title, Icon, list, onPick }) {
 
 export function ShoppingTab({
   shopping, items, selectedListId, setSelectedListId, currentList, selectedIds, inventory, lowStock, suggestions, recipeIdeas, recurring, loading,
-  generating, onToggle, onQty, onNewList, onDeleteList, onBudget, onGenerate, onAddItem, onEditItem, onDeleteItem, onHistory, onSuggest,
+  generating, generated, onUndoGenerate, onKeepGenerated, onToggle, onQty, onNewList, onDeleteList, onBudget, onGenerate, onAddItem, onEditItem, onDeleteItem, onHistory, onSuggest,
   onSpawn, onEditRecurring, onDeleteRecurring, onBulkDelete, onSubmit, onSelectAll, onDeselectAll,
 }) {
   const [mode, setMode] = useState("plan");
@@ -173,11 +181,20 @@ export function ShoppingTab({
               <SelectTrigger className="w-36" aria-label="Filter by category"><SelectValue placeholder="Category" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All</SelectItem>{CATS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
             </Select>
-            <button type="button" className="gt-btn" onClick={onGenerate} disabled={generating || !selectedListId}>
-              {generating ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}Generate
+            <button type="button" className="gt-btn ai" onClick={onGenerate} disabled={generating || !selectedListId} aria-busy={generating}>
+              {generating ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{generating ? "Thinking…" : "Suggest with AI"}
             </button>
             <button type="button" className="gt-btn cta" onClick={onAddItem} disabled={!selectedListId}><Plus aria-hidden="true" />Add item</button>
           </div>
+
+          {generated && (
+            <div className="gt-gen" role="status">
+              <Sparkles aria-hidden="true" />
+              <span><b>{generated.source === "ai" ? "The assistant added" : "Added"} {generated.ids.length === 1 ? "1 item" : `${generated.ids.length} items`}{generated.source === "ai" ? "" : " from your stock"}</b>{generated.note ? <small>{generated.note}</small> : <small>Each one says why it is there. Not what you wanted? Take them all back.</small>}</span>
+              <button type="button" className="gt-btn" onClick={onUndoGenerate}><RotateCcw aria-hidden="true" />Undo</button>
+              <button type="button" className="gt-btn icon quiet" onClick={onKeepGenerated} aria-label="Keep them and close this message"><X aria-hidden="true" /></button>
+            </div>
+          )}
 
           {rows.length > 0 && (
             <div className="gt-bulk">
@@ -196,9 +213,9 @@ export function ShoppingTab({
             <section className="gt-card gt-shop-empty">
               <div className="gt-floats" aria-hidden="true">{[["Whole milk", "Dairy"], ["Sourdough loaf", "Carbohydrates"], ["Apples", "Fruit"]].map(([n, c], i) => <span key={n} style={{ "--d": i }}><Sticker name={n} category={c} size={56} /></span>)}</div>
               <h3>{currentList ? (items.length ? "No matches" : "Your list is empty") : "No list yet"}</h3>
-              <p className="gt-note">{currentList ? (items.length ? "Try a different search or category." : "Add items, generate from inventory, or pick from the shelves below.") : "Create a list to get started."}</p>
+              <p className="gt-note">{currentList ? (items.length ? "Try a different search or category." : "Add items, let the assistant suggest a list, or pick from the shelves below.") : "Create a list to get started."}</p>
               <div className="gt-cta">
-                {currentList ? (<><button type="button" className="gt-btn" onClick={onGenerate} disabled={generating}>{generating ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}Generate</button>
+                {currentList ? (<><button type="button" className="gt-btn ai" onClick={onGenerate} disabled={generating} aria-busy={generating}>{generating ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{generating ? "Thinking…" : "Suggest with AI"}</button>
                   <button type="button" className="gt-btn cta" onClick={onAddItem}><Plus aria-hidden="true" />Add item</button></>)
                   : <button type="button" className="gt-btn cta" onClick={onNewList}><Plus aria-hidden="true" />Create list</button>}
               </div>

@@ -36,6 +36,7 @@ DEFAULTS = {
     "ai_chat": (20, 300, "assistant messages"),
     "ai_transcribe": (10, 100, "voice messages"),
     "ai_receipt": (10, 50, "receipt scans"),
+    "ai_shopping": (6, 40, "list suggestions"),
     "photo_upload": (20, 100, "photo uploads"),
     "account_export": (3, 10, "data exports"),  # builds a .zip of everything, pictures included
 }

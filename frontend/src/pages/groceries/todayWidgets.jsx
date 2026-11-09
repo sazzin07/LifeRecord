@@ -1,4 +1,4 @@
-import { Archive, Check, ChefHat, ChevronRight, Clock, LayoutGrid, Package, Refrigerator, ShoppingCart, Snowflake, TriangleAlert, Plus } from "lucide-react";
+import { Archive, Check, ChefHat, ChevronRight, Clock, LayoutGrid, Package, Refrigerator, ShoppingCart, Snowflake, Trash2, TriangleAlert, Plus } from "lucide-react";
 import { eur } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { daysUntil, expiryLabel, locationOf, quantityText } from "./shared";
@@ -26,12 +26,16 @@ export const kindLook = (k) => KIND_LOOK[k] || KIND_LOOK.custom;
 
 const Empty = ({ title, text, children }) => <div className="gt-empty"><strong>{title}</strong><span className="gt-note">{text}</span>{children}</div>;
 
-function Needs({ items, locations, freezer, actions }) {
+function Needs({ items, locations, freezer, actions, onTrash }) {
   const rows = items.filter(needsYou).sort((a, b) => daysOf(a) - daysOf(b));
+  const gone = rows.filter((g) => daysOf(g) < 0);
   if (!rows.length) return <Empty title="Nothing is about to go off" text="Everything here has more than three days left." />;
   return (
     <>
-      <p className="gt-note">{plural(rows.length, "thing", "things")} · {eur(rows.reduce((s, g) => s + worth(g), 0))} at stake</p>
+      <div className="gt-needs-h">
+        <p className="gt-note">{plural(rows.length, "thing", "things")} · {eur(rows.reduce((s, g) => s + worth(g), 0))} at stake</p>
+        {gone.length > 1 && onTrash && <button type="button" className="gt-btn trash" onClick={() => onTrash(gone)}><Trash2 aria-hidden="true" />Throw away {gone.length} expired</button>}
+      </div>
       <ul className="gt-list">
         {rows.slice(0, 6).map((g) => {
           const d = daysOf(g), tag = expiryLabel(g.expiration), inFridge = locationOf(locations, g)?.kind === "fridge";
@@ -41,8 +45,12 @@ function Needs({ items, locations, freezer, actions }) {
               <div className="grow"><span className="name">{g.name}</span><span className="gt-note">{quantityText(g.quantity, g.unit)} · {locationOf(locations, g)?.name || "Out on the counter"}</span></div>
               {tag && <span className={cn("gt-tag", tag.tone === "red" ? "red" : "amber")}>{tag.text}</span>}
               <span className="gt-uf-act">
-                <button type="button" className="gt-btn" onClick={() => actions.consume(g)} aria-label={`Used one ${g.name}`}>Used one</button>
-                {inFridge && freezer && <button type="button" className="gt-btn" onClick={() => actions.freeze(g, freezer)} aria-label={`Freeze ${g.name}`}><Snowflake aria-hidden="true" />Freeze</button>}
+                {d < 0
+                  ? <button type="button" className="gt-btn trash" onClick={() => actions.discard(g)} aria-label={`Throw away ${g.name}`}><Trash2 aria-hidden="true" />Throw away</button>
+                  : <>
+                    <button type="button" className="gt-btn" onClick={() => actions.consume(g)} aria-label={`Used one ${g.name}`}>Used one</button>
+                    {inFridge && freezer && <button type="button" className="gt-btn" onClick={() => actions.freeze(g, freezer)} aria-label={`Freeze ${g.name}`}><Snowflake aria-hidden="true" />Freeze</button>}
+                  </>}
               </span>
             </li>
           );
@@ -101,8 +109,8 @@ function List({ shopping, selectedListId, actions, setTab }) {
         <>
           <ul className="gt-list">
             {todo.slice(0, 4).map((i) => (
-              <li key={i.id} className="gt-row">
-                <label className="gt-tick"><input type="checkbox" className="h-5 w-5 accent-[var(--accent-ink)]" checked={false} onChange={() => actions.tick(i)} aria-label={`${i.name} in the basket`} /></label>
+              <li key={i.id} className="gt-row pick" onClick={(e) => { if (!e.target.closest("button, input, label, a")) actions.tick(i); }}>
+                <label className="gt-tick"><input type="checkbox" className="gt-check" checked={false} onChange={() => actions.tick(i)} aria-label={`${i.name} in the basket`} /></label>
                 <Sticker name={i.name} category={i.category} size={32} />
                 <span className="grow"><span className="name">{i.name}</span><span className="gt-note">{quantityText(i.quantity, i.unit)}</span></span>
                 {Number(i.estimated_price) ? <span className="tabular-nums">{eur(Number(i.estimated_price) * Number(i.quantity))}</span> : <span className="gt-noprice">No price</span>}

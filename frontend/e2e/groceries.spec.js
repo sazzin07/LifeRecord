@@ -272,11 +272,12 @@ test.describe("Groceries kitchen", () => {
     try {
       await page.reload();
       await page.getByRole("tab", { name: "Shopping" }).click();
-      await page.getByRole("button", { name: `Delete ${name}` }).click();
+      await page.getByRole("button", { name: `More actions for ${name}` }).click();
+      await page.getByRole("menuitem", { name: "Delete" }).click();
       await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
       await expect(page.getByRole("alertdialog")).toHaveCount(0);
       await expect(page.getByText("Could not delete")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: `Delete ${name}` })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: `More actions for ${name}` })).toHaveCount(0);
       await expect.poll(async () => (await (await apiContext.get("/api/shopping")).json()).items.some((i) => i.id === item.id)).toBe(false);
     } finally {
       await apiContext.post("/api/shopping/bulk-delete", { data: { ids: [item.id] } });

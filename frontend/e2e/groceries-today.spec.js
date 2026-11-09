@@ -41,6 +41,53 @@ test.describe("Groceries Today", () => {
     await expect.poll(async () => (await (await fresh.api.get("/api/groceries")).json()).find((g) => g.name === "Whole milk").storage_location).toBe("Freezer");
   });
 
+  test("expired food can be thrown away in one tap, one at a time or all together, and put back with Undo", async ({ freshUserPage: { page, fresh } }) => {
+    await stock(fresh);
+    const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    for (const name of ["Old yoghurt", "Lettuce"]) await fresh.api.post("/api/groceries", { data: { name, quantity: 1, unit: "unit", category: "Dairy", storage_location: "Fridge", expiration: day(-3), price: 1 } });
+    const names = async () => (await (await fresh.api.get("/api/groceries")).json()).map((g) => g.name).sort();
+    await page.goto("/groceries");
+    const hero = page.getByRole("region", { name: "Today at a glance" });
+    await expect(hero).toContainText("3 things need you today.");
+
+    // one at a time, from its own row (an expired row offers Throw away, not Used one)
+    await expect(page.getByRole("button", { name: "Used one Old yoghurt" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Throw away Lettuce" }).click();
+    await expect.poll(names).toEqual(["Old yoghurt", "Rice", "Whole milk"]);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(names).toEqual(["Lettuce", "Old yoghurt", "Rice", "Whole milk"]);
+
+    // all of them, after a yes
+    await hero.getByRole("button", { name: /Throw away 2 expired/ }).click();
+    await expect(page.getByRole("alertdialog")).toContainText("Old yoghurt");
+    await page.getByRole("alertdialog").getByRole("button", { name: "Throw away" }).click();
+    await expect.poll(names).toEqual(["Rice", "Whole milk"]);
+    await expect(hero).toContainText("One thing needs you today.");
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(names).toEqual(["Lettuce", "Old yoghurt", "Rice", "Whole milk"]);
+  });
+
+  test("customising: cards move only by dragging their handle (or the arrow keys on it), and the order is saved", async ({ freshUserPage: { page, fresh } }) => {
+    await stock(fresh);
+    await page.setViewportSize({ width: 1280, height: 1400 });   // tall, so no card sits at the edge where the page scrolls by itself
+    await page.goto("/groceries");
+    await page.getByRole("button", { name: "Customise" }).click();
+    await expect(page.getByRole("button", { name: /^Move .* earlier$/ })).toHaveCount(0);   // no arrow buttons any more
+    const order = async () => (await (await fresh.api.get("/api/layouts/groceries")).json()).layout.widgets.map((w) => w.id);
+    const first = page.getByRole("button", { name: /^Move Needs you/ }), second = page.getByRole("region", { name: "Your kitchen" });
+    await first.scrollIntoViewIfNeeded();
+    const a = await first.boundingBox(), b = await second.boundingBox();
+    await page.mouse.move(a.x + 12, a.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(order).toEqual(["kitchen", "needs", "list", "cook", "low", "risk", "week"]);
+
+    await page.getByRole("button", { name: /^Move Needs you/ }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(order).toEqual(["kitchen", "list", "needs", "cook", "low", "risk", "week"]);
+  });
+
   test("the layout is saved on the server and is there after a reload", async ({ freshUserPage: { page, fresh } }) => {
     await stock(fresh);
     await page.goto("/groceries");

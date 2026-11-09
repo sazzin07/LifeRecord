@@ -42,10 +42,11 @@ export function RailTabs({ tabs, value, onChange, label, iconOnly = false }) {
   );
 }
 
-/* Tablet and desktop: a sticky rail beside the page. The three-bar button folds it to icons (and back); the choice is remembered by the page. */
+/* Tablet and desktop: a rail beside the page that stays on screen, centred vertically, while the page scrolls. The three-bar button folds it to icons (and back); the choice is remembered by the page. */
 export function Rail({ tabs, value, onChange, open, onToggle, onCatalog }) {
   return (
-    <nav className="gt gt-rail" data-open={open || undefined} data-testid="gt-rail" aria-label="Groceries">
+    <div className="gt-rail-slot" data-open={open || undefined} style={{ animation: "none" }}>
+    <nav className="gt-rail" data-open={open || undefined} data-testid="gt-rail" aria-label="Groceries">
       <button type="button" className="gt-rail-b gt-rail-burger" aria-expanded={open} aria-controls="gt-rail-body" onClick={onToggle} data-testid="gt-rail-toggle"
         title={open ? undefined : "Show the section names"}>
         <Menu aria-hidden="true" /><span className="gt-rail-l">Menu</span>
@@ -58,6 +59,7 @@ export function Rail({ tabs, value, onChange, open, onToggle, onCatalog }) {
         </button>
       </div>
     </nav>
+    </div>
   );
 }
 

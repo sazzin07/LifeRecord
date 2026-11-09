@@ -468,7 +468,7 @@ export function createKitchen3D() {
     if (!u || overview) {   // the main view: step back so the whole row is in sight
       if (!units.length) return;
       const x0 = Math.min(...units.map((q) => q.x - q.w / 2)), x1 = Math.max(...units.map((q) => q.x + q.w / 2)), hh = Math.max(...units.map((q) => q.h));
-      const dW = ((x1 - x0 + (overview ? 1.7 : 0.9)) / 2) / (Math.tan(fov / 2) * aspect), dH = ((hh + 0.7) / 2) / Math.tan(fov / 2);
+      const dW = ((x1 - x0 + (overview ? 1.7 : 0.9)) / 2) / (Math.tan(fov / 2) * aspect), dH = ((hh + 0.5) / 2) / Math.tan(fov / 2);
       cam.dist.t = Math.max(dW, dH, 3); elBase = overview ? 0.17 : 0.1; cam.fx.t = (x0 + x1) / 2; cam.fy.t = Math.min(hh * 0.5, 0.95); return;
     }
     const needH = (u.h + 0.62) * 1.0, needW = (u.w + (u.doors.length ? u.w * 0.95 : 0.4) + 0.5);
@@ -824,7 +824,7 @@ export function createKitchen3D() {
       const bw = b.offsetWidth || 96; const x = clamp((p.x * 0.5 + 0.5) * r.width, bw / 2 + 8, r.width - bw / 2 - 8), y = clamp((-p.y * 0.5 + 0.5) * r.height, 8, r.height - 42); b.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, 0)`;
       const op = u.pv > 0.3;
       const txt = `${u.name}|${u.count}|${u.alerts}|${op}`;
-      if (lastTxt.get(u.id) !== txt) { lastTxt.set(u.id, txt); b.classList.toggle("on", op); b.classList.toggle("alert", u.alerts > 0); b.innerHTML = `<span>${esc(u.name)}</span><b>${u.count}</b><span class="sr-only"> items${u.alerts ? `, ${u.alerts} need attention` : ""}</span>`; b.setAttribute("aria-pressed", op); }
+      if (lastTxt.get(u.id) !== txt) { lastTxt.set(u.id, txt); b.classList.toggle("on", op); b.classList.toggle("alert", u.alerts > 0); b.innerHTML = `<span>${esc(u.name)}</span><b>${u.count}</b><span class="sr-only"> items${u.alerts ? `, ${u.alerts} low or going off soon` : ""}</span>`; b.setAttribute("aria-pressed", op); }
       b.classList.toggle("drop", dropHover === u.id); const hide = u.id === openId || Math.abs(p.x) > 1.02;   // the open unit and anything out of view need no label
       b.style.opacity = hide ? 0 : 1; b.style.pointerEvents = hide ? "none" : "auto";
     });

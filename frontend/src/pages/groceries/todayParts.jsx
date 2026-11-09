@@ -57,7 +57,7 @@ export function Sticker({ name, category, size = 36, className = "gt-sticker" })
 export function RingArcs({ parts, total }) {
   const id = useId().replace(/:/g, "");
   const used = parts.filter((p) => p.n > 0);
-  const gap = used.length > 1 ? 1 : 0;
+  const gap = 0;   // no breaks: the ring is one closed circle, the shares simply meet
   let at = 0;
   return (
     <>

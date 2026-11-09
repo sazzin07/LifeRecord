@@ -43,7 +43,18 @@ $ErrorActionPreference = $prevEap
 if ($LASTEXITCODE -ne 0) { Write-Warning "Database migrations did not finish (see the message above). Pages that need the new columns will fail until they do." }
 Pop-Location
 
-# 2. Backend
+# 2. Backend. It is not started with --reload, so one that was already running keeps the code it started with: if any backend source file
+# is newer than that process, stop it here and start it again, so a new route or fix is never silently missing.
+if (Test-Port 8000) {
+    $conn = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    $proc = if ($conn) { Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue } else { $null }
+    $newest = Get-ChildItem -Path $backendDir -Filter *.py -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "\\(\.venv|__pycache__|tests)\\" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($proc -and $newest -and $newest.LastWriteTime -gt $proc.StartTime) {
+        Write-Host "Backend code changed since it started ($($newest.Name)): restarting it."
+        Stop-Process -Id $proc.Id -Force
+        Start-Sleep -Seconds 2
+    }
+}
 if (-not (Test-Port 8000)) {
     Start-Process -FilePath "$backendDir\.venv\Scripts\python.exe" -ArgumentList "-m","uvicorn","server:app","--host","0.0.0.0","--port","8000","--log-level","info" -WorkingDirectory $backendDir -WindowStyle Hidden -RedirectStandardOutput "$PSScriptRoot\logs\backend.log" -RedirectStandardError "$PSScriptRoot\logs\backend.err.log"
     Write-Host "Backend starting on port 8000..."

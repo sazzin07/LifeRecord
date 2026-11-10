@@ -20,11 +20,12 @@ const readFlat = () => { try { return localStorage.getItem(FLAT_KEY) === "1"; } 
 
 /** Same box as the room, so nothing moves when the room arrives. */
 function StageSkeleton() {
+  const listOn = (() => { try { return localStorage.getItem("gt-stage-list") !== "0"; } catch { return true; } })();   // the side list may have been put away: the placeholder keeps its shape
   return (
     <Busy label="Loading the kitchen">
-      <div className="gt-stage" data-skeleton="" aria-hidden="true">
+      <div className="gt-stage" data-list={listOn ? "on" : "off"} data-skeleton="" aria-hidden="true">
         <div className="gt-scene"><div className="gt-k3d"><span className="sk-ph" style={{ position: "absolute", inset: 0 }} /></div><div className="gt-chipbar"><span className="gt-chip sk-ph">Fridge 0</span></div><div className="gt-cap"><span className="sk-ph">Your kitchen</span></div></div>
-        <div className="gt-side"><div className="gt-card"><p className="gt-eyebrow"><span className="sk-ph">Open a unit</span></p></div></div>
+        {listOn && <div className="gt-side"><div className="gt-card"><p className="gt-eyebrow"><span className="sk-ph">Open a unit</span></p></div></div>}
       </div>
     </Busy>
   );

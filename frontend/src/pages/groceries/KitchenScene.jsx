@@ -24,7 +24,7 @@ const KINDS = {
     inside: "from-emerald-50 to-white dark:from-emerald-950 dark:to-slate-800", glow: "rgba(167,243,208,0.55)",
   },
   freezer: {
-    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-44 md:h-52",
+    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-60 md:h-64",
     hero: "w-64 md:w-72", heroH: "h-80 md:h-96",
     mini: "w-14", miniH: "h-16",
     shelves: 3, hinge: "right", doors: 1,
@@ -33,7 +33,7 @@ const KINDS = {
     inside: "from-cyan-100 to-white dark:from-cyan-950 dark:to-slate-900", glow: "rgba(165,243,252,0.6)",
   },
   pantry: {
-    wall: "w-[calc(50%-0.75rem)] md:w-52", wallH: "h-60 md:h-64",
+    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-60 md:h-64",
     hero: "w-64 md:w-80", heroH: "h-[26rem] md:h-[27rem]",
     mini: "w-16", miniH: "h-24",
     shelves: 4, hinge: "split", doors: 2,
@@ -42,7 +42,7 @@ const KINDS = {
     inside: "from-amber-100 to-orange-50 dark:from-stone-900 dark:to-amber-950", glow: "rgba(253,230,138,0.5)",
   },
   custom: {
-    wall: "w-[calc(50%-0.75rem)] md:w-40", wallH: "h-44 md:h-52",
+    wall: "w-[calc(50%-0.75rem)] md:w-44", wallH: "h-60 md:h-64",
     hero: "w-64 md:w-72", heroH: "h-80 md:h-96",
     mini: "w-14", miniH: "h-16",
     shelves: 3, hinge: "left", doors: 1,
@@ -253,12 +253,11 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
   const selected = units.find((u) => u.id === selectedId) || null;
   const alerts = selected ? attentionWords(selected.items) : "";
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-stone-100 to-stone-200 px-4 pb-0 pt-6 dark:from-slate-900 dark:to-slate-950 md:px-8"
+    <div className="gt-flat relative overflow-hidden px-4 pb-0 pt-8 md:px-10"
       role="group" aria-label="Kitchen storage">
-      <div aria-hidden="true" className="absolute inset-0 opacity-[0.07] dark:opacity-[0.12]"
-        style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-      <div aria-hidden="true" className="absolute -top-10 right-10 h-40 w-64 rotate-12 rounded-full bg-amber-200/40 blur-3xl dark:bg-sky-300/10" />
-      <div className="relative flex flex-wrap items-end justify-center gap-x-4 gap-y-6 pb-5 md:gap-x-6">
+      <div aria-hidden="true" className="gt-flat-grid absolute inset-0" />
+      <div aria-hidden="true" className="gt-flat-glow absolute" />
+      <div className="relative flex flex-wrap items-end justify-center gap-x-5 gap-y-8 pb-6 md:gap-x-8">
         {units.map((u) => {
           const mode = !selected ? "wall" : u.id === selected.id ? "hero" : "mini";
           const cfg = kindOf(u.kind);
@@ -271,7 +270,7 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
               )}>
               <Unit unit={u} mode={mode} onSelect={onSelect} onEdit={onEditItem} onMore={onToggleDetails} />
               {mode === "mini" && (
-                <span className="max-w-full text-center text-[11px] leading-tight text-slate-600 dark:text-slate-300">
+                <span className="gt-flat-tag max-w-full text-center text-[11px] leading-tight">
                   <span className="block truncate font-medium">{u.name}</span>
                   <span className={cn("block", a > 0 && "font-semibold text-red-600 dark:text-red-400")}>{u.items.length}{a > 0 ? ` · ${a}!` : ""}</span>
                 </span>
@@ -279,17 +278,17 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
               {mode === "hero" && (
                 <div className="flex w-full flex-col items-center gap-2 animate-in fade-in motion-reduce:animate-none" style={{ animationDelay: "400ms", animationFillMode: "backwards" }}>
                   <div className="flex items-center gap-3">
-                    <p className="text-center text-sm font-semibold leading-tight">
+                    <p className="gt-flat-name text-center text-sm font-semibold leading-tight">
                       {u.name}
-                      <span className="block text-xs font-normal text-slate-500">
+                      <span className="block text-xs font-normal opacity-75">
                         {u.items.length} item{u.items.length !== 1 ? "s" : ""}{alerts && <span className="font-semibold text-red-600 dark:text-red-400"> · {alerts}</span>}
                       </span>
                     </p>
-                    <Button size="icon" variant="outline" className="h-8 w-8 bg-background/80" onClick={onAddItem} aria-label={`Add item to ${u.name}`}><Plus className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="outline" className="gt-flat-btn h-8 w-8" onClick={onAddItem} aria-label={`Add item to ${u.name}`}><Plus className="h-4 w-4" /></Button>
                   </div>
                   <div className="flex w-full gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 bg-background/80" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />All spaces</Button>
-                    <Button size="sm" className="flex-1 bg-emerald-700 text-white hover:bg-emerald-700" onClick={onToggleDetails} aria-expanded={detailsOpen}>
+                    <Button variant="outline" size="sm" className="gt-flat-btn flex-1" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />All spaces</Button>
+                    <Button size="sm" className="gt-flat-cta flex-1" onClick={onToggleDetails} aria-expanded={detailsOpen}>
                       {detailsOpen ? <>Hide details<ChevronUp className="ml-1 h-4 w-4" /></> : <>More details<ChevronDown className="ml-1 h-4 w-4" /></>}
                     </Button>
                   </div>
@@ -299,7 +298,7 @@ export function KitchenScene({ units, selectedId, onSelect, onBack, detailsOpen,
           );
         })}
       </div>
-      <div aria-hidden="true" className="relative -mx-4 h-5 border-t border-black/10 bg-gradient-to-b from-stone-400 to-stone-500 dark:from-slate-700 dark:to-slate-800 md:-mx-8" />
+      <div aria-hidden="true" className="gt-flat-floor relative -mx-4 md:-mx-10" />
     </div>
   );
 }

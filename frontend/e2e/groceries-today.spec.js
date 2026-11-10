@@ -79,13 +79,58 @@ test.describe("Groceries Today", () => {
     const a = await first.boundingBox(), b = await second.boundingBox();
     await page.mouse.move(a.x + 12, a.y + 12);
     await page.mouse.down();
-    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 });
+    const others = () => page.evaluate(() => [...document.querySelectorAll(".gt-w:not(.held)")].map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y + scrollY)]; }));
+    const before = await others();
+    await page.mouse.move(b.x + b.width / 2 + 60, b.y + b.height / 2, { steps: 12 });
+    expect(await others()).toEqual(before);                                           // nothing reflows while a card is held
+    await expect(page.locator(".gt-w[data-drop]")).toHaveCount(1);                    // a marker shows where it will land
+    const held = await page.locator(".gt-w.held .gt-grip").boundingBox();
+    expect(Math.abs(held.x + 12 - (b.x + b.width / 2 + 60))).toBeLessThan(40);        // and the card is under the pointer where it was grabbed
     await page.mouse.up();
     await expect.poll(order).toEqual(["kitchen", "needs", "list", "cook", "low", "risk", "week"]);
 
     await page.getByRole("button", { name: /^Move Needs you/ }).focus();
     await page.keyboard.press("ArrowRight");
     await expect.poll(order).toEqual(["kitchen", "list", "needs", "cook", "low", "risk", "week"]);
+  });
+
+  test("the freshness ring: exact shares, a closed circle, a zero share draws nothing, changes slide instead of jumping, empty says so", async ({ freshUserPage: { page, fresh } }) => {
+    await fresh.api.post("/api/storage-locations", { data: { name: "Pantry", kind: "pantry", sort_order: 0 } });
+    const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    for (let i = 0; i < 21; i++) await fresh.api.post("/api/groceries", { data: { name: `Item ${i}`, quantity: 1, unit: "unit", category: "Pantry", storage_location: "Pantry", expiration: day(i < 15 ? 30 : -3), price: 1 } });
+    await page.goto("/groceries");
+    const ring = page.locator(".gt-ring");
+    const arcs = async () => Object.fromEntries(await ring.locator(".gt-ring-arc").evaluateAll((els) => els.map((e) => [e.dataset.key, Number(e.dataset.len)])));
+    await expect(ring.locator(".gt-ring-mid")).toContainText("71");
+    await expect(ring.locator(".gt-ring-mid")).toContainText("% fresh");
+    const a = await arcs();
+    expect(a.gone).toBeCloseTo((6 / 21) * 100, 2);
+    expect(a.fresh).toBeCloseTo((15 / 21) * 100, 2);
+    expect(a.soon).toBe(0);                                                            // nothing drawn for a zero share
+    expect(a.gone + a.soon + a.fresh).toBeCloseTo(100, 2);                              // a closed circle
+    await expect(ring).toHaveAttribute("aria-label", /71 percent fresh: 15 items fresh, 0 going off soon, 6 gone off/);
+    await expect(ring.locator(".gt-ring-track")).toHaveCount(1);                       // the full track underneath
+
+    // a change slides from the old value: sample the pink arc while the expired food is thrown away
+    await page.getByRole("region", { name: "Today at a glance" }).getByRole("button", { name: /Throw away 6 expired/ }).click();
+    await page.evaluate(() => { window.__dash = []; const arc = document.querySelector('.gt-ring-arc[data-key="gone"]'); const t0 = performance.now(); const tick = () => { window.__dash.push(parseFloat(getComputedStyle(arc).strokeDasharray)); if (performance.now() - t0 < 1600) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+    await page.getByRole("alertdialog").getByRole("button", { name: "Throw away" }).click();
+    await expect.poll(async () => (await arcs()).fresh).toBe(100);
+    await expect(ring.locator(".gt-ring-mid")).toContainText("100");
+    await page.waitForTimeout(1700);
+    const samples = (await page.evaluate(() => window.__dash)).filter((n) => !Number.isNaN(n));
+    const seq = samples;
+    expect(Math.max(...seq)).toBeGreaterThan(20);                                     // it started from the old length...
+    expect(seq.some((n) => n > 1 && n < 27)).toBe(true);                               // ...passed through the values in between...
+    expect(seq[seq.length - 1]).toBeLessThan(0.5);                                    // ...and landed on none
+    for (let i = 1; i < seq.length; i++) expect(seq[i]).toBeLessThanOrEqual(seq[i - 1] + 0.01);   // never jumping back up
+
+    // nothing at all: an empty track and an em dash, no NaN
+    for (const g of await (await fresh.api.get("/api/groceries")).json()) await fresh.api.delete(`/api/groceries/${g.id}`);
+    await page.reload();
+    await expect(ring.locator(".gt-ring-mid")).toContainText("—");
+    await expect(ring).toHaveAttribute("aria-label", "Nothing in stock to measure");
+    expect(Object.values(await arcs()).every((n) => n === 0)).toBe(true);
   });
 
   test("the layout is saved on the server and is there after a reload", async ({ freshUserPage: { page, fresh } }) => {

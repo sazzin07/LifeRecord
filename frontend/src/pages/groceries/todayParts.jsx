@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Glyph } from "./glyphs";
 import { daysUntil, needsYou as stockNeedsYou } from "./shared";
+import { ringArcs } from "./ringMath";
 
 /* Small pieces and figures the Today page shares between its hero and its widgets. */
 export const qtyOf = (g) => Number(g.quantity) || 0;
@@ -52,13 +53,11 @@ export function Sticker({ name, category, size = 36, className = "gt-sticker" })
   return <img className={className} alt="" width={size} height={size} src={Glyph.url(name, category)} />;
 }
 
-/** The shares of one ring on a 100-unit path, so each is a plain percentage. The ring is drawn once, whole, and a single clockwise sweep
- *  uncovers it (a mask), so it always finishes as a closed circle however many shares it has; later changes slide the arcs into place. */
+/** The shares of one ring (see ringMath.js for the numbers). The ring is drawn whole and a single clockwise sweep (a mask) uncovers it the
+ *  first time, so it always finishes as a closed circle. Every share is always in the drawing, a zero one hidden (opacity 0), so a change in the data slides each arc from where it was instead of popping in. */
 export function RingArcs({ parts, total }) {
   const id = useId().replace(/:/g, "");
-  const used = parts.filter((p) => p.n > 0);
-  const gap = 0;   // no breaks: the ring is one closed circle, the shares simply meet
-  let at = 0;
+  const arcs = ringArcs(parts, total);
   return (
     <>
       <defs>
@@ -67,11 +66,7 @@ export function RingArcs({ parts, total }) {
         </mask>
       </defs>
       <g mask={`url(#gt-ring-${id})`}>
-        {used.map((p) => {
-          const len = Math.max(0.5, (p.n / total) * 100 - gap), start = at + gap / 2;
-          at += (p.n / total) * 100;
-          return <circle key={p.key} className="gt-ring-arc" cx="64" cy="64" r="52" pathLength="100" style={{ "--len": len.toFixed(2), "--at": (-start).toFixed(2), stroke: p.color }} />;
-        })}
+        {arcs.map((a) => <circle key={a.key} className="gt-ring-arc" cx="64" cy="64" r="52" pathLength="100" data-key={a.key} data-len={a.len} style={{ "--len": a.draw.toFixed(3), "--at": (-a.drawStart).toFixed(3), stroke: a.color }} />)}
       </g>
     </>
   );

@@ -73,8 +73,10 @@
 .gt-ring { position: relative; width: 168px; height: 168px; flex: none; }
 .gt-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
 .gt-ring-track, .gt-ring-arc { fill: none; stroke-width: 11; }
+.gt-ring-arc { stroke-linecap: round; transition: stroke-dasharray 0.9s var(--gt-ease), stroke-dashoffset 0.9s var(--gt-ease), opacity 0.3s; }   /* each colour ends in a soft round edge; an empty share is hidden, since a round cap would otherwise show a dot */
+.gt-ring-arc[data-len="0"] { opacity: 0; }
 .gt-ring-track { stroke: var(--gt-bar); }
-.gt-ring-arc { stroke-dasharray: var(--len) 100; stroke-dashoffset: var(--at); transition: stroke-dasharray 0.9s var(--gt-ease), stroke-dashoffset 0.9s var(--gt-ease); }
+.gt-ring-arc { stroke-dasharray: var(--len) 100; stroke-dashoffset: var(--at); }
 .gt-ring-sweep { fill: none; stroke: #fff; stroke-width: 26; stroke-dasharray: 100 100; animation: gt-sweep 1.25s cubic-bezier(0.45, 0, 0.2, 1) 0.3s both; }
 @media (prefers-reduced-motion: reduce) { .gt-ring-sweep { animation: none; } }
 .gt-ring-mid { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
@@ -280,10 +282,12 @@
 /* ==================================================================
    Storage: the 3D kitchen, its chips and caption, and the side panel
    ================================================================== */
-.gt-stage { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+.gt-stage { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+.gt-stage[data-list="off"] { grid-template-columns: minmax(0, 1fr); }
 @container (max-width: 980px) { .gt-stage { grid-template-columns: minmax(0, 1fr); } }
 .gt-scene { position: relative; border-radius: 28px; border: 1px solid var(--line); overflow: hidden; background: #1a141e; box-shadow: var(--card-edge); }
-.gt-k3d { position: relative; height: clamp(480px, 66vh, 720px); }
+.gt-frame { position: relative; }
+.gt-k3d { position: relative; height: clamp(520px, 72vh, 820px); }
 .gt-k3d canvas { cursor: default; }
 .gt-k3d:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -4px; border-radius: 26px; }
 .gt-k3d-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -529,7 +533,7 @@ button.gt-row:hover, .gt-row.on { background: var(--hover); }
    the rail inside is fixed, so it keeps the slot's left edge but not its place in the scroll. It is not a size container: that would trap a fixed box. */
 .gt-rail-slot { width: 58px; transition: width 0.4s var(--gt-ease); }
 .gt-rail-slot[data-open] { width: 184px; }
-.gt-rail { position: fixed; top: 50%; transform: translateY(-50%); z-index: 5; display: grid; gap: 4px; width: 184px; padding: 6px; border-radius: 28px; background: var(--gt-tile); border: 1px solid var(--line); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.55); transition: width 0.4s var(--gt-ease); }
+.gt-rail { position: fixed; top: calc(50% + 2rem); transform: translateY(-50%); z-index: 5; display: grid; gap: 4px; width: 184px; padding: 6px; border-radius: 28px; background: var(--gt-tile); border: 1px solid var(--line); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.55); transition: width 0.4s var(--gt-ease); }
 .gt-rail:not([data-open]) { width: 58px; }
 @media (max-height: 560px) { .gt-rail { top: 5rem; transform: none; } }
 .gt-rail-body { display: grid; gap: 4px; }
@@ -639,3 +643,76 @@ button.gt-row:hover, .gt-row.on { background: var(--hover); }
 /* The Catalog is a dense list: on a touch screen every control in it is a full-size target */
 @media (pointer: coarse) { .gt-catalog button, .gt-catalog [role="combobox"], .gt-catalog input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; min-width: 44px; } }
 .gt-fallback { color: var(--gt-amber); }
+
+/* the room's own controls: quiet, bottom right of the stage, one timing */
+.gt-cam { position: absolute; right: 14px; bottom: 14px; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: rgba(14, 9, 18, 0.8); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.14); opacity: 0.92; transition: opacity 0.25s var(--gt-ease); }
+.gt-frame:hover .gt-cam, .gt-cam:focus-within { opacity: 1; }
+.gt-camb { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 34px; height: 34px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: #fff; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
+.gt-camb:hover { background: rgba(255, 255, 255, 0.16); }
+.gt-camb:active { transform: scale(0.95); }
+.gt-camb:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.gt-camb[aria-pressed="true"] { background: rgba(255, 255, 255, 0.2); }
+.gt-camb svg { width: 17px; height: 17px; flex: none; }
+.gt-camb.wide { padding: 0 12px 0 10px; margin: 0 2px; }
+.gt-camb kbd { padding: 0 5px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.35); font: inherit; font-size: 10.5px; line-height: 16px; opacity: 0.8; }
+.gt-hint { position: absolute; left: 50%; top: 14px; translate: -50% 0; z-index: 6; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 28px); padding: 6px 6px 6px 16px; border-radius: 999px; background: rgba(14, 9, 18, 0.72); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.16); color: #fff; font-size: 13px; animation: gt-rise 0.5s var(--gt-ease) both 0.6s; }
+.gt-ulabel > span:first-child { max-width: var(--lw, none); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-ulabel:hover, .gt-ulabel:focus-visible, .gt-ulabel.on { z-index: 3; }
+.gt-ulabel:hover > span:first-child, .gt-ulabel:focus-visible > span:first-child, .gt-ulabel.on > span:first-child { max-width: none; }
+@media (max-width: 1100px) { .gt-cam .gt-camb.rot { display: none; } .gt-hint { display: none; } }
+@media (pointer: coarse) { .gt-camb, .gt-hint .gt-chip { min-height: 44px; min-width: 44px; } }
+.gt-side[hidden] { display: none; }
+.gt-ulabel.tiny { padding: 0 5px; gap: 0; }
+.gt-ulabel.tiny:not(:hover):not(:focus-visible):not(.on) > span:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }   /* out of sight, still the button's name */
+.gt-ulabel.tiny:hover, .gt-ulabel.tiny:focus-visible, .gt-ulabel.tiny.on { gap: 8px; padding: 0 6px 0 12px; }
+
+/* the flat view: the same dark orchid stage as the 3D room, spaces on one floor line */
+.gt-flat { border-radius: 28px; border: 1px solid var(--line); background: radial-gradient(120% 90% at 50% 0%, #2c2033 0%, #1a141e 55%, #120d16 100%); color: #fff; box-shadow: var(--card-edge); }
+.gt-flat-grid { opacity: 0.07; background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 40px 40px; -webkit-mask-image: linear-gradient(180deg, #000, transparent 85%); mask-image: linear-gradient(180deg, #000, transparent 85%); }
+.gt-flat-glow { top: -60px; right: 8%; width: 320px; height: 180px; border-radius: 999px; background: color-mix(in srgb, var(--accent-ink) 30%, transparent); filter: blur(70px); opacity: 0.5; }
+.gt-flat-floor { height: 22px; border-top: 1px solid rgba(255, 255, 255, 0.12); background: linear-gradient(180deg, #3b2c46, #261b2f); box-shadow: inset 0 8px 16px -10px rgba(0, 0, 0, 0.6); }
+.gt-flat-tag { display: inline-grid; gap: 1px; padding: 5px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.86); }
+.gt-flat-name { color: #fff; }
+.gt-flat-btn { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); color: #fff; }
+.gt-flat-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.gt-flat-cta { background: var(--pill); color: #fff; border: 0; }
+.gt-flat-cta:hover { filter: brightness(1.08); }
+.gt-flat .text-red-600, .gt-flat .text-red-400 { color: #ff9fac; }
+
+/* the chosen item's card: who it is, how many, where it can go, what you can do, in that order */
+.gt-itemcard { display: grid; gap: 14px; animation: gt-rise 0.4s var(--gt-ease) both; }
+.gt-itemcard-head { display: flex; align-items: center; gap: 12px; }
+.gt-itemcard-head h3 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.gt-ic-qty { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 18px; background: var(--gt-tile); border: 1px solid var(--line); }
+.gt-ic-qty .gt-eyebrow { margin: 0; }
+.gt-ic-qty .gt-stepper { margin: 0; }
+.gt-ic-move { display: grid; gap: 8px; }
+.gt-ic-move .gt-eyebrow { margin: 0; }
+.gt-ic-spaces { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr)); gap: 8px; }
+.gt-ic-space { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line-strong); background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color 0.2s, border-color 0.2s, transform 0.15s; }
+.gt-ic-space:hover { background: var(--hover); border-color: var(--accent-ink); }
+.gt-ic-space:active { transform: scale(0.97); }
+.gt-ic-space:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.gt-ic-space svg { width: 16px; height: 16px; color: var(--accent-ink); }
+.gt-ic-space span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-ic-space small { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, currentColor 12%, transparent); }
+.gt-ic-acts { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.gt-ic-acts .gt-danger { margin-left: auto; }
+
+/* one share that is the whole ring is a plain closed circle: no dash, no ends, no gap */
+.gt-ring-arc[data-len="100"] { stroke-dasharray: none; stroke-dashoffset: 0; }
+
+/* the side panel stays on screen with its own scroll, and its last card ends cleanly instead of being cut */
+.gt-side { contain: none !important; align-self: start !important; position: sticky; top: 5rem; max-height: calc(100vh - 6.5rem); overflow-y: auto; padding: 0 4px 12px 0; scrollbar-width: thin; }
+.gt-more { justify-self: stretch; margin-top: 8px; }
+.gt-more:only-child { margin-top: 0; }
+
+/* where the held widget will land */
+.gt-w[data-drop]::before { content: ""; position: absolute; top: 0; bottom: 0; width: 4px; border-radius: 4px; background: var(--accent-ink); box-shadow: 0 0 18px color-mix(in srgb, var(--accent-ink) 70%, transparent); z-index: 30; pointer-events: none; }
+.gt-w[data-drop="before"]::before { left: -10px; }
+.gt-w[data-drop="after"]::before { right: -10px; }
+.gt-w[data-size="l"][data-drop]::before { left: 0; right: 0; width: auto; height: 4px; top: auto; bottom: auto; }
+.gt-w[data-size="l"][data-drop="before"]::before { top: -10px; }
+.gt-w[data-size="l"][data-drop="after"]::before { bottom: -10px; }
+@container (max-width: 620px) { .gt-w[data-drop]::before { left: 0; right: 0; width: auto; height: 4px; top: auto; bottom: auto; } .gt-w[data-drop="before"]::before { top: -10px; } .gt-w[data-drop="after"]::before { bottom: -10px; } }
+.gt-widgets[data-dragging] .gt-w:not(.held) { opacity: 1; }

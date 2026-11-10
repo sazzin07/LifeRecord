@@ -36,7 +36,7 @@ async function compare(page, path, selector, { release, flexible = [], yToleranc
     if (!flexible.includes(match.id) && Math.abs(match.h - sk.h) > hTolerance) problems.push(`${match.id || "card"}: ${match.h}px tall, placeholder ${sk.h}px`);
     if (!flexible.includes(match.id) && Math.abs(match.y - sk.y) > yTolerance) problems.push(`${match.id || "card"}: at y=${match.y}, placeholder at y=${sk.y}`);
   }
-  expect(problems, [path, ...problems, `real: ${JSON.stringify(loaded)}`].join("\n  ")).toEqual([]);
+  expect(problems, [path, ...problems, `placeholders: ${JSON.stringify(loading)}`, `real: ${JSON.stringify(loaded)}`].join("\n  ")).toEqual([]);
 }
 
 test("Money: every card's placeholder is the size and place of the real card", async ({ authenticatedPage: page }) => {

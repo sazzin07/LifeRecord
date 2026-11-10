@@ -9,6 +9,12 @@ FastAPI + MySQL backend (`backend/`), React (CRA/craco) + Tailwind + framer-moti
 - Past decisions and traps: the memory index is already loaded; open only the note that matches the task.
 - Small change: read the file directly. Do not spawn agents for what a grep answers.
 
+## Code Reviewer (sub-agent)
+- When the user says "Run Code Reviewer" (or asks for a review), delegate to the `code-reviewer` sub-agent (`.claude/agents/code-reviewer.md`, Sonnet 5.5, read-only; for a cheap quick re-check pass `model: "haiku"` on the Agent call): `Agent(subagent_type: "code-reviewer", prompt: "Run Code Reviewer.")`. No file list or context needed; it finds the changes through git. If the type is not found (session started before the file existed), tell the user a restart is needed; do not silently use a general-purpose stand-in.
+- It never edits. You decide which findings are valid, fix them, and re-invoke it after significant fixes. Verify its claims against the code before acting.
+- It ends each report with a baseline block: merge it by path into `.claude/review-baseline.txt` (local, untracked), unless the verdict is BLOCKED.
+- Its Bash guard: `.claude/hooks/readonly-bash.js` (test: `node .claude/hooks/readonly-bash.test.js`).
+
 ## Rules
 - Superpowers: brainstorm before a new feature, plans in `docs/superpowers/plans/`, specs in `docs/superpowers/specs/`, verify before claiming done. UI work uses the impeccable skill.
 - Ambiguous or consequential choice: ask (short, with a recommended default). Otherwise decide and say what was decided.

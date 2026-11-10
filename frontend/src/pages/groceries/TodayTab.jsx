@@ -11,6 +11,7 @@ import { Pill } from "./pills";
 import { WIDGET_IDS, useGroceriesLayout } from "./useGroceriesLayout";
 import { WidgetBoard } from "./todayBoard";
 import { KIND_LOOK, WIDGETS, WIDGET_BODY, kindLook } from "./todayWidgets";
+import { freshPercent } from "./ringMath";
 import { CountUp, RingArcs, dayWords, daysOf, freshStats, plural, stepOf } from "./todayParts";
 import { Welcome } from "./Welcome";
 import { cookSummary } from "./kitchenMix";
@@ -32,6 +33,7 @@ function TodaySkeleton({ widgets }) {
   const row = (i) => <div key={i} className="gt-row"><span className="gt-sticker sk-ph" style={{ width: 36, height: 36 }} /><div className="grow"><span className="name"><span className="sk-ph">Food name here</span></span><span className="gt-note"><span className="sk-ph">1 unit · Fridge</span></span></div></div>;
   return (
     <Busy label="Loading your kitchen"><div data-skeleton="" aria-hidden="true">
+      <div className="gt-toolbar"><span className="gt-pill sk-ph" style={{ width: 520, height: 50 }} /><span className="gt-btn sk-ph">Customise</span></div>
       <div className="gt-hero">
         <div className="gt-hero-copy">
           <p className="gt-eyebrow"><span className="sk-ph">Good evening · Friday 6 November</span></p>
@@ -56,7 +58,7 @@ function TodaySkeleton({ widgets }) {
 function Hero({ items, recipeIdeas, shopping, selectedListId, where, actions, setTab, onTrash }) {
   const st = freshStats(items);
   const n = st.gone.length + st.soon.length;
-  const pct = st.live.length ? Math.round((st.fresh / st.live.length) * 100) : 0;
+  const pct = freshPercent(st.fresh, st.live.length);
   const first = [...st.gone, ...st.soon].sort((a, b) => daysOf(a) - daysOf(b))[0];
   const pick = recipeIdeas[0];
   const toBuy = (shopping?.items || []).filter((i) => i.list_id === selectedListId && !i.selected).length;
@@ -80,9 +82,9 @@ function Hero({ items, recipeIdeas, shopping, selectedListId, where, actions, se
         </div>
       </div>
       <div className="gt-viz">
-        <div className="gt-ring" role="img" aria-label={`${plural(st.fresh, "item", "items")} fresh, ${st.soon.length} going off soon, ${st.gone.length} gone off`}>
-          <svg viewBox="0 0 128 128" aria-hidden="true"><circle className="gt-ring-track" cx="64" cy="64" r="52" /><RingArcs parts={parts} total={Math.max(1, st.live.length)} /></svg>
-          <div className="gt-ring-mid"><b><CountUp value={pct} /></b><span>% fresh</span></div>
+        <div className="gt-ring" role="img" aria-label={pct === null ? "Nothing in stock to measure" : `${pct} percent fresh: ${plural(st.fresh, "item", "items")} fresh, ${st.soon.length} going off soon, ${st.gone.length} gone off`}>
+          <svg viewBox="0 0 128 128" aria-hidden="true"><circle className="gt-ring-track" cx="64" cy="64" r="52" /><RingArcs parts={parts} total={st.live.length} /></svg>
+          <div className="gt-ring-mid"><b>{pct === null ? "—" : <CountUp value={pct} />}</b><span>{pct === null ? "nothing yet" : "% fresh"}</span></div>
         </div>
         <ul className="gt-key">{parts.map((p) => <li key={p.key}><i style={{ background: p.color }} /><b><CountUp value={p.n} /></b><span>{p.label}</span></li>)}</ul>
       </div>

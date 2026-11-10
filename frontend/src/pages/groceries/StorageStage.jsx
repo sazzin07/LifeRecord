@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, LayoutGrid, Pencil, Plus, ShoppingCart, Snowflake, Trash2, TriangleAlert, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, LayoutGrid, PanelRightClose, PanelRightOpen, Pencil, Plus, RotateCcw, RotateCw, ShoppingCart, Snowflake, Trash2, TriangleAlert, X, ZoomIn, ZoomOut } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { refreshAll } from "@/lib/useFetch";
@@ -29,6 +29,7 @@ function useDark() {
   return dark;
 }
 
+const HINT_KEY = "gt-k3d-hint", LIST_KEY = "gt-stage-list";
 const HELP = [
   "Click a handle (or any door or drawer) to open or shut it",
   "Double-click one to open or shut them all (the freezer opens one drawer at a time)",
@@ -62,37 +63,45 @@ function ItemCard({ g, units, current, listId, onClose, onEdit }) {
   return (
     <section ref={card} className="gt-card gt-itemcard" aria-label={`${g.name} details`}>
       <div className="gt-itemcard-head">
-        <Sticker name={g.name} category={catOf(g)} size={38} />
-        <div className="min-w-0">
+        <Sticker name={g.name} category={catOf(g)} size={44} />
+        <div className="min-w-0 grow">
           <h3>{g.name}</h3>
-          <p className="gt-note">{catOf(g)}{g.storage_location ? ` in ${g.storage_location}` : ""}</p>
+          <p className="gt-note">{catOf(g)}{g.storage_location ? ` · in ${g.storage_location}` : ""}</p>
+        </div>
+        <button type="button" className="gt-btn icon quiet" onClick={onClose}><X aria-hidden="true" /><span className="sr-only">Close</span></button>
+      </div>
+      {(exp || isLow(g)) && (
+        <div className="gt-tags">
+          {exp && <span className={cn("gt-tag", TONE[exp.tone])}>{exp.text}</span>}
+          {isLow(g) && <span className="gt-tag amber"><TriangleAlert aria-hidden="true" />Running low</span>}
+        </div>
+      )}
+      <div className="gt-ic-qty">
+        <span className="gt-eyebrow">In stock</span>
+        <div className="gt-stepper">
+          <button type="button" className="gt-btn icon" onClick={() => adjustQuantity(g, -1)} disabled={Number(g.quantity) <= 0} aria-label={`Use one ${g.name}`}>−</button>
+          <b aria-live="polite">{quantityText(g.quantity, g.unit)}</b>
+          <button type="button" className="gt-btn icon" onClick={() => adjustQuantity(g, 1)} aria-label={`Add one ${g.name}`}>+</button>
         </div>
       </div>
-      <div className="gt-tags">
-        {exp && <span className={cn("gt-tag", TONE[exp.tone])}>{exp.text}</span>}
-        {isLow(g) && <span className="gt-tag amber"><TriangleAlert aria-hidden="true" />Running low</span>}
-      </div>
-      <div className="gt-stepper">
-        <button type="button" className="gt-btn icon" onClick={() => adjustQuantity(g, -1)} disabled={Number(g.quantity) <= 0} aria-label={`Use one ${g.name}`}>−</button>
-        <b aria-live="polite">{quantityText(g.quantity, g.unit)}</b>
-        <button type="button" className="gt-btn icon" onClick={() => adjustQuantity(g, 1)} aria-label={`Add one ${g.name}`}>+</button>
-      </div>
       {others.length > 0 && (
-        <>
+        <div className="gt-ic-move" role="group" aria-label="Move to another space">
           <p className="gt-eyebrow">Move to</p>
-          <div className="gt-tags">
-            {others.map((u) => (
-              <button key={u.id} type="button" className="gt-btn" onClick={() => moveItems([g.id], u.name)}>
-                {u.kind === "freezer" && <Snowflake aria-hidden="true" />}{u.name}
-              </button>
-            ))}
+          <div className="gt-ic-spaces">
+            {others.map((u) => {
+              const Icon = kindLook(u.kind).icon;
+              return (
+                <button key={u.id} type="button" className="gt-ic-space" onClick={() => moveItems([g.id], u.name)}>
+                  <Icon aria-hidden="true" /><span>{u.name}</span><small>{u.items.length}</small>
+                </button>
+              );
+            })}
           </div>
-        </>
+        </div>
       )}
-      <div className="gt-tags">
+      <div className="gt-ic-acts">
         <button type="button" className="gt-btn" onClick={toList}><ShoppingCart aria-hidden="true" />Add to list</button>
         <button type="button" className="gt-btn" onClick={() => onEdit(g)}><Pencil aria-hidden="true" />Edit</button>
-        <button type="button" className="gt-btn" onClick={onClose}>Close</button>
         <button type="button" className="gt-btn gt-danger" onClick={() => setAsking(true)}><Trash2 aria-hidden="true" />Discard</button>
       </div>
       <ConfirmDialog
@@ -109,7 +118,9 @@ function ItemCard({ g, units, current, listId, onClose, onEdit }) {
 }
 
 function SpaceList({ unit, selId, onPick }) {
-  const items = [...unit.items].sort((a, b) => (daysUntil(a.expiration) ?? 9999) - (daysUntil(b.expiration) ?? 9999) || a.name.localeCompare(b.name));
+  const [all, setAll] = useState(false);
+  const sorted = [...unit.items].sort((a, b) => (daysUntil(a.expiration) ?? 9999) - (daysUntil(b.expiration) ?? 9999) || a.name.localeCompare(b.name));
+  const items = all ? sorted : sorted.slice(0, ITEM_LIMIT);
   return (
     <section className="gt-card" aria-label={`Everything ${unit.id === ELSEWHERE_ID ? "on the counter" : `in ${unit.name}`}`}>
       <p className="gt-eyebrow">{unit.id === ELSEWHERE_ID ? "On the counter" : `In ${unit.name}`}</p>
@@ -131,16 +142,26 @@ function SpaceList({ unit, selId, onPick }) {
       ) : (
         <div className="gt-empty"><strong>Nothing in here yet</strong><span className="gt-note">Add a food and it lands on a shelf.</span></div>
       )}
+      <More shown={ITEM_LIMIT} total={sorted.length} all={all} onToggle={() => setAll((v) => !v)} what="items" />
     </section>
   );
 }
 
+// Long lists draw in part: the most urgent first, the rest one tap away, so a kitchen with many spaces or a full pantry stays quick to open.
+const SPACE_LIMIT = 8, ITEM_LIMIT = 40;
+function More({ shown, total, all, onToggle, what }) {
+  if (total <= shown && !all) return null;
+  return <button type="button" className="gt-btn gt-more" onClick={onToggle}>{all ? `Show fewer ${what}` : `Show ${total - shown} more ${what}`}</button>;
+}
+
 function Overview({ units, onOpen }) {
+  const [all, setAll] = useState(false);
+  const rows = all ? units : units.slice(0, SPACE_LIMIT);
   return (
     <section className="gt-card" aria-label="All spaces">
       <p className="gt-eyebrow">Open a unit</p>
       <ul className="gt-list">
-        {units.map((u) => {
+        {rows.map((u) => {
           const a = attentionWords(u.items);
           const look = kindLook(u.kind);
           return (
@@ -153,6 +174,7 @@ function Overview({ units, onOpen }) {
           );
         })}
       </ul>
+      <More shown={SPACE_LIMIT} total={units.length} all={all} onToggle={() => setAll((v) => !v)} what="spaces" />
     </section>
   );
 }
@@ -167,6 +189,10 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
   const [sel, setSel] = useState(null);           // the item chosen in the room or in the list
   const [xray, setXray] = useState(true);
   const [help, setHelp] = useState(false);
+  const [hint, setHint] = useState(() => { try { return localStorage.getItem(HINT_KEY) !== "1"; } catch { return true; } });   // the one first-visit hint
+  const [listOpen, setListOpen] = useState(() => { try { return localStorage.getItem(LIST_KEY) !== "0"; } catch { return true; } });   // the side list can step aside for a wider room
+  const dismissHint = () => { setHint(false); try { localStorage.setItem(HINT_KEY, "1"); } catch { /* the hint just comes back next time */ } };
+  const toggleList = () => { const next = !listOpen; setListOpen(next); try { localStorage.setItem(LIST_KEY, next ? "1" : "0"); } catch { /* not remembered */ } };
   const [tip, setTip] = useState(null);
   const dark = useDark();
   const fromRoom = useRef(false);
@@ -265,7 +291,7 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
     }
     fromRoom.current = false;
     k.setXray(xray);
-    if (!viewSet.current) { viewSet.current = true; if (!cur) k.setOverview(true); }   // the first view is the whole kitchen, unless you came here for one space
+    if (!viewSet.current) { viewSet.current = true; if (!cur) { k.setOverview(true); try { if (!sessionStorage.getItem("gt-k3d-intro")) { sessionStorage.setItem("gt-k3d-intro", "1"); k.intro(); } } catch { /* no intro */ } } }   // the first view is the whole kitchen, unless you came here for one space
     setRev((r) => r + 1);
   }, [ready, spaces, items, dark, selItem, hasCounter, curScene, xray, cur]);
 
@@ -303,16 +329,38 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
   }
   const parts = cur && k ? k.parts(curScene) : null;
   const toggleCurrent = () => { if (cur) toggleUnit(cur.id); };
+  // The arrows go to the space before or after this one, round the ring: the camera flies there and locks onto that one space alone.
+  const stepSpace = (d) => { if (!cur || units.length < 2) return; const i = units.findIndex((u) => u.id === cur.id), next = units[(i + d + units.length) % units.length]; fromRoom.current = false; toggleUnit(next.id); };
 
   return (
-    <div className="gt-stage">
+    <div className="gt-stage" data-list={listOpen || selItem ? "on" : "off"}>
       <section ref={wrapRef} className="gt-scene" aria-label="Kitchen storage">
-        <div ref={hostRef} className="gt-k3d" data-k3d="" data-view={overview ? "overview" : "unit"} data-open={cur ? cur.name : ""} tabIndex={0} role="group"
-          aria-label="3D kitchen. Click or Tab to it, then arrow keys look around, plus and minus zoom, zero resets the view, comma and full stop switch unit, Enter opens or shuts the unit." />
+        <div className="gt-frame" onPointerDownCapture={hint ? dismissHint : undefined}>
+          <div ref={hostRef} className="gt-k3d" data-k3d="" data-view={overview ? "overview" : "unit"} data-open={cur ? cur.name : ""} tabIndex={0} role="group"
+            aria-label="3D kitchen. Click or Tab to it, then arrow keys look around, plus and minus zoom, R goes back to the whole kitchen, zero resets the angle, comma and full stop switch unit, Enter opens or shuts the unit." />
+          {hint && k && (
+            <div className="gt-hint" role="status">
+              <span>Drag to look around, scroll to zoom, click a unit to open it</span>
+              <button type="button" className="gt-chip" onClick={dismissHint}>Got it</button>
+            </div>
+          )}
+          {k && (
+            <div className="gt-cam" role="group" aria-label="Camera">
+              <button type="button" className="gt-camb rot" title="Rotate left" onClick={() => k.rotateBy(-0.3)}><RotateCcw aria-hidden="true" /><span className="sr-only">Rotate left</span></button>
+              <button type="button" className="gt-camb rot" title="Rotate right" onClick={() => k.rotateBy(0.3)}><RotateCw aria-hidden="true" /><span className="sr-only">Rotate right</span></button>
+              <button type="button" className="gt-camb" title="Zoom out" onClick={() => k.zoomBy(0.3)}><ZoomOut aria-hidden="true" /><span className="sr-only">Zoom out</span></button>
+              <button type="button" className="gt-camb" title="Zoom in" onClick={() => k.zoomBy(-0.3)}><ZoomIn aria-hidden="true" /><span className="sr-only">Zoom in</span></button>
+              <button type="button" className="gt-camb wide" title="Back to the whole kitchen (R)" onClick={() => k.resetAll()}><LayoutGrid aria-hidden="true" />Reset view<kbd aria-hidden="true">R</kbd></button>
+              <button type="button" className="gt-camb" title={listOpen ? "Hide the list for a wider room" : "Show the list"} onClick={toggleList}>
+                {listOpen ? <PanelRightClose aria-hidden="true" /> : <PanelRightOpen aria-hidden="true" />}<span className="sr-only">{listOpen ? "Hide the list" : "Show the list"}</span>
+              </button>
+            </div>
+          )}
+        </div>
         {cur && k && !overview && (
           <>
-            <button type="button" className="gt-btn icon gt-slide l" onClick={() => k.slide(-1)} aria-label="Look left, to the next unit"><ChevronLeft aria-hidden="true" /></button>
-            <button type="button" className="gt-btn icon gt-slide r" onClick={() => k.slide(1)} aria-label="Look right, to the next unit"><ChevronRight aria-hidden="true" /></button>
+            <button type="button" className="gt-btn icon gt-slide l" onClick={() => stepSpace(-1)} aria-label="Previous space"><ChevronLeft aria-hidden="true" /></button>
+            <button type="button" className="gt-btn icon gt-slide r" onClick={() => stepSpace(1)} aria-label="Next space"><ChevronRight aria-hidden="true" /></button>
           </>
         )}
         <div className="gt-chipbar" role="group" aria-label="Spaces. Press the open one to close it. Drop an item on one to move it there.">
@@ -385,10 +433,10 @@ export default function StorageStage({ units, selectedId, onSelect, detailsOpen,
         </div>
         <div ref={tagRef} className="gt-dragtag" hidden />
       </section>
-      <div className="gt-side">
-        <p className="sr-only" role="status">{cur ? `${cur.name} ${curOpen ? "open" : "shut"}, ${plural(cur.items.length, "item", "items")}` : `Showing all storage spaces, ${plural(units.length, "space", "spaces")}`}</p>
+      <p className="sr-only" role="status">{cur ? `${cur.name} ${curOpen ? "open" : "shut"}, ${plural(cur.items.length, "item", "items")}` : `Showing all storage spaces, ${plural(units.length, "space", "spaces")}`}</p>
+      <div className="gt-side" hidden={!listOpen && !selItem}>   {/* a chosen item always has its card; only the list steps aside */}
         {selItem && <ItemCard g={selItem} units={units} current={cur && cur.id} listId={selectedListId} onClose={() => setSel(null)} onEdit={onEditItem} />}
-        {cur ? <SpaceList unit={cur} selId={selItem ? selItem.id : null} onPick={setSel} /> : <Overview units={units} onOpen={(id) => { fromRoom.current = false; toggleUnit(id); }} />}
+        {listOpen && (cur ? <SpaceList unit={cur} selId={selItem ? selItem.id : null} onPick={setSel} /> : <Overview units={units} onOpen={(id) => { fromRoom.current = false; toggleUnit(id); }} />)}
       </div>
     </div>
   );

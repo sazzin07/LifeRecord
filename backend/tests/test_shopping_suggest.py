@@ -211,12 +211,27 @@ def test_two_rows_with_one_name_do_not_break_later_adds():
     assert created is False and doc["name"] == f"{TAG} Tea"
 
 
-def test_generate_ai_refuses_a_list_that_is_not_the_persons():
+def test_a_list_that_belongs_to_someone_else_is_refused_even_though_it_exists():
+    """The 404 must come from the owner filter, not from the id being unknown."""
+    async def go():
+        async with AsyncSessionLocal() as db:
+            uid = await _owner(db)
+            lid = await _fresh_list(db, uid)
+            await server.require_own_list(db, uid, lid)                      # the owner may use it
+            await server.require_own_list(db, uid, None)                     # no id means the default list
+            with pytest.raises(server.HTTPException) as err:
+                await server.require_own_list(db, "someone-else", lid)        # a real list, another person
+            return err.value.status_code
+    assert run(go()) == 404
+
+
+@pytest.mark.parametrize("route", ["gen_shopping_ai", "gen_shopping"])
+def test_generate_refuses_a_list_that_is_not_the_persons(route):
     async def go():
         async with AsyncSessionLocal() as db:
             uid = await _owner(db)
             with pytest.raises(server.HTTPException) as err:
-                await server.gen_shopping_ai(days=7, list_id="not-my-list", user={"_id": uid}, db=db)
+                await getattr(server, route)(days=7, list_id="not-my-list", user={"_id": uid}, db=db)
             return err.value.status_code
     assert run(go()) == 404
 

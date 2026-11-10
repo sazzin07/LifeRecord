@@ -1,3 +1,4 @@
+import { Ease, motion } from "./ease";
 /* The kitchen: a real-time 3D room (three.js), one instance per Storage tab. createKitchen3D() builds it; the page listens with on(name, fn),
    hands it data with sync() and tears it down with dispose(). The page falls back to the flat view when the scene cannot start. */
 /* eslint-disable no-mixed-operators */
@@ -7,6 +8,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { Glyph } from "./glyphs";
 
 const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+motion.reduce = REDUCE;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const hash = (n) => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
@@ -395,13 +397,14 @@ function slotPositions(U) {
 export function createKitchen3D() {
   let renderer, scene, camera, env, key, rim, hemi, spot, wall, floor, hostEl = null, ro, raf = 0, last = 0;
   let units = [], openId = null, theme = "light", state = null, labelsEl;
-  let elBase = 0.07;
-  const cam = { fx: new Spring(0, 48, 14), fy: new Spring(0.9, 48, 14), dist: new Spring(4, 48, 14), az: new Spring(0, 60, 15.5), el: new Spring(0.07, 60, 15.5), zoom: new Spring(0, 90, 19), userAz: 0, userEl: 0, zoomT: 0, vAz: 0, vEl: 0 };
-  const AZ = 0.95, EL0 = -0.34, EL1 = 0.5, ZMIN = -0.5, ZMAX = 0.35;   // how far you can look round, up and down, and dolly in or out
+  let posed = false, prevOpenId = null, seenOpen = null;
+  const elB = new Ease(0.07), azB = new Ease(-0.1);   // the unit's own viewing angle (up and round), eased between views
+  const cam = { fx: new Ease(0), fy: new Ease(0.9), dist: new Ease(4), az: new Spring(0, 46, 13.6), el: new Spring(0.07, 46, 13.6), zoom: new Spring(0, 60, 15.5), userAz: 0, userEl: 0, zoomT: 0, vAz: 0, vEl: 0 };
+  const AZ = 1.35, EL0 = -0.4, EL1 = 0.95, ZMIN = -0.9, ZMAX = 0.35;   // how far you can look round, up and down, and dolly in or out
   const keys = new Set(), ptrs = new Map(); let pinch = null, lastEmpty = 0;
-  let backTimer = 0, wheelLock = 0, parX = 0, parY = 0;   // parX and parY: the very slight pointer parallax
+  let backTimer = 0, wheelLock = 0, wheelAcc = 0, wheelAccT = 0, parX = 0, parY = 0;   // parX and parY: the very slight pointer parallax
   let panTX = 0, panTY = 0, panning = null, carry = null, overview = false, xray = true;   // pan target, a pan in progress, the food you are holding
-  const panS = { x: new Spring(0, 80, 18), y: new Spring(0, 80, 18) }, carryPlane = new Plane(new Vector3(0, 0, 1), -0.62);
+  const panS = { x: new Spring(0, 56, 15), y: new Spring(0, 56, 15) }, carryPlane = new Plane(new Vector3(0, 0, 1), -0.62);
   const resetView = () => { cam.userAz = 0; cam.userEl = 0; cam.zoomT = 0; cam.vAz = 0; cam.vEl = 0; panTX = 0; panTY = 0; };
   const px = { x: 0, y: 0, nx: 0, ny: 0, inside: false, moved: false };
   const nodes = new Map(); // item id -> { grp[], unit, ... }
@@ -415,7 +418,7 @@ export function createKitchen3D() {
   }
   let hoverId = null, selId = null, dragging = null, pending = null, orbit = null, dropHover = null;
   const ray = new Raycaster(); const v3 = new Vector3();
-  let disposed = false; const offs = [], handlers = {};
+  let disposed = false; const offs = [], handlers = {}; const instanceId = {};
   const listen = (target, type, fn, opts) => { target.addEventListener(type, fn, opts); offs.push(() => target.removeEventListener(type, fn, opts)); };
   const emit = (name, detail) => { const h = handlers[name]; if (h && !disposed) h(detail); };
 
@@ -469,19 +472,21 @@ export function createKitchen3D() {
       if (!units.length) return;
       const x0 = Math.min(...units.map((q) => q.x - q.w / 2)), x1 = Math.max(...units.map((q) => q.x + q.w / 2)), hh = Math.max(...units.map((q) => q.h));
       const dW = ((x1 - x0 + (overview ? 1.7 : 0.9)) / 2) / (Math.tan(fov / 2) * aspect), dH = ((hh + 0.5) / 2) / Math.tan(fov / 2);
-      cam.dist.t = Math.max(dW, dH, 3); elBase = overview ? 0.17 : 0.1; cam.fx.t = (x0 + x1) / 2; cam.fy.t = Math.min(hh * 0.5, 0.95); return;
+      cam.dist.t = Math.max(dW, dH, 3) * (overview ? 1.12 : 1); elB.t = overview ? 0.6 : 0.1; azB.t = overview ? -0.16 : -0.1; cam.fx.t = (x0 + x1) / 2; cam.fy.t = overview ? Math.min(hh * 0.42, 0.8) : Math.min(hh * 0.5, 0.95); return;
     }
     const needH = (u.h + 0.62) * 1.0, needW = (u.w + (u.doors.length ? u.w * 0.95 : 0.4) + 0.5);
     const dH = (needH / 2) / Math.tan(fov / 2), dW = (needW / 2) / (Math.tan(fov / 2) * aspect);
     cam.dist.t = Math.max(dH * 0.94, dW * 0.9, u.h < 1.2 ? 3.1 : 2.4) + (u.drawers.length ? 0.9 : 0);   // drawers slide out towards you: leave room
     const shiftX = u.doors.length && u.doors[0].side === "l" ? -u.w * 0.22 : u.doors.length ? 0 : 0;
-    elBase = u.h < 1.2 ? 0.52 : 0.07;   // low units are looked down into, so drawers and worktops show their contents
+    elB.t = u.h < 1.2 ? 0.52 : 0.07; azB.t = -0.1;   // low units are looked down into, so drawers and worktops show their contents
     cam.fx.t = u.x + shiftX; cam.fy.t = Math.min(u.h * 0.5 + 0.04, 1.0);
   }
 
+  function snapPose() { if (posed || !units.length || !hostEl) return; posed = true; [cam.fx, cam.fy, cam.dist, elB, azB].forEach((q) => { q.v = q.b; q.e = 1; }); }   // the camera starts at its first framing; the move to the overview (or a chosen unit) is then flown
   function resize() {
     if (!hostEl || !renderer) return; const r = hostEl.getBoundingClientRect(); const w = Math.max(10, r.width), h = Math.max(10, r.height);
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); frameOpen(); shadowDirty = true;
+    snapPose();
   }
 
   /* ---- items */
@@ -538,7 +543,8 @@ export function createKitchen3D() {
   function itemMeshes() {   // anything you can see and reach: in any open unit, in a drawer that is out
     const out = []; nodes.forEach((n) => { const u = units.find((q) => q.id === n.unitId); if (!u || (u.ov < 0.5 && u.xr < 0.5) || n.hidden) return; n.grp.forEach((g) => { if (g.visible) g.traverse((o) => { if (o.isMesh) out.push(o); }); }); }); return out;
   }
-  const proxMeshes = () => { const o = []; units.forEach((u) => o.push(...u.proxies)); return o; };
+  const solo = () => !!openId && !overview;
+  const proxMeshes = () => { const o = []; units.forEach((u) => { if (u.group.visible) o.push(...u.proxies); }); return o; };
   const pickItem = () => { const i = pick(itemMeshes()); if (!i) return null; const h = pick(proxMeshes()); return h && h.distance < i.distance + 0.35 ? null : i; };   // a handle in reach wins over an item behind it
   const pickUnit = () => pick(proxMeshes()) || pick(unitMeshes());   // handles win over everything else
   const unitOf = (id) => units.find((q) => q.id === id);
@@ -552,7 +558,7 @@ export function createKitchen3D() {
     if (open && u.exclusive) { if (!isOpen(id)) setPart(u, u.drawers.reduce((a, b) => (b.i > a.i ? b : a)), 1); } else partsOf(u).forEach((p) => { p.want = open ? 1 : 0; });
     if (open && !was) popUnit(id); if (was !== isOpen(id)) setTimeout(() => emit("parts", { id }), 0); if (!open && was) settle(id);
   }
-  function unitMeshes() { const out = []; units.forEach((u) => out.push(...u.hitMeshes)); return out; }
+  function unitMeshes() { const out = []; units.forEach((u) => { if (u.group.visible) out.push(...u.hitMeshes); }); return out; }
   const disposeGhost = (g) => g.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
   function carryTarget(x, y) {   // where the held food hangs: on a plane in front of the units, under the pointer
     const r = renderer.domElement.getBoundingClientRect(); ray.setFromCamera({ x: ((x - r.left) / r.width) * 2 - 1, y: -((y - r.top) / r.height) * 2 + 1 }, camera);
@@ -606,10 +612,16 @@ export function createKitchen3D() {
         const all = prev.allBefore; const was = isOpen(uid); partsOf(un).forEach((q) => { q.want = all ? 0 : 1; }); if (!was && !all) popUnit(uid);
         setTimeout(() => emit("parts", { id: uid }), 0); if (!all) focus(false); else settle(uid);
       } else if (part) {                                                                       // a door or drawer: that one swings or slides, nothing else
-        const was = isOpen(uid); setPart(un, part, !part.want); if (!was && part.want) popUnit(uid);
-        if (isOpen(uid) !== was) setTimeout(() => emit("parts", { id: uid }), 0); if (part.want) focus(false); else settle(uid);
+        const was = isOpen(uid), target = !part.want;
+        if (un.doors.length > 1 && !un.drawers.length && !un.exclusive) un.doors.forEach((d) => { d.want = target ? 1 : 0; });   // a pair of doors opens and shuts together, whichever you press
+        else setPart(un, part, target);
+        if (!was && part.want) popUnit(uid);
+        if (isOpen(uid) !== was) setTimeout(() => emit("parts", { id: uid }), 0);
+        if (part.want && overview) { openId = uid; overview = false; resetView(); frameOpen(); emit("focus", { id: uid }); setTimeout(() => emit("view", {}), 0); }   // opening something on the main view goes into that one unit
+        else if (part.want) focus(false); else settle(uid);
       } else if (un && un.pv < 0.05) emit("space", { id: uid, keep: true });             // the body of a shut unit: open it all
       else if (un) { focus(true); if (selId) { selId = null; emit("pick", { id: null }); } }       // an open unit: bring it into view
+      else if (now - prev.t < 450) { /* the second click of a double-click landed off the unit while the camera was moving: not an empty-room click */ }
       else {                                                                                   // empty room: let go of the item, double-click to reset the view
         const had = !!selId; if (had) { selId = null; emit("pick", { id: null }); }
         const t = performance.now(); clearTimeout(backTimer);
@@ -640,6 +652,8 @@ export function createKitchen3D() {
     const gapMs = now - last; const dt = Math.min(0.08, gapMs / 1000 || 0.016); last = now; const sec = now / 1000;
     // units: doors, drawers, lights
     let active = units.find((u) => u.id === openId); let anim = shadowDirty; shadowDirty = false;   // anim: did anything move this frame (then the shadows are redrawn)
+    if (openId !== seenOpen) { prevOpenId = seenOpen; seenOpen = openId; }
+    const flyingNow = [cam.fx, cam.dist, elB, azB].some((q) => q.e < 1); if (!flyingNow) prevOpenId = null;   // while the camera flies from one space to the next, both stay in sight
     units.forEach((u) => {
       anim = anim || unsettled(u.bump) || unsettled(u.hl) || u.doors.some((d) => unsettled(d.s)) || u.drawers.some((d) => unsettled(d.slide));
       u.bump.step(dt); u.hl.t = dropHover === u.id ? 1 : unitHover === u.id ? 0.55 : 0; u.hl.step(dt);
@@ -663,6 +677,8 @@ export function createKitchen3D() {
       if (u.shell.emissive) { u.shell.emissive.set("#efe2ff"); u.shell.emissiveIntensity = u.hl.v * 0.14; }
       if (u.xmats[0].emissive) { u.xmats[0].emissive.set("#efe2ff"); u.xmats[0].emissiveIntensity = u.hl.v * 0.14; }
       u.itemsRoot.visible = u.ov > 0.02;
+      const show = !solo() || u.id === openId || (flyingNow && u.id === prevOpenId);   // the one you leave stays in sight until the camera has flown to the next   // looking into one space shows that space only: the controls then belong to it alone
+      if (u.group.visible !== show) { u.group.visible = show; shadowDirty = true; }
     });
     if (active) { spot.position.set(active.x, active.h - 0.12, active.d / 2 - 0.12); spot.target.position.set(active.x, active.h * 0.42, -active.d / 2 + 0.15); spot.intensity = (theme === "dark" ? 9 : 2.4) * active.ov; spot.angle = 1.0; }
     // items: pop in, lift on hover, follow springs
@@ -723,8 +739,8 @@ export function createKitchen3D() {
       if (f.f.v > 0.985 && Math.abs(f.f.vel) < 0.2) { scene.remove(f.ghost); if (f.open) f.n.hidden = false; flights.splice(i, 1); }
     }
     // camera
-    anim = anim || flights.length > 0 || [cam.fx, cam.fy, cam.dist, cam.az, cam.el, cam.zoom, panS.x, panS.y].some(unsettled) || cam.vAz !== 0 || cam.vEl !== 0 || keys.size > 0; if (anim) renderer.shadowMap.needsUpdate = true;
-    cam.fx.step(dt); cam.fy.step(dt); cam.dist.step(dt);
+    anim = anim || flights.length > 0 || [cam.fx, cam.fy, cam.dist, elB, azB, cam.az, cam.el, cam.zoom, panS.x, panS.y].some(unsettled) || cam.vAz !== 0 || cam.vEl !== 0 || keys.size > 0 || cam.zoom.t !== cam.zoomT || panS.x.t !== panTX || panS.y.t !== panTY; if (anim) renderer.shadowMap.needsUpdate = true;
+    cam.fx.step(dt); cam.fy.step(dt); cam.dist.step(dt); elB.step(dt); azB.step(dt);
     const kx = (keys.has("ArrowRight") ? 1 : 0) - (keys.has("ArrowLeft") ? 1 : 0), ky = (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0), kz = (keys.has("-") || keys.has("_") ? 1 : 0) - (keys.has("+") || keys.has("=") ? 1 : 0);
     if (!orbit && !pinch) {
       if (kx || ky) { cam.vAz = kx * 0.9; cam.vEl = ky * 0.55; }   /* held keys glide the view, easing off like a hand on a rig */
@@ -737,10 +753,11 @@ export function createKitchen3D() {
     const hold = hoverId || partHover || unitHover || carry || pending || orbit || panning || pinch;   // never let the scene drift under a target you are aiming at
     if (!hold) { const tx = REDUCE || !px.inside ? 0 : px.nx * 0.018, ty = REDUCE || !px.inside ? 0 : px.ny * 0.007, f = Math.min(1, dt * 2.5); parX += (tx - parX) * f; parY += (ty - parY) * f; }
     const par = parX, sway = REDUCE || px.inside || orbit ? 0 : Math.sin(sec * 0.33) * 0.011;   /* a very slight idle drift keeps the room alive */
-    cam.az.t = cam.userAz + par + sway - 0.1; cam.el.t = elBase + cam.userEl + parY; cam.az.step(dt); cam.el.step(dt);
+    cam.az.t = cam.userAz + par + sway + azB.v; cam.el.t = elB.v + cam.userEl + parY; cam.az.step(dt); cam.el.step(dt);
     const R = cam.dist.v * Math.exp(cam.zoom.v); camera.position.set(cam.fx.v + panS.x.v + Math.sin(cam.az.v) * R, cam.fy.v + panS.y.v + Math.sin(cam.el.v) * R + 0.15, Math.cos(cam.az.v) * Math.cos(cam.el.v) * R);
     camera.position.y = Math.max(0.22, camera.position.y);   // low angles, but never through the floor
     camera.lookAt(cam.fx.v + panS.x.v, cam.fy.v + panS.y.v, 0);
+    if (hostEl) { const pose = `${cam.zoomT.toFixed(2)}|${cam.userAz.toFixed(2)}|${cam.userEl.toFixed(2)}|${panTX.toFixed(2)}|${overview ? 1 : 0}`; if (hostEl._pose !== pose) { hostEl._pose = pose; hostEl.dataset.pose = pose; } }   // zoom|azimuth|elevation|pan x|overview: what the camera was asked for, readable by tests
     if (scene.fog) { scene.fog.near = R * 1.15 + 2; scene.fog.far = R * 1.15 + 11; }
     key.position.set(cam.fx.v + 1.4, 5.2, 4.6); key.target.position.set(cam.fx.v, 0.8, 0);
     if (!REDUCE || anim) { renderer.render(scene, camera); placeLabels(); }   // reduced motion: nothing drifts on its own, so redraw only when something moved
@@ -763,14 +780,18 @@ export function createKitchen3D() {
   /* ---- the room as a keyboard and wheel target (click it or Tab to it first) */
   const zoomPlane = new Plane(new Vector3(0, 0, 1), 0);
   function bindRoom(el) {
-    el.addEventListener("wheel", (e) => {   /* the wheel dollies the view toward (or away from) the point under the pointer */
+    listen(el, "wheel", (e) => {   /* the wheel dollies the view toward (or away from) the point under the pointer */
       const now = performance.now();
-      if (overview && e.deltaY > 0 && !(e.ctrlKey || e.metaKey)) return;       /* already zoomed all the way out: let the page scroll */
-      e.preventDefault();
+      e.preventDefault();   /* over the room the wheel is the camera's, in every view; the page scrolls normally everywhere else */
       if (now < wheelLock) return;
       const z = cam.zoomT + e.deltaY * 0.0012;
-      if (z > ZMAX + 0.05 && !overview) { wheelLock = now + 500; setOv(true); return; }                 /* scroll out past the limit: back to the main view */
-      if (overview) { if (e.deltaY < -4 && openId) { wheelLock = now + 500; overview = false; resetView(); frameOpen(); setTimeout(() => emit("view", {}), 0); } return; }   /* scroll in: step into the selected unit */
+      // Past either limit the wheel's intent builds up (a trackpad sends many small deltas), and enough of it changes the view
+      const atOut = !overview && cam.zoomT >= ZMAX - 0.001 && e.deltaY > 0, atIn = overview && openId && cam.zoomT <= ZMIN + 0.001 && e.deltaY < 0;
+      if (atOut || atIn) {
+        wheelAcc = now - wheelAccT > 400 ? 0 : wheelAcc; wheelAccT = now; wheelAcc += Math.abs(e.deltaY);
+        if (wheelAcc > 110) { wheelAcc = 0; wheelLock = now + 500; if (atOut) setOv(true); else { overview = false; resetView(); frameOpen(); setTimeout(() => emit("view", {}), 0); } }   /* scroll out past the limit: back to the main view; zoomed all the way in: step into the selected unit */
+        return;
+      }
       const to = clamp(z, ZMIN, ZMAX), s = Math.exp(to - cam.zoomT); cam.zoomT = to;
       const r = renderer.domElement.getBoundingClientRect(); ray.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
       const hit = new Vector3();
@@ -796,7 +817,8 @@ export function createKitchen3D() {
       if (!live(e)) return; const k = e.key, c = canon(e), onBtn = e.target && e.target.closest && e.target.closest("button, a");
       if (e.shiftKey && (k === "ArrowLeft" || k === "ArrowRight")) { slideView(k === "ArrowRight" ? 1 : -1); e.preventDefault(); return; }
       if (c) { keys.add(c); held.set(e.code, c); e.preventDefault(); return; }
-      if (k === "0") { resetView(); e.preventDefault(); }
+      if (k === "r" || k === "R") { setOv(true); e.preventDefault(); }   // the default pose again, same easing
+      else if (k === "0") { resetView(); e.preventDefault(); }
       else if (k === "Home" || k === "o" || k === "O") { setOv(!overview); e.preventDefault(); }
       else if (k === "," || k === "[" || k === "PageUp") { step(-1); e.preventDefault(); }
       else if (k === "." || k === "]" || k === "PageDown") { step(1); e.preventDefault(); }
@@ -811,13 +833,14 @@ export function createKitchen3D() {
   function buildLabels() {
     labelsEl.innerHTML = ""; labelMap.clear();
     units.forEach((u) => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "gt-ulabel"; b.dataset.space = u.id; b.addEventListener("click", () => emit("space", { id: u.id }));
+      const b = document.createElement("button"); b.type = "button"; b.className = "gt-ulabel"; b.dataset.space = u.id; b.title = u.name; b.addEventListener("click", () => emit("space", { id: u.id }));
       labelsEl.appendChild(b); labelMap.set(u.id, b);
     });
   }
   const lastTxt = new Map();
   function placeLabels() {
     if (!hostEl) return; const r = renderer.domElement.getBoundingClientRect();
+    const row = [];
     units.forEach((u) => {
       const b = labelMap.get(u.id); if (!b) return;
       v3.set(u.x, 0.0, u.d / 2 + 0.2); const p = v3.clone().project(camera);   // on the floor in front of the unit, clear of every handle
@@ -825,8 +848,16 @@ export function createKitchen3D() {
       const op = u.pv > 0.3;
       const txt = `${u.name}|${u.count}|${u.alerts}|${op}`;
       if (lastTxt.get(u.id) !== txt) { lastTxt.set(u.id, txt); b.classList.toggle("on", op); b.classList.toggle("alert", u.alerts > 0); b.innerHTML = `<span>${esc(u.name)}</span><b>${u.count}</b><span class="sr-only"> items${u.alerts ? `, ${u.alerts} low or going off soon` : ""}</span>`; b.setAttribute("aria-pressed", op); }
-      b.classList.toggle("drop", dropHover === u.id); const hide = u.id === openId || Math.abs(p.x) > 1.02;   // the open unit and anything out of view need no label
-      b.style.opacity = hide ? 0 : 1; b.style.pointerEvents = hide ? "none" : "auto";
+      b.classList.toggle("drop", dropHover === u.id); const hide = u.id === openId || solo() || Math.abs(p.x) > 1.02;   // the open unit and anything out of view need no label
+      b.style.opacity = hide ? 0 : 1; b.style.pointerEvents = hide ? "none" : "auto"; if (!hide) row.push({ b, x });
+    });
+    // neighbours that would overlap each shorten their name (a hover, focus or selection shows it whole): no label ever hides another
+    row.sort((p, q) => p.x - q.x);
+    row.forEach((q, i) => {
+      const gap = Math.min(i > 0 ? q.x - row[i - 1].x : 1e4, i < row.length - 1 ? row[i + 1].x - q.x : 1e4), room = gap - 60, tiny = room < 24;   // the name gets what the gap leaves; with almost none, only the count shows (the name on hover, focus or selection)
+      const w = gap >= 1e4 ? "" : `${Math.max(24, room).toFixed(0)}px`;
+      if (q.b._lw !== w) { q.b._lw = w; q.b.style.setProperty("--lw", w || "none"); }
+      if (q.b._tiny !== tiny) { q.b._tiny = tiny; q.b.classList.toggle("tiny", tiny); }
     });
   }
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -855,7 +886,7 @@ export function createKitchen3D() {
       if (hostEl && hostEl !== el) ro.unobserve(hostEl);
       hostEl = el;
       if (!el) { cancelAnimationFrame(raf); raf = 0; return; }
-      if (!el._k3d) { el._k3d = true; bindRoom(el); }
+      if (el._k3d !== instanceId) { el._k3d = instanceId; bindRoom(el); }   // one binding per room: a second room on the same element (React strict mode builds two in development) must bind its own
       if (renderer.domElement.parentNode !== el) el.appendChild(renderer.domElement); if (labelsEl.parentNode !== el) el.appendChild(labelsEl); ro.observe(el); resize();
       if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
     },
@@ -869,7 +900,7 @@ export function createKitchen3D() {
       }
       const isig = st.spaces.map((q) => q.id).join(",") + "#" + st.items.map((g) => [g.id, g.name, g.qty, g.unit, g.cat, g.loc, g.d, g.low].join(":")).join("|");
       if (isig !== itemSig) { itemSig = isig; shadowDirty = true; syncItems(st.items, null); }   // selecting or hovering must not rebuild the shelves
-      selId = st.sel; if (hostEl) frameOpen();
+      selId = st.sel; if (hostEl) { frameOpen(); snapPose(); }
     },
     open(id, keep) {
       id = id || null; if (id === openId && (!id || isOpen(id))) return; if (id && !keep) overview = false;   // select the unit and open all of it; null shuts the one that was selected
@@ -882,7 +913,11 @@ export function createKitchen3D() {
     closeAll() { units.forEach((u) => setUnit(u.id, false)); openId = null; resetView(); frameOpen(); },
     isOpen,
     back,
-    setOverview: setOv, isOverview: () => overview, setXray(b) { if (xray !== !!b) { xray = !!b; shadowDirty = true; } }, isXray: () => xray, slide: slideView,
+    setOverview: setOv, isOverview: () => overview, resetAll: () => setOv(true),
+    zoomBy(d) { cam.zoomT = clamp(cam.zoomT + d, ZMIN, ZMAX); },   // toolbar: nudge the dolly
+    rotateBy(da, de = 0) { cam.vAz = 0; cam.vEl = 0; cam.userAz = clamp(cam.userAz + da, -AZ, AZ); cam.userEl = clamp(cam.userEl + de, EL0, EL1); },
+    intro() { if (REDUCE) return; cam.dist.kick(cam.dist.t * 1.45); cam.dist.ms = 1300; elB.kick(0.95); elB.ms = 1300; setTimeout(() => { cam.dist.ms = 800; elB.ms = 800; }, 1400); },   // the first look flies in
+ setXray(b) { if (xray !== !!b) { xray = !!b; shadowDirty = true; } }, isXray: () => xray, slide: slideView,
     refreshItems() { labelCache.clear(); [...mats.keys()].filter((k) => k[0] === "l").forEach((k) => mats.delete(k)); if (state) { syncItems(state.items); shadowDirty = true; } },
     stat(id) { const u = unitOf(id); return u ? { cap: u.capacity || 1, placed: u.placed || 0, over: u.over || 0 } : { cap: 1, placed: 0, over: 0 }; },
     parts(id) { const u = unitOf(id); if (!u) return { n: 0, open: 0, kind: "none" }; const ps = partsOf(u); return { n: ps.length, open: ps.filter((p) => p.want).length, kind: u.drawers.length ? "drawer" : "door", exclusive: !!u.exclusive }; },

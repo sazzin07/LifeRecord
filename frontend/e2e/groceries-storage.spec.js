@@ -149,7 +149,7 @@ test.describe("Groceries Storage (3D room)", () => {
     await stock(fresh);
     await page.goto("/groceries");
     await page.getByRole("tab", { name: "Storage" }).click();
-    await expect(room(page)).toBeVisible();
+    await expect(room(page)).toBeVisible({ timeout: 30000 });
     await page.getByRole("button", { name: "Flat view" }).click();
     await expect(room(page)).toHaveCount(0);
     await expect(page.getByTestId("unit-fridge")).toHaveAttribute("data-mode", "wall");
@@ -160,7 +160,7 @@ test.describe("Groceries Storage (3D room)", () => {
     await page.getByRole("tab", { name: "Storage" }).click();
     await expect(page.getByTestId("unit-fridge")).toBeVisible();
     await page.getByRole("button", { name: "3D room" }).click();
-    await expect(room(page)).toBeVisible();
+    await expect(room(page)).toBeVisible({ timeout: 30000 });   // the three.js chunk loads on demand
     await expect(page.getByRole("button", { name: "Flat view" })).toBeVisible();
   });
 });

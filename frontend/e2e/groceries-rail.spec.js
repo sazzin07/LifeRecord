@@ -110,6 +110,7 @@ test.describe("Groceries on a touch screen", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
   test("every control the page offers is at least 44px on a phone", async ({ freshUserPage: { page, fresh } }) => {
+    test.setTimeout(120000);   // it passes through the 3D Storage tab, which a software-rendered browser draws slowly
     await household(fresh);
     await page.goto("/groceries");
     await expect(page.getByTestId("gt-drawer-open")).toBeVisible();
@@ -212,7 +213,7 @@ test.describe("Groceries rail stays on screen", () => {
     const rail = page.getByTestId("gt-rail");
     await expect(rail).toBeVisible();
     const box = async () => rail.boundingBox();
-    await expect.poll(async () => { const b = await box(); return Math.abs(b.y + b.height / 2 - 400); }).toBeLessThan(30);
+    await expect.poll(async () => { const b = await box(); return Math.abs(b.y + b.height / 2 - 432); }).toBeLessThan(30);   // the middle of the body, below the 64px header
     const before = await box();
     await page.mouse.wheel(0, 900);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
